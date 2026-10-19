@@ -1,0 +1,13 @@
+item,value,unit
+carrier network parameters,61613,parameters
+checkpoint size (one seed),0.2657,MB
+"device: CPU, one thread (no GPU)",1,threads
+"windows timed (Oslo test windows, after one untimed warm-up)",6,windows
+"ankyra-lite forecast (carrier forecasts, anchoring layer, peak readout)",0.584281,s/window
+component: carrier forecasts at the origin and the pseudo-origins (7.0 issue times on average) x 3 seeds,0.075281,s/window
+"component: carrier forecast, one issue time and one seed (mean)",0.003585,s
+component: anchoring layer call with the carrier forecasts supplied (with the state rule),0.508701,s/window
+component: peak readout,0.000298,s/window
+model load: three checkpoints,0.0452,s
+check: carrier forecasts against the stored evaluation forecasts (largest relative difference),1.98e-06,ratio
+check: delivered trajectory against the stored product (largest relative difference),1.47e-06,ratio

@@ -1,0 +1,137 @@
+{
+ "label": "ankyra-lite P3s stage",
+ "version": "0.1.0 (from-scratch stage)",
+ "recipe": "from scratch (P3s)",
+ "recipe_description": "the from-scratch stage of the released recipe (the study's P3s recipe): the copy-pointer carrier network trained from scratch per population on a pooled training set, early stopping on the population's last 93 days before the training cut (at most 30 epochs, patience 5), seeds 0, 1 and 2 averaged, anchored by the unchanged ANKYRA 2.2.1 anchoring layer, weekly seasonal naive on off-state and micro-load windows; not the released recipe",
+ "note": "Not the released recipe: the from-scratch stage of the released span-return recipe, kept for the recipe history and for re-running the comparison on it (compare_baselines.py --recipe p3s). Paths are relative to the research root (environment variable ANKYRA_LITE_RESEARCH_ROOT, default <repo>/../HKAD_V3). 'npz' is the anchored three-seed product; 'run_dirs' the three seeds' from-scratch runs (carrier.npz, TRAINED.json / COMPLETE.json, best.pt); 'prep' the anchoring layer's temp_sigma_std and the split record. 'store': 'original' = the population's store as first built; 'corrected' = trained with the corrected CINELDI store (for CINELDI its own data, CINELDI origins = original origins + 1,416 h; for Drammen the CINELDI windows of its pooled training set). 'crosscheck': the product of the earlier hourly-only comparison. 'superseded': the first evaluated Drammen and CINELDI products, on the original CINELDI store (start defect); not used.",
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "checkpoint": "best.pt",
+ "faces": {
+  "bdg2": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/bdg2/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/bdg2/prep_formal.json",
+   "crosscheck": true
+  },
+  "cambridge": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/cambridge/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/cambridge/prep_formal.json",
+   "crosscheck": true
+  },
+  "heew": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/heew/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/heew/prep_formal.json",
+   "crosscheck": true
+  },
+  "eweld": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/eweld/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/eweld/prep_formal.json",
+   "crosscheck": true
+  },
+  "goiener_confirm": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/goiener_confirm/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/goiener_confirm/prep_formal.json",
+   "crosscheck": true
+  },
+  "households": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/households/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/households/prep_formal.json",
+   "crosscheck": true
+  },
+  "oslo": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/oslo/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/oslo/prep_formal.json",
+   "crosscheck": true
+  },
+  "drammen": {
+   "store": "corrected",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_P3s_ens.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/drammen/prep_formal.json"
+  },
+  "cineldi": {
+   "store": "corrected",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_P3s_ens.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_sr_formal_v1/dc/v1rec/cineldi/prep_formal.json"
+  }
+ },
+ "replacements": {},
+ "superseded": {
+  "drammen": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/drammen/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/drammen/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/drammen/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/drammen/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/drammen/prep_formal.json",
+   "note": "first evaluated product on the original CINELDI store (start defect); superseded by the corrected-store retrain"
+  },
+  "cineldi": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_formal3_v1/cineldi/arms_P3s.npz",
+   "run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/cineldi/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/cineldi/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/cineldi/P3s_s2"
+   ],
+   "prep": "analysis_outputs/smallnet_carrier_v1/cineldi/prep_formal.json",
+   "note": "first evaluated product on the original CINELDI store (start defect); superseded by the corrected-store retrain"
+  }
+ }
+}

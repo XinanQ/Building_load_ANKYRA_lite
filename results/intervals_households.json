@@ -1,0 +1,106 @@
+{
+ "set": "GoiEner households",
+ "windows": 696,
+ "units": 696,
+ "note": "Test windows only. ours_around_ankyra_lite / ours_around_carrier: the release interval (residual quantiles of the history-only estimator at the unit's pseudo-origins, scaled by the origin scale, by hour of day and workday) centred on ankyra-lite and on the carrier alone; timesfm_native and chronos_native: the models' own quantiles. Coverage is a fraction; widths, Winkler scores and pinball losses are means in kW. TimesFM has no 0.05 and 0.95 quantiles. The release file used another residual archive on all 1,258 windows; these quantiles are those of intervals_by_population.csv.",
+ "arms": {
+  "ours_around_ankyra_lite": {
+   "cov80": 0.7765205938697317,
+   "width80": 0.3192771482329961,
+   "winkler80": 0.6162049728357399,
+   "cov90": 0.870454053887035,
+   "width90": 0.6376462510102853,
+   "pinball_0.05": 0.009280724227804332,
+   "pinball_0.1": 0.016581368297840668,
+   "pinball_0.5": 0.049373864162406834,
+   "pinball_0.9": 0.045039128985733326,
+   "pinball_0.95": 0.041759965786431125,
+   "pinball_mean_common": 0.036998120481993614
+  },
+  "ours_around_carrier": {
+   "cov80": 0.782507183908046,
+   "width80": 0.3182263846213213,
+   "winkler80": 0.6191544770544246,
+   "cov90": 0.8731036027685083,
+   "width90": 0.6363011843455432,
+   "pinball_0.05": 0.009214250900018534,
+   "pinball_0.1": 0.016534515145475395,
+   "pinball_0.5": 0.04922616392532716,
+   "pinball_0.9": 0.04538093255996706,
+   "pinball_0.95": 0.04208702503276617,
+   "pinball_mean_common": 0.0370472038769232
+  },
+  "timesfm_native": {
+   "cov80": 0.34454949944382646,
+   "width80": 0.07686775675932732,
+   "winkler80": 0.7656079999572153,
+   "pinball_0.1": 0.02148683217542501,
+   "pinball_0.5": 0.04714035714011748,
+   "pinball_0.9": 0.05507396782029653,
+   "pinball_mean_common": 0.04123371904527968
+  },
+  "chronos_native": {
+   "cov80": 0.6800766283524904,
+   "width80": 0.24867395086905017,
+   "winkler80": 0.5755360452568233,
+   "cov90": 0.8150858206649364,
+   "width90": 0.40330732549092435,
+   "pinball_0.05": 0.007674833794892985,
+   "pinball_0.1": 0.013776047105353283,
+   "pinball_0.5": 0.046371693385971836,
+   "pinball_0.9": 0.04377755742032905,
+   "pinball_0.95": 0.034654934425089656,
+   "pinball_mean_common": 0.034641765970551394
+  }
+ },
+ "contrasts": {
+  "winkler80_ours_around_ankyra_lite_vs_ours_around_carrier": {
+   "log_ratio": -0.00153621808711491,
+   "UM": [
+    -0.015372186227616734,
+    0.012872211801922193
+   ],
+   "pct": 0.15350387081144445
+  },
+  "pinball_mean_common_ours_around_ankyra_lite_vs_ours_around_carrier": {
+   "log_ratio": -0.00011651384124095663,
+   "UM": [
+    -0.014355542190342756,
+    0.01493209628321408
+   ],
+   "pct": 0.011650705376697879
+  },
+  "winkler80_ours_around_ankyra_lite_vs_timesfm_native": {
+   "log_ratio": -0.0651030578554313,
+   "UM": [
+    -0.10194995486645615,
+    -0.018258481856466988
+   ],
+   "pct": 6.302910380967763
+  },
+  "pinball_mean_common_ours_around_ankyra_lite_vs_timesfm_native": {
+   "log_ratio": 0.001199657702887871,
+   "UM": [
+    -0.03311549911462716,
+    0.04397993569603616
+   ],
+   "pct": -0.12003775800297767
+  },
+  "winkler80_ours_around_ankyra_lite_vs_chronos_native": {
+   "log_ratio": 0.01852747775279038,
+   "UM": [
+    -0.027902255367577226,
+    0.05984538308071835
+   ],
+   "pct": -1.8700176376619693
+  },
+  "pinball_mean_common_ours_around_ankyra_lite_vs_chronos_native": {
+   "log_ratio": 0.03245717106243264,
+   "UM": [
+    -0.016367290279905262,
+    0.07100604407887733
+   ],
+   "pct": -3.2989650347300836
+  }
+ }
+}

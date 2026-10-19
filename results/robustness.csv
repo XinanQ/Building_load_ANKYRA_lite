@@ -1,0 +1,9 @@
+corruption,ankyra_error_vs_clean_log_ratio,carrier_error_vs_clean_log_ratio,ankyra_windows_worse_share,carrier_windows_worse_share,ankyra_displacement_over_s0_median,carrier_displacement_over_s0_median,level_change_pct_median,level_change_pct_max,peak_readout_change_pct_median,peak_error_vs_clean_log_ratio,off_state_fired,micro_load_fired,ankyra_vs_carrier_corrupted_log_ratio,equivariance_max_rel_dev,windows,units,set
+miss05,-8e-05,-0.00118,0.57812,0.59375,0.0111,0.01344,0.03218,0.59267,0.00826,0.00021,0,0,-0.02065,,64,43,Drammen
+miss20,0.00073,-0.00064,0.59375,0.60938,0.03274,0.04323,0.13848,2.30704,-0.24471,0.05852,0,0,-0.02037,,64,43,Drammen
+zero24,0.03142,0.02967,0.6875,0.59375,0.08931,0.07513,-3.44424,6.96512,-1.24724,-0.0548,0,0,-0.02001,,64,43,Drammen
+spike,0.34453,0.21161,0.9375,0.90625,0.54251,0.4105,3.6689,12.48243,998.39145,4.23431,0,0,0.11117,,64,43,Drammen
+shift_plus1,0.09022,0.0878,0.89062,0.89062,0.24154,0.26825,0.32412,5.26758,0.23823,0.00806,0,0,-0.01932,,64,43,Drammen
+shift_minus1,0.1104,0.11987,0.92188,0.92188,0.23874,0.25916,0.21885,5.08572,0.05077,-0.00924,0,0,-0.03122,,64,43,Drammen
+scale0.5,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,-0.02175,0.0,64,43,Drammen
+scale2,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0,0,-0.02175,0.0,64,43,Drammen

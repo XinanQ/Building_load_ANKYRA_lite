@@ -1,0 +1,252 @@
+{
+ "utc": "2026-10-19T08:50:44Z",
+ "what": "scoring-code check: the late-window rows of ten release tables recomputed with the scoring functions used for ankyra-lite and the release's own reference forecaster, compared field by field with the published files; only the match counts are kept",
+ "reference_of_the_check": "the release's reference forecaster (saved forecasts of the release panel)",
+ "published": "<original release root>/results",
+ "published_state": {
+  "sources": [
+   "git:487e0d2"
+  ],
+  "revision": "487e0d2",
+  "commit": "487e0d2d77098a102e8f634bb1bbce85e01e8b59"
+ },
+ "faces": [
+  "bdg2",
+  "cambridge",
+  "heew",
+  "eweld",
+  "goiener_confirm",
+  "households",
+  "oslo",
+  "drammen",
+  "cineldi",
+  "park"
+ ],
+ "tables": {
+  "benchmark_pairwise": {
+   "published_rows_in_scope": 200,
+   "recomputed_rows": 200,
+   "fields_compared": 2000,
+   "exact": 2000,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "benchmark_mean_unit_rank": {
+   "published_rows_in_scope": 210,
+   "recomputed_rows": 210,
+   "fields_compared": 840,
+   "exact": 840,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "conventional_metrics_late": {
+   "published_rows_in_scope": 250,
+   "recomputed_rows": 250,
+   "fields_compared": 3000,
+   "exact": 3000,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "energy_error": {
+   "published_rows_in_scope": 168,
+   "recomputed_rows": 168,
+   "fields_compared": 1680,
+   "exact": 1680,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "lead_day_metrics": {
+   "published_rows_in_scope": 4557,
+   "recomputed_rows": 4557,
+   "fields_compared": 50127,
+   "exact": 50127,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "lead_day_energy": {
+   "published_rows_in_scope": 4557,
+   "recomputed_rows": 4557,
+   "fields_compared": 31899,
+   "exact": 31899,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "block_shares": {
+   "published_rows_in_scope": 336,
+   "recomputed_rows": 336,
+   "fields_compared": 1008,
+   "exact": 1008,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "rank_tests": {
+   "published_rows_in_scope": 231,
+   "recomputed_rows": 231,
+   "fields_compared": 1617,
+   "exact": 1617,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "scaled_errors": {
+   "published_rows_in_scope": 210,
+   "recomputed_rows": 210,
+   "fields_compared": 1680,
+   "exact": 1680,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  },
+  "peak_readout": {
+   "published_rows_in_scope": 40,
+   "recomputed_rows": 40,
+   "fields_compared": 280,
+   "exact": 280,
+   "within_last_digit": 0,
+   "max_abs_diff": 0.0,
+   "mismatches": [],
+   "missing": [],
+   "extra": [],
+   "status": "REPRODUCED"
+  }
+ },
+ "populations": {
+  "bdg2": {
+   "windows_full": 934,
+   "windows_late": 474,
+   "units_late": 142,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 27.6
+  },
+  "cambridge": {
+   "windows_full": 1456,
+   "windows_late": 730,
+   "units_late": 108,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 35.2
+  },
+  "heew": {
+   "windows_full": 1282,
+   "windows_late": 658,
+   "units_late": 138,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 20.6
+  },
+  "eweld": {
+   "windows_full": 1023,
+   "windows_late": 523,
+   "units_late": 197,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 15.4
+  },
+  "goiener_confirm": {
+   "windows_full": 1237,
+   "windows_late": 890,
+   "units_late": 481,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 31.6
+  },
+  "households": {
+   "windows_full": 1258,
+   "windows_late": 696,
+   "units_late": 696,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 26.4
+  },
+  "oslo": {
+   "windows_full": 1147,
+   "windows_late": 581,
+   "units_late": 41,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 10.9
+  },
+  "drammen": {
+   "windows_full": 1375,
+   "windows_late": 689,
+   "units_late": 43,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 12.6
+  },
+  "cineldi": {
+   "windows_full": 929,
+   "windows_late": 475,
+   "units_late": 45,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 8.6
+  },
+  "park": {
+   "windows_full": 127,
+   "windows_late": 64,
+   "units_late": 4,
+   "late_equals_rank_tool_subset": true,
+   "incomplete_files": [],
+   "files_left_to_step_b": [],
+   "seconds": 6.8
+  }
+ },
+ "tables_reproduced": [
+  "benchmark_pairwise",
+  "benchmark_mean_unit_rank",
+  "conventional_metrics_late",
+  "energy_error",
+  "lead_day_metrics",
+  "lead_day_energy",
+  "block_shares",
+  "rank_tests",
+  "scaled_errors",
+  "peak_readout"
+ ],
+ "tables_not_reproduced": []
+}

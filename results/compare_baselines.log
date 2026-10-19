@@ -1,0 +1,188 @@
+04:41:27 [re-anchor bdg2 ens] memory available 1.63 GB
+04:41:27 re-anchor bdg2 ens: windows 474 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 474, 'pass': True}  0 s
+04:41:27 [re-anchor bdg2 no_within] memory available 1.63 GB
+04:41:27 re-anchor bdg2 no_within: windows 474 errors 0 gate None  0 s
+04:41:27 [re-anchor bdg2 lead_trust] memory available 1.63 GB
+04:41:27 re-anchor bdg2 lead_trust: windows 474 errors 0 gate None  0 s
+04:41:27 [re-anchor bdg2 no_gap] memory available 1.63 GB
+04:41:27 re-anchor bdg2 no_gap: windows 474 errors 0 gate None  0 s
+04:41:27 [re-anchor bdg2 no_micro] memory available 1.63 GB
+04:41:27 re-anchor bdg2 no_micro: windows 474 errors 0 gate None  0 s
+04:41:27 [re-anchor bdg2 s0] memory available 1.63 GB
+04:41:27 re-anchor bdg2 s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_s0.npz'}  0 s
+04:41:27 [re-anchor cambridge ens] memory available 1.63 GB
+04:41:27 re-anchor cambridge ens: windows 730 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 730, 'pass': True}  0 s
+04:41:27 [re-anchor cambridge no_within] memory available 1.63 GB
+04:41:27 re-anchor cambridge no_within: windows 730 errors 0 gate None  0 s
+04:41:27 [re-anchor cambridge lead_trust] memory available 1.63 GB
+04:41:27 re-anchor cambridge lead_trust: windows 730 errors 0 gate None  0 s
+04:41:27 [re-anchor cambridge no_gap] memory available 1.63 GB
+04:41:27 re-anchor cambridge no_gap: windows 730 errors 0 gate None  0 s
+04:41:27 [re-anchor cambridge no_micro] memory available 1.63 GB
+04:41:27 re-anchor cambridge no_micro: windows None errors None gate None identical to ens 0 s
+04:41:27 [re-anchor cambridge s0] memory available 1.63 GB
+04:41:27 re-anchor cambridge s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_s0.npz'}  0 s
+04:41:27 [re-anchor heew ens] memory available 1.63 GB
+04:41:27 re-anchor heew ens: windows 658 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 658, 'pass': True}  0 s
+04:41:27 [re-anchor heew no_within] memory available 1.62 GB
+04:41:27 re-anchor heew no_within: windows 658 errors 0 gate None  0 s
+04:41:27 [re-anchor heew lead_trust] memory available 1.62 GB
+04:41:27 re-anchor heew lead_trust: windows 658 errors 0 gate None  0 s
+04:41:27 [re-anchor heew no_gap] memory available 1.62 GB
+04:41:27 re-anchor heew no_gap: windows 658 errors 0 gate None  0 s
+04:41:27 [re-anchor heew no_micro] memory available 1.62 GB
+04:41:27 re-anchor heew no_micro: windows None errors None gate None identical to ens 0 s
+04:41:27 [re-anchor heew s0] memory available 1.62 GB
+04:41:27 re-anchor heew s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_s0.npz'}  0 s
+04:41:27 [re-anchor eweld ens] memory available 1.62 GB
+04:41:27 re-anchor eweld ens: windows 523 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 523, 'pass': True}  0 s
+04:41:27 [re-anchor eweld no_within] memory available 1.62 GB
+04:41:27 re-anchor eweld no_within: windows 523 errors 0 gate None  0 s
+04:41:27 [re-anchor eweld lead_trust] memory available 1.62 GB
+04:41:27 re-anchor eweld lead_trust: windows 523 errors 0 gate None  0 s
+04:41:27 [re-anchor eweld no_gap] memory available 1.62 GB
+04:41:27 re-anchor eweld no_gap: windows 523 errors 0 gate None  0 s
+04:41:27 [re-anchor eweld no_micro] memory available 1.62 GB
+04:41:27 re-anchor eweld no_micro: windows 523 errors 0 gate None  0 s
+04:41:27 [re-anchor eweld s0] memory available 1.62 GB
+04:41:27 re-anchor eweld s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_s0.npz'}  0 s
+04:41:27 [re-anchor goiener_confirm ens] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm ens: windows 890 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 890, 'pass': True}  0 s
+04:41:27 [re-anchor goiener_confirm no_within] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm no_within: windows 890 errors 0 gate None  0 s
+04:41:27 [re-anchor goiener_confirm lead_trust] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm lead_trust: windows 890 errors 0 gate None  0 s
+04:41:27 [re-anchor goiener_confirm no_gap] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm no_gap: windows 890 errors 0 gate None  0 s
+04:41:27 [re-anchor goiener_confirm no_micro] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm no_micro: windows None errors None gate None identical to ens 0 s
+04:41:27 [re-anchor goiener_confirm s0] memory available 1.62 GB
+04:41:27 re-anchor goiener_confirm s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_s0.npz'}  0 s
+04:41:27 [re-anchor households ens] memory available 1.62 GB
+04:41:27 re-anchor households ens: windows 696 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 696, 'pass': True}  0 s
+04:41:27 [re-anchor households no_within] memory available 1.62 GB
+04:41:27 re-anchor households no_within: windows 696 errors 0 gate None  0 s
+04:41:27 [re-anchor households lead_trust] memory available 1.62 GB
+04:44:15 re-anchor households lead_trust: windows 696 errors 0 gate None  167 s
+04:44:15 [re-anchor households no_gap] memory available 4.39 GB
+04:46:54 re-anchor households no_gap: windows 696 errors 0 gate None  159 s
+04:46:54 [re-anchor households no_micro] memory available 5.10 GB
+04:46:54 re-anchor households no_micro: windows None errors None gate None identical to ens 0 s
+04:46:54 [re-anchor households s0] memory available 5.10 GB
+04:47:25 re-anchor households s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_s0.npz'}  32 s
+04:47:25 [re-anchor oslo ens] memory available 4.12 GB
+04:47:25 re-anchor oslo ens: windows 581 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 581, 'pass': True}  0 s
+04:47:25 [re-anchor oslo no_within] memory available 4.12 GB
+04:47:25 re-anchor oslo no_within: windows 581 errors 0 gate None  0 s
+04:47:25 [re-anchor oslo lead_trust] memory available 4.11 GB
+04:47:25 re-anchor oslo lead_trust: windows 581 errors 0 gate None  0 s
+04:47:25 [re-anchor oslo no_gap] memory available 4.11 GB
+04:47:25 re-anchor oslo no_gap: windows 581 errors 0 gate None  0 s
+04:47:25 [re-anchor oslo no_micro] memory available 4.11 GB
+04:47:25 re-anchor oslo no_micro: windows None errors None gate None identical to ens 0 s
+04:47:25 [re-anchor oslo s0] memory available 4.11 GB
+04:47:25 re-anchor oslo s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_s0.npz'}  0 s
+04:47:25 [re-anchor drammen ens] memory available 4.11 GB
+04:47:25 re-anchor drammen ens: windows 689 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 689, 'pass': True}  0 s
+04:47:25 [re-anchor drammen no_within] memory available 4.11 GB
+04:47:25 re-anchor drammen no_within: windows 689 errors 0 gate None  0 s
+04:47:25 [re-anchor drammen lead_trust] memory available 4.11 GB
+04:47:25 re-anchor drammen lead_trust: windows 689 errors 0 gate None  0 s
+04:47:25 [re-anchor drammen no_gap] memory available 4.11 GB
+04:47:25 re-anchor drammen no_gap: windows 689 errors 0 gate None  0 s
+04:47:25 [re-anchor drammen no_micro] memory available 4.11 GB
+04:47:25 re-anchor drammen no_micro: windows None errors None gate None identical to ens 0 s
+04:47:25 [re-anchor drammen s0] memory available 4.11 GB
+04:47:25 re-anchor drammen s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_s0.npz'}  0 s
+04:47:25 [re-anchor cineldi ens] memory available 4.11 GB
+04:47:25 re-anchor cineldi ens: windows 475 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 475, 'pass': True}  0 s
+04:47:25 [re-anchor cineldi no_within] memory available 4.11 GB
+04:47:25 re-anchor cineldi no_within: windows 475 errors 0 gate None  0 s
+04:47:25 [re-anchor cineldi lead_trust] memory available 4.11 GB
+04:47:25 re-anchor cineldi lead_trust: windows 475 errors 0 gate None  0 s
+04:47:25 [re-anchor cineldi no_gap] memory available 4.11 GB
+04:47:25 re-anchor cineldi no_gap: windows 475 errors 0 gate None  0 s
+04:47:25 [re-anchor cineldi no_micro] memory available 4.11 GB
+04:47:25 re-anchor cineldi no_micro: windows None errors None gate None identical to ens 0 s
+04:47:25 [re-anchor cineldi s0] memory available 4.11 GB
+04:47:25 re-anchor cineldi s0 (first 8 windows): windows 8 errors 0 gate {'traj_equal': True, 'traj_max_abs_diff': 0.0, 'level_equal': True, 'peak_equal': True, 'state_flags_equal': True, 'windows': 8, 'pass': True, 'against': '<research root>/analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_s0.npz'}  0 s
+04:47:26 tools imported; read-only roots: research root, original release root
+04:47:26 [check bdg2] memory available 4.07 GB
+04:47:54 check bdg2: {'windows_full': 934, 'windows_late': 474, 'units_late': 142, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 27.6}
+04:47:54 [check cambridge] memory available 3.67 GB
+04:48:29 check cambridge: {'windows_full': 1456, 'windows_late': 730, 'units_late': 108, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 35.2}
+04:48:29 [check heew] memory available 3.11 GB
+04:48:50 check heew: {'windows_full': 1282, 'windows_late': 658, 'units_late': 138, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 20.6}
+04:48:50 [check eweld] memory available 2.86 GB
+04:49:06 check eweld: {'windows_full': 1023, 'windows_late': 523, 'units_late': 197, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 15.4}
+04:49:06 [check goiener_confirm] memory available 2.70 GB
+04:49:37 check goiener_confirm: {'windows_full': 1237, 'windows_late': 890, 'units_late': 481, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 31.6}
+04:49:37 [check households] memory available 2.42 GB
+04:50:04 check households: {'windows_full': 1258, 'windows_late': 696, 'units_late': 696, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 26.4}
+04:50:04 [check oslo] memory available 3.05 GB
+04:50:15 check oslo: {'windows_full': 1147, 'windows_late': 581, 'units_late': 41, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 10.9}
+04:50:15 [check drammen] memory available 3.06 GB
+04:50:27 check drammen: {'windows_full': 1375, 'windows_late': 689, 'units_late': 43, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 12.6}
+04:50:27 [check cineldi] memory available 3.05 GB
+04:50:36 check cineldi: {'windows_full': 929, 'windows_late': 475, 'units_late': 45, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 8.6}
+04:50:36 [check park] memory available 3.04 GB
+04:50:43 check park: {'windows_full': 127, 'windows_late': 64, 'units_late': 4, 'late_equals_rank_tool_subset': True, 'incomplete_files': [], 'files_left_to_step_b': [], 'seconds': 6.8}
+04:50:43 check benchmark_pairwise: REPRODUCED rows 200 fields 2000 exact 2000 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:43 check benchmark_mean_unit_rank: REPRODUCED rows 210 fields 840 exact 840 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:43 check conventional_metrics_late: REPRODUCED rows 250 fields 3000 exact 3000 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:43 check energy_error: REPRODUCED rows 168 fields 1680 exact 1680 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check lead_day_metrics: REPRODUCED rows 4557 fields 50127 exact 50127 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check lead_day_energy: REPRODUCED rows 4557 fields 31899 exact 31899 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check block_shares: REPRODUCED rows 336 fields 1008 exact 1008 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check rank_tests: REPRODUCED rows 231 fields 1617 exact 1617 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check scaled_errors: REPRODUCED rows 210 fields 1680 exact 1680 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check peak_readout: REPRODUCED rows 40 fields 280 exact 280 last-digit 0 mismatches 0 missing 0 max|diff| 0
+04:50:44 check done; reproduced: ['benchmark_pairwise', 'benchmark_mean_unit_rank', 'conventional_metrics_late', 'energy_error', 'lead_day_metrics', 'lead_day_energy', 'block_shares', 'rank_tests', 'scaled_errors', 'peak_readout'] | not reproduced: []
+04:50:44 [tables bdg2] memory available 2.99 GB
+04:50:46 [tables bdg2 product] memory available 2.93 GB
+04:51:50 [extra bdg2] memory available 2.24 GB
+04:53:13 tables bdg2: rank 1/22 (5.345); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 474, 'state_windows_seasonal_naive': 33, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 2.16395909814511e-08, 'level_vs_trajectory_mean_max_rel': 0.003099144117399599, 'level_vs_trajectory_mean_windows_over_1e-6': 1}; 149.2 s
+04:53:14 [tables cambridge] memory available 1.77 GB
+04:53:15 [tables cambridge product] memory available 1.66 GB
+04:54:18 [extra cambridge] memory available 1.68 GB
+04:55:26 tables cambridge: rank 1/22 (3.231); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 730, 'state_windows_seasonal_naive': 0, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.587992373617195e-08, 'level_vs_trajectory_mean_max_rel': 0.06758545147750157, 'level_vs_trajectory_mean_windows_over_1e-6': 9}; 132.9 s
+04:55:27 [tables heew] memory available 1.76 GB
+04:55:28 [tables heew product] memory available 1.66 GB
+04:56:03 [extra heew] memory available 1.67 GB
+04:56:40 tables heew: rank 1/22 (5.558); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 658, 'state_windows_seasonal_naive': 0, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.9140373407893548e-08, 'level_vs_trajectory_mean_max_rel': 3.137558330852036e-09, 'level_vs_trajectory_mean_windows_over_1e-6': 0}; 73.1 s
+04:56:40 [tables eweld] memory available 1.75 GB
+04:56:41 [tables eweld product] memory available 1.68 GB
+04:57:12 [extra eweld] memory available 1.81 GB
+04:57:50 tables eweld: rank 1/22 (7.018); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 523, 'state_windows_seasonal_naive': 245, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.2340888503989277e-08, 'level_vs_trajectory_mean_max_rel': 0.023308105846800334, 'level_vs_trajectory_mean_windows_over_1e-6': 21}; 70.4 s
+04:57:50 [tables goiener_confirm] memory available 1.85 GB
+04:57:52 [tables goiener_confirm product] memory available 1.72 GB
+04:58:57 [extra goiener_confirm] memory available 1.63 GB
+05:00:24 tables goiener_confirm: rank 1/22 (5.423); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 890, 'state_windows_seasonal_naive': 13, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.3012527845580058e-08, 'level_vs_trajectory_mean_max_rel': 0.4032262440993281, 'level_vs_trajectory_mean_windows_over_1e-6': 142}; 153.4 s
+05:00:24 [tables households] memory available 2.58 GB
+05:00:28 [tables households product] memory available 2.82 GB
+05:01:35 [extra households] memory available 4.01 GB
+05:02:55 tables households: rank 1/22 (5.490); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 696, 'state_windows_seasonal_naive': 35, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.7709314524801855e-08, 'level_vs_trajectory_mean_max_rel': 0.6937764403664888, 'level_vs_trajectory_mean_windows_over_1e-6': 29}; 151.6 s
+05:02:56 [tables oslo] memory available 3.36 GB
+05:02:57 [tables oslo product] memory available 3.24 GB
+05:03:44 [extra oslo] memory available 5.76 GB
+05:04:35 tables oslo: rank 1/22 (1.756); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_ens.npz', 'store': 'original', 'origin_shift_h': 0, 'windows': 581, 'state_windows_seasonal_naive': 0, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.0739622689939225e-08, 'level_vs_trajectory_mean_max_rel': 3.5836341017205737e-09, 'level_vs_trajectory_mean_windows_over_1e-6': 0}; 99.6 s
+05:04:35 [tables drammen] memory available 4.22 GB
+05:04:36 [tables drammen product] memory available 4.10 GB
+05:05:33 [extra drammen] memory available 3.19 GB
+05:06:35 tables drammen: rank 1/22 (2.140); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_ens.npz', 'store': 'corrected', 'origin_shift_h': 0, 'windows': 689, 'state_windows_seasonal_naive': 0, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.1975638663367789e-08, 'level_vs_trajectory_mean_max_rel': 7.251172657431236e-05, 'level_vs_trajectory_mean_windows_over_1e-6': 2}; 119.6 s
+05:06:35 [tables cineldi] memory available 2.58 GB
+05:06:36 [tables cineldi product] memory available 2.47 GB
+05:07:09 [extra cineldi] memory available 2.51 GB
+05:07:43 tables cineldi: rank 1/22 (3.356); product {'file': '<research root>/analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_ens.npz', 'store': 'corrected', 'origin_shift_h': 1416, 'windows': 475, 'state_windows_seasonal_naive': 0, 'months_equal_panel_months': True, 'peak_readout_recomputed_vs_stored_max_rel': 1.4789559009917517e-08, 'level_vs_trajectory_mean_max_rel': 0.1878515173840401, 'level_vs_trajectory_mean_windows_over_1e-6': 33}; 68.2 s
+05:08:53 [cost timing] memory available 2.54 GB
+05:08:58 [robustness] memory available 2.47 GB
+05:09:32 robustness drammen clean: 33 s, off-state 0, micro-load 0
+05:10:04 robustness drammen miss05: 33 s, off-state 0, micro-load 0
+05:10:37 robustness drammen miss20: 32 s, off-state 0, micro-load 0
+05:11:09 robustness drammen zero24: 33 s, off-state 0, micro-load 0
+05:11:42 robustness drammen spike: 32 s, off-state 0, micro-load 0
+05:12:15 robustness drammen shift_plus1: 33 s, off-state 0, micro-load 0
+05:12:47 robustness drammen shift_minus1: 33 s, off-state 0, micro-load 0
+05:13:21 robustness drammen scale0.5: 33 s, off-state 0, micro-load 0
+05:13:54 robustness drammen scale2: 33 s, off-state 0, micro-load 0
+05:13:54 written: ['benchmark_pairwise', 'benchmark_mean_unit_rank', 'conventional_metrics_late', 'energy_error', 'lead_day_metrics', 'lead_day_energy', 'block_shares', 'rank_tests', 'scaled_errors', 'peak_readout', 'recipe_history.csv', 'constants.csv', 'datasets.csv', 'robustness.csv', 'contrast_ii_blocks.csv', 'contrast_ii_control.csv', 'example_window_cambridge.csv', 'cost_per_window.csv', 'intervals_by_population.csv', 'intervals_winkler_contrasts.csv', 'ablation.csv', 'component_contributions.csv', 'seed_spread.csv', 'carriers_in_anchoring_layer.csv', 'history_length.csv', 'bdg2_near_zero_sensitivity.csv', 'anchoring_gain_deciles.csv', 'training_curves.csv', 'example_window_cambridge.json', 'intervals_households.json'] | total 1946.8 s

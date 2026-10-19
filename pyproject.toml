@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "building-load-ankyra-lite"
+version = "0.1.0"
+description = "ankyra-lite: a 61,613-parameter self-developed carrier network feeding a copy of the ANKYRA 2.2.1 anchoring layer, for month-ahead (744-hour) hourly building-load forecasting without a foundation model"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Xinan Qin" }]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "scipy>=1.11", "torch>=2.4"]
+keywords = ["load forecasting", "month-ahead forecasting", "building energy", "forecast combination", "small neural network"]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering",
+]
+
+[project.optional-dependencies]
+figures = ["matplotlib>=3.8"]
+
+[project.urls]
+Repository = "https://github.com/XinanQ/Building_load_ANKYRA_lite"
+Issues = "https://github.com/XinanQ/Building_load_ANKYRA_lite/issues"
+Documentation = "https://github.com/XinanQ/Building_load_ANKYRA_lite/blob/main/README.md"
+"Anchoring layer (ANKYRA)" = "https://github.com/XinanQ/Building_load_ANKYRA"
+
+[tool.setuptools.packages.find]
+include = ["ankyra_lite*"]
+
+[tool.setuptools.package-data]
+"ankyra_lite.anchor" = ["PROVENANCE.md"]
+"ankyra_lite.anchor.history" = ["*.json"]

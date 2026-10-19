@@ -1,0 +1,264 @@
+{
+  "scope": "Named frozen function/class extraction with local dependency wiring; no new scientific scores",
+  "definitions": [
+    {
+      "source": "recovery/eo_lstm_kan.py",
+      "definition": "origin_scale",
+      "first_line": 63,
+      "last_line": 69,
+      "source_sha256": "409385630e86a5a6b022f5070dd47912418898198a89d15550f0adb4f79f22a3",
+      "definition_sha256": "224347994d0032307aa0bbf0ba19594a23ff4ea7839afa93b95cf4236718f886"
+    },
+    {
+      "source": "recovery/eo_lstm_kan.py",
+      "definition": "gather_types",
+      "first_line": 129,
+      "last_line": 134,
+      "source_sha256": "409385630e86a5a6b022f5070dd47912418898198a89d15550f0adb4f79f22a3",
+      "definition_sha256": "239814bcee7433c6a39b7634554ca975fa77b2cf2fa9da0fe16368ce23195315"
+    },
+    {
+      "source": "recovery/eo_lstm_kan.py",
+      "definition": "Batch",
+      "first_line": 148,
+      "last_line": 162,
+      "source_sha256": "409385630e86a5a6b022f5070dd47912418898198a89d15550f0adb4f79f22a3",
+      "definition_sha256": "d64148af7234833945972e00a5182e1b2963c11321ebded7555a11d07daee3d9"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "interior_knots",
+      "first_line": 39,
+      "last_line": 40,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "4cd383e80332aa14496f2d810a023a433cf2e755d02b3846e0f6293a7a34542b"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "std_temp",
+      "first_line": 43,
+      "last_line": 44,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "3b1b150d700ab895ef40ce9f0586aeee8fa8ab8096dfb9d8e0280fff73b11361"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "hinge_features",
+      "first_line": 47,
+      "last_line": 50,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "66e610894577fe10444bf77aaa75d1697ab45b7895d54bd6b8e2587d1cb2c105"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "expected_hinge_features",
+      "first_line": 53,
+      "last_line": 61,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "861be97807eae4c7083e916601118d80fa06edbc52324fa5ceb2acd009c67bea"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "deviations",
+      "first_line": 64,
+      "last_line": 67,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "e885b3157f8d2f7f84f989ed5005212ab4eb65c11e6862109a519bcb858108ba"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "type_tables",
+      "first_line": 70,
+      "last_line": 90,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "85a96801f66a4cc993054cd0a8a7707626af4a288d1b3dedb2635c97a0549b94"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "recent_envelope",
+      "first_line": 93,
+      "last_line": 107,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "9bd262d2b6480967e1aecbb709632bd38879a43a4410a40d7e6d916019d61562"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "z1_parts",
+      "first_line": 136,
+      "last_line": 144,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "4cf353a7b3c861a43e022b8307f69f3b712c42f19861c8b7218f399b2b4f6987"
+    },
+    {
+      "source": "recovery/eo_lstm_kan_v21.py",
+      "definition": "encode",
+      "first_line": 147,
+      "last_line": 151,
+      "source_sha256": "c1507f638ea350a286adf11a6e96febf8556ba630845e8396a9bd5efc446236e",
+      "definition_sha256": "36f9a7f0e89a04e336fde7cad436661043593fc897d02de1a41adbe748374818"
+    },
+    {
+      "source": "tools_eo_bdg2_data_v1.py",
+      "definition": "climatology",
+      "first_line": 47,
+      "last_line": 64,
+      "source_sha256": "f5c9ccca4e2ee125d4872d8d583f247a9d966de5e33303d029dc4b4fa4e93837",
+      "definition_sha256": "c39d8700f249e1c9e0fade81d71f6689288534d7f0b4bbab6f18776e4c3563b6"
+    },
+    {
+      "source": "tools_eo_z1_weather_v21.py",
+      "definition": "Signatures",
+      "first_line": 43,
+      "last_line": 86,
+      "source_sha256": "a7f1c24ac4ab484dbe285bdcfc189680257bf8ef5ab5199f2b188bb1a72a49a2",
+      "definition_sha256": "4e052f341fe067da21c8bca2b95ffe37495f446240b99ca48743692546aedd9e"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "ScaledSignatures",
+      "first_line": 44,
+      "last_line": 73,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "f603b5eec35aab63c719fcdbd7b160a22429c0eaacdac792fd051f0717ed3e19"
+    },
+    {
+      "source": "tools_eo_v22_estimate_v1.py",
+      "definition": "annual_hypothesis",
+      "first_line": 74,
+      "last_line": 83,
+      "source_sha256": "45b095c326cb9d33c04f110c7dbc6c60777ee4a9a87bd997d7bcc408c661573f",
+      "definition_sha256": "33996fa1ed77383689fdb9e3a934d5946835ed0aede6eeb93bffd309defdb00f"
+    },
+    {
+      "source": "tools_eo_v22_estimate_v1.py",
+      "definition": "pad",
+      "first_line": 86,
+      "last_line": 89,
+      "source_sha256": "45b095c326cb9d33c04f110c7dbc6c60777ee4a9a87bd997d7bcc408c661573f",
+      "definition_sha256": "a9aa4e3da179e7a6985c02e61cf97c283128e57052205360e95cd8b54a5d135d"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "PseudoBatcher",
+      "first_line": 97,
+      "last_line": 156,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "b3ce497429d7c78f1d57fb4cb11c81c47287ab83c0a90219ed37f98cbab65771"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "hypotheses",
+      "first_line": 160,
+      "last_line": 199,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "77439e197c17e0dbd4296be19a349ada7d6c06c6c4d55ae077585ed3d6ad1325"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "pseudo_errors",
+      "first_line": 234,
+      "last_line": 252,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "cf7ab101bdabb88d08e2303d09e702cd16973bdf740db9a4448743d87da52e07"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "weights",
+      "first_line": 255,
+      "last_line": 286,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "0a542cf40ed4b203f849a6e758cc17d91dd19d3a3964df49dcdab7d77ab3239b"
+    },
+    {
+      "source": "tools_eo_v24_level_v1.py",
+      "definition": "level_path",
+      "first_line": 289,
+      "last_line": 296,
+      "source_sha256": "3d3b8dcff9fe629db5db468985c76c9306237aa575141dec40ecb596aadabf5c",
+      "definition_sha256": "bda722721d194cd432b068732cebcb182845325276859a57cd5d333aad4a3e74"
+    },
+    {
+      "source": "tools_eo_between_span_v1.py",
+      "definition": "offsets_from_weeks",
+      "first_line": 60,
+      "last_line": 75,
+      "source_sha256": "711457b451031ec6dde702d5539ebd78a6e63d481695fd51f47b886cc239e14c",
+      "definition_sha256": "16e7909450f123c9f114340cf8bff4b6e895dbbbe82edd5fd81be12d8460acea"
+    },
+    {
+      "source": "tools_eo_between_span_v1.py",
+      "definition": "centre",
+      "first_line": 78,
+      "last_line": 79,
+      "source_sha256": "711457b451031ec6dde702d5539ebd78a6e63d481695fd51f47b886cc239e14c",
+      "definition_sha256": "f19bf5655a6b125cd8cebe0bdc8d4c1acce0838bcfba11f5aaf8a1e8a97ea708"
+    },
+    {
+      "source": "tools_eo_between_span_v1.py",
+      "definition": "day_path_hypotheses",
+      "first_line": 82,
+      "last_line": 135,
+      "source_sha256": "711457b451031ec6dde702d5539ebd78a6e63d481695fd51f47b886cc239e14c",
+      "definition_sha256": "8468efbf534e461ee7cfd8e7fc9793d854881298b51c7bdd269f696b85d2db64"
+    },
+    {
+      "source": "tools_eo_v25_daypath_v1.py",
+      "definition": "hypotheses_c",
+      "first_line": 42,
+      "last_line": 48,
+      "source_sha256": "9cf7ce761583031cdf368767b154333919a38d960290cdbfc49f6e9aba231ea8",
+      "definition_sha256": "90e19484c0008988ab39b4cd2fb00e9605977d9b3e54aca49da054c938e5afe6"
+    },
+    {
+      "source": "tools_eo_v25_daypath_v1.py",
+      "definition": "pseudo_errors_c",
+      "first_line": 51,
+      "last_line": 69,
+      "source_sha256": "9cf7ce761583031cdf368767b154333919a38d960290cdbfc49f6e9aba231ea8",
+      "definition_sha256": "98441aff5eb6937aa0e82523927a5f76869dd80ad7b5bdbefc3d3123d93767c7"
+    },
+    {
+      "source": "tools_eo_v25_daypath_v1.py",
+      "definition": "weights_c",
+      "first_line": 72,
+      "last_line": 99,
+      "source_sha256": "9cf7ce761583031cdf368767b154333919a38d960290cdbfc49f6e9aba231ea8",
+      "definition_sha256": "93a0f78e6296ecbeb8a026365cf383923492c26d2b7d6e8d7337822d80613cb0"
+    },
+    {
+      "source": "tools_eo_v25_daypath_v1.py",
+      "definition": "arm_c_level",
+      "first_line": 102,
+      "last_line": 113,
+      "source_sha256": "9cf7ce761583031cdf368767b154333919a38d960290cdbfc49f6e9aba231ea8",
+      "definition_sha256": "362c945d728d9e2a8bc5f3875e5ea0e3bc1198c1f28f34691bc7c6dcabb320b6"
+    }
+  ],
+  "configuration_sources": {
+    "level": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/v24_develop_v1/frozen_choices.json",
+      "sha256": "2da63f8488d22e28834b2ef4391a8a5f6d5bd719c810ae02432f857a5a001077"
+    },
+    "day": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/v25_develop_v1/frozen_choices_G.json",
+      "sha256": "f09c81f90ba290b143601c1b78986c0a78dc9744939bab6f106238ad182a1fc3"
+    },
+    "signature": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/signature_fit_v21/report.json",
+      "sha256": "7d332861f4eadfc8cff03adafd50ae92544fcdc6cf10eb90155ededda62e3599"
+    },
+    "blend": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/z1_v21b/report.json",
+      "sha256": "3359deae46ab64b5298de5e5346b4ea909932740b6b344fc3fa379cd6b4249bd"
+    }
+  },
+  "generated_modules": {
+    "_climate.py": "bf3c2404da1e37d71a9b347caf946e401c6f90a4a4ec11f45e4ee47dfb701f89",
+    "_day.py": "c279268e5315641ee7495485036eebddaaaa28fe2f9cdbd6ffe50171c1b38c98",
+    "_eo.py": "4c7907b523da99dacbcbb83a18b08ee877addd1ad92a901d741ac109e8949100",
+    "_level.py": "83092b5c7fee81ab9c79a46d07262a99e9dd72ee0f0fbeda71184a1eacee76da",
+    "_signature.py": "4263bf2d86c3f6839ddbf894fef2ed4def277a62b7d973c579cf9ae02f8c8658",
+    "_span.py": "b649669d9c595fc77fb4005d40c247314e48c8bf012a2eaada632b7188df4a52"
+  },
+  "config_sha256": "43bb3c054c9ba6bda436c85854b17dddee7d933e5194918151127696ff878caa"
+}

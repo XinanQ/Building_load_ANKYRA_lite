@@ -1,0 +1,96 @@
+# 理论：ankyra-lite 背后的精确性质
+
+[English](README.md) · [证明](PROOFS.md) · [算子](operators.py) · [数值检验](test_operators.py) · [载体检验](test_carrier_properties.py) · [返回预测器](../README.zh-CN.md)
+
+本文件夹收录放在预测器旁边的数学性质。预测器是 [`ankyra_lite/`](../ankyra_lite/) 这个包，包里没有任何代码引用本文件夹。这些性质让预测器可以逐步检查；它们不是精度的证据，精度是测出来的（[results/SUMMARY.md](../results/SUMMARY.md)）。性质分两组，对应 ankyra-lite 的两个部分：
+
+- **P1–P20，锚定层。** `ankyra_lite.anchor` 是 ANKYRA 2.2.1 包的逐字节副本，所以这些就是 ANKYRA 2.2.1 理论部分的性质、算子和检验，只改了导入路径。它们解释并限定锚定层：
+  - 为什么把月前预测拆成水平、日路径和日内形状；
+  - 权重需要多少历史，最多能离开等权多远；
+  - 电量读出和峰值读出能保证什么、不能保证什么；
+  - 评估为什么并列报告几种估计目标。
+- **C1–C10，载体网络。** ankyra-lite 新增：载体网络的构造对任意权重（训练过或没训练过）保证什么：
+  - 它的预测是一份非负的电量预算，均值等于水平；
+  - 它只用起报时刻之前的数据，没有单位标识输入，并随负荷同比例缩放；
+  - 它的复制指针从零开始，而且从不改变水平；
+  - 训练截止点与测试集之间留出 186 天，锚定层评分的每一个伪起报点预测对载体都是样本外的。
+
+每条性质有三种支撑：
+
+| 文件 | 内容 |
+|---|---|
+| [PROOFS.md](PROOFS.md) | 陈述、证明，以及标出适用边界的反例；本仓库结果文件在数据上测过后果的，注明该文件 |
+| [operators.py](operators.py) | 把 P1–P20 写成函数，适用于任何预测器的 744 小时轨迹 |
+| [test_operators.py](test_operators.py) | P1–P20 的数值检验，含反例（31 项） |
+| [test_carrier_properties.py](test_carrier_properties.py) | C1–C10 在随机与扰动后的载体权重上的数值检验，含反例（27 项） |
+
+```bash
+python -m unittest discover -s theory -t .
+```
+
+这条命令运行两个检验文件（共 58 项；只用 CPU，单线程约 15 秒），不需要检查点，也不需要研究数据。请在仓库根目录下运行。
+
+![一个测试窗口上的精确性质](../figures/fig7_operators.png)
+
+*图 7。图 a 在图 6 的剑桥测试窗口上，把载体预测的水平、日路径和日内块逐块换成 ankyra-lite 的：每根条都精确地分成三块的损失（P1、P4），三块全部换完就是 ankyra-lite 的预测。图 b–d 说明权重需要多少历史、收缩让权重最多移动多远（P7–P9），以及为什么电量在截断之前读出（P11、P12）；图 e 和 f 是峰值读出及其误差分解（P15、P16）。由 [`figures/make_figures.py`](../figures/README.md) 绘制。*
+
+## 锚定层的二十条性质
+
+标为“标准”的性质是设计所依赖的已知结论；它们收录在这里，但不作为新贡献。其余性质在第三列的条件下成立。没有一条是精度保证。
+
+| | 性质 | 成立条件 | 锚定层用它做什么 | 代码 | 检验 |
+|---|---|---|---|---|---|
+| P1 | [块恒等式](PROOFS.md#blocks)（标准） | 总是 | 把每一块交给一个来源 | `anchor.blocks.block_losses` | `BlockGeometryTests` |
+| P2 | [四块；没有周频的傅里叶分量](PROOFS.md#blocks) | 总是（744 小时窗口） | 用日类型代替周分量 | `operators.four_block_losses` | `BlockGeometryTests` |
+| P3 | [电量就是水平](PROOFS.md#blocks) | 总是 | 电量读出 | `anchor.blocks.level` | `BlockGeometryTests` |
+| P4 | [精确替换与水平份额界](PROOFS.md#replacement) | 替换用的估计是固定的 | 由块损失给任意分工打分 | `operators.replace_blocks` | `ReplacementTests` |
+| P5 | [两来源分工：合并最优与单位层面的不对称](PROOFS.md#replacement) | 两个来源、按块 | 固定分工为什么不够 | `operators.division_log_ratio` | `ReplacementTests` |
+| P6 | [修正量核算](PROOFS.md#replacement)（标准） | 总是 | 诊断一项修正 | `operators.correction_accounting` | `ReplacementTests` |
+| P7 | [已完成误差的支撑](PROOFS.md#historical-weights) | 记录完整；缺失的小时只会减少个数 | 权重需要多少历史 | `operators.completed_windows` | `SupportTests` |
+| P8 | [收缩界](PROOFS.md#historical-weights) | 支撑一致，起报时没有候选缺失 | 权重最多能移动多远 | `operators.mixture_mass_bounds` | `ShrinkageTests` |
+| P9 | [候选缺失时混合重新归一](PROOFS.md#historical-weights) | 总是；一个反例标出 P8 在哪里失效 | 界何时不再成立 | `operators.retained_data_share` | `ShrinkageTests` |
+| P10 | [共享误差下的最小二乘权与逆 MSE 权](PROOFS.md#historical-weights) | 各预测含共同的误差成分 | 分周交接的权重 | `operators.two_source_weights` | `ShrinkageTests` |
+| P11 | [截断到零不会增大任何一个小时的误差](PROOFS.md#nonnegativity-and-energy)（标准） | 负荷非负 | 交付的轨迹 | `operators.clip_nonnegative` | `FeasibilityTests` |
+| P12 | [电量、非负与不增误差三者不可兼得](PROOFS.md#nonnegativity-and-energy) | 总是（两小时的反例） | 电量从水平读出 | `operators.project_to_mean` | `FeasibilityTests` |
+| P13 | [日层面的投影：有条件的保证](PROOFS.md#nonnegativity-and-energy) | 水平与负荷非负；水平的低估不超过最小的真实日均值 | 一个可选的投影 | `operators.daily_projection` | `FeasibilityTests` |
+| P14 | [均值路径低估期望峰值](PROOFS.md#peak)（标准） | 精确的条件均值 | 单独的峰值读出 | — | `PeakTests` |
+| P15 | [峰值算子的标量形式与界](PROOFS.md#peak) | 总是 | 峰值读出 | `anchor.readouts.peak_readout` | [tests/anchor/](../tests/anchor/test_blocks_and_readouts.py) 里的 `ReadoutTests` |
+| P16 | [峰值误差分解](PROOFS.md#peak) | 总是；幅度项没有固定的符号 | 水平的收益怎样传到峰值 | `operators.peak_error_decomposition` | `PeakTests` |
+| P17 | [有限支撑中位数性质](PROOFS.md#peak) | 同类型日内水平不变、独立抽取、$((m-1)/m)^n<1/2$ | 包络估计的是什么 | `operators.max_lower_median` | `PeakTests` |
+| P18 | [非对称的峰值成本](PROOFS.md#peak)（标准） | 总是 | 在给定成本下选择峰值方法 | `operators.asymmetric_peak_cost` | `PeakTests` |
+| P19 | [合并汇总与单位等权汇总](PROOFS.md#estimands) | 总是（恒等式） | 为什么并列报告几种估计目标 | `anchor.metrics.pooled_ratio_decomposition` | `EstimandTests` |
+| P20 | [候选选择的证据界](PROOFS.md#evidence-bound)（标准结果；零基准为恒等式） | 每个候选有 T 个伪起报点误差 | 为强收缩水平权重提供统计背景（最坏情形的速率，不是在这批数据上的测量） | `operators.aggregation_rate`、`operators.exchangeable_hit_rate` | `EvidenceBoundTests` |
+
+`operators.*` 指本文件夹里的 [operators.py](operators.py)；`anchor.*` 是锚定层 `ankyra_lite.anchor`，P1、P3、P15 和 P19 由它自身的函数承载。检验名是 [test_operators.py](test_operators.py) 里的测试类，注明了文件夹的除外。
+
+## 载体网络的十条性质
+
+十条都由 `ankyra_lite.carrier` 的代码推出，对任意权重（训练过或没训练过）成立；只有 C9(a) 讲的是初始化。证明里注明了代码行号。关于实数运算的陈述用 float64 检验，关于交付的载体预测的陈述用包自身的 float32 路径检验。
+
+| | 性质 | 成立条件 | 对 ankyra-lite 的意义 | 代码 | 检验 |
+|---|---|---|---|---|---|
+| C1 | [轨迹非负](PROOFS.md#exact-properties-of-the-carrier-network) | 任意权重；只在实数运算中严格为正（份额可能下溢为 0） | 交给锚定层的载体候选非负；非有限的预测在锚定前被拒绝 | `model.decode_budget`、`inference.carrier_forecasts` | `NonnegativityTests` |
+| C2 | [电量预算：轨迹均值等于水平](PROOFS.md#exact-properties-of-the-carrier-network) | 总是（实数运算中精确） | 载体的水平、日路径和日内形状就是其轨迹的 P1 分块 | `model.decode_budget` | `EnergyBudgetTests` |
+| C3 | [日份额、小时份额和指针注意力都是概率分布](PROOFS.md#exact-properties-of-the-carrier-network) | 总是 | 复制来的日内形状是该单位自己若干完整日的混合 | `model.CopyPointerNetwork` | `ShareTests` |
+| C4 | [不读起报时刻及之后的任何输入](PROOFS.md#exact-properties-of-the-carrier-network) | 总是；预测月的日类型会被读取 | 每个伪起报点预测都是从它自己的起报时刻出发的真实预测 | `features.features`、`inference.carrier_forecasts` | `CausalityTests` |
+| C5 | [编码器按词元顺序因果](PROOFS.md#exact-properties-of-the-carrier-network) | 总是 | 指针对某个近期日的键只概括该日及更早的日 | `model.SharedCausalBlock` | `EncoderOrderTests` |
+| C6 | [被屏蔽的词元不起作用](PROOFS.md#exact-properties-of-the-carrier-network) | 总是；屏蔽掩码本身是输入 | 缺失日的占位值进不了预测 | `model.StructuredLoadNetwork` | `MaskTests` |
+| C7 | [尺度等变](PROOFS.md#exact-properties-of-the-carrier-network) | $c>0$ 且最近 8,760 小时有正负荷；2 的幂次逐位成立；否则有反例 | 载体预测不依赖负荷的计量单位 | `features.features`、`model.StructuredLoadNetwork` | `ScaleTests` |
+| C8 | [没有单位标识输入](PROOFS.md#exact-properties-of-the-carrier-network) | 总是；类别是输入 | 同一类别中同样的历史得到同样的预测 | `features.features`、`model.build_carrier` | `UnitIdentityTests` |
+| C9 | [复制指针：初始化时为零、不改变水平、近期没有完整日时不起作用](PROOFS.md#exact-properties-of-the-carrier-network) | (a) 初始化时；(b)–(d) 任意权重 | 指针只重新分配一个月的电量，不移动电量本身 | `model.CopyPointerNetwork` | `PointerTests` |
+| C10 | [伪起报点的样本外保证](PROOFS.md#exact-properties-of-the-carrier-network) | 测试起报点至少在训练截止点之后 4,464 小时（186 天） | 锚定层评分的每一个已完成伪预测对载体都是样本外的 | `inference.pseudo_origins`、`train.make_windows` | `PseudoOriginTests` |
+
+`model.*`、`features.*`、`inference.*` 和 `train.*` 是 `ankyra_lite.carrier` 的模块；检验名是 [test_carrier_properties.py](test_carrier_properties.py) 里的测试类。
+
+## 这些性质怎样进入预测器
+
+- **块（P1–P3）。** 预测由三个正交的块拼成，所以每一块可以单独定权、单独评分、单独读出，电量只从水平读出。
+- **分工（P4–P6）。** 两个预测器之间的任何分工都可以由块损失打分，但在合并误差上最优的分工，对典型单位仍可能是亏的。所以锚定层按每个单位自己的记录给它定权。
+- **权重（P7–P10）。** $m$ 小时的记录支撑 $\min\lbrace12,\lfloor(m-1344)/744\rfloor\rbrace_+$ 个已完成误差；不足两个时权重相等。收缩限定权重能移动多远；交接用最小二乘权，因为共享误差会把逆 MSE 权拉向二分之一。
+- **电量与非负（P11–P13）。** 截断不会让任何一个小时变差，但没有映射能同时保持电量、非负和不增误差，所以电量在截断之前读出。（在关停窗口和微负荷窗口上，锚定层原样返回载体的轨迹，不做截断；ankyra-lite 的默认状态规则这时改为交付周季节朴素预测。）
+- **峰值（P14–P18）。** 平滑预测的最大值会低估峰值，所以峰值从历史偏移包络读出；它有精确的标量形式、误差分解，以及在写明的工作分布下的中位数性质。
+- **估计目标（P19）。** 合并汇总和单位等权汇总可能因代数原因符号相反，所以结果文件并列报告单位等权 log 比、合并 MSE 比、平均单位排名和常规指标。
+- **证据界（P20）。** 聚合的极小极大速率是最坏情形的结果：七个水平候选、至多六个伪起报点误差时，它按量级占误差方差的可观比例。它为强收缩权重提供统计背景；它不是在这批数据上的测量，单凭它也不能说明这里的候选无法区分（[PROOFS.md](PROOFS.md#evidence-bound)）。锚定层报告的记录统计量（`anchoring_record`）是描述性指标；预测器不声称选出了最好的候选。
+- **载体（C1–C10）。** 载体交给锚定层的是一条非负、均值等于其水平的轨迹（C1–C3），只用每个起报时刻之前的数据，并且不受占位值影响（C4–C6），按负荷自身的尺度、没有单位标识（C7、C8）。它的复制指针重塑一个月的形状但不移动水平，并从基础网络出发（C9）。训练截止点与测试集之间留出 186 天，锚定层拿单位自己的历史给伪起报点预测评分时，每一个都对载体是样本外的（C10）；锚定层按单位定权正是以此为前提。
+
+P1–P20 及其文件来自 ANKYRA 2.2.1 的理论文件夹，只把导入从 `ankyra` 改为 `ankyra_lite.anchor`。该理论里的数据证据（来自方法早期开发和 ANKYRA 研究，载体是 TimesFM 2.5）不是本仓库的结果，已删去；本仓库结果文件测过后果的，PROOFS.md 注明该文件。C1–C10 和 `test_carrier_properties.py` 是新增的。

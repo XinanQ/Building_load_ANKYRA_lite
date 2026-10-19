@@ -1,0 +1,823 @@
+# Evaluation
+
+The scored statistics are in [`results/`](../results) ([file list and columns](../results/README.md)); the figures are
+drawn from those files by [`figures/make_figures.py`](../figures/README.md). Data sources and the split are in
+[DATA.md](DATA.md), the forecaster in [METHOD.md](METHOD.md), and the scoring code in
+[`evaluation/`](../evaluation/README.md).
+
+The comparison mirrors that of the first ANKYRA release (the ANKYRA 2.2.1 repository): the same test windows, the same
+estimands and intervals, the same scoring functions and the same baselines, with ankyra-lite as the reference
+forecaster. ANKYRA itself and its versions are not among the forecasters. The study's working protocols, scripts and
+saved forecasts are not part of this repository.
+
+**Contents**
+
+- [Identity of the evidence](#identity-of-the-evidence) (read first)
+- [Populations and tiers](#populations-and-tiers)
+- [Baselines](#baselines): [LSTM-T-KAN-M](#lstm-t-kan-m) ·
+  [the linear-context model](#the-linear-context-model-tide-implementation) · [GBT-T](#the-corrected-gbt-t) ·
+  [what each side may know](#what-each-side-may-know)
+- [Estimands](#estimands)
+- [How each table is scored](#how-each-table-is-scored)
+- [State windows and the three near-zero BDG2 meters](#state-windows-and-the-three-near-zero-bdg2-meters)
+- [Intervals](#intervals)
+- [Why the recipe returns the validation span](#why-the-recipe-returns-the-validation-span)
+- [Results](#results): [overview](#overview) · [zero-shot foundation models](#against-the-zero-shot-foundation-models) ·
+  [rank tests](#rank-tests) · [conventional metrics](#conventional-metrics) ·
+  [by forecast day](#by-forecast-day-and-energy-through-the-month) · [blocks](#error-blocks-and-scaled-errors) ·
+  [intervals](#intervals-around-ankyra-lite) · [parts](#what-the-parts-add) · [seeds](#seeds) ·
+  [other carriers](#other-carriers-in-the-same-anchoring-layer) ·
+  [contrast (ii)](#contrast-ii-by-block-and-the-carrier-free-control) ·
+  [history length](#history-length-and-the-anchoring-record) · [robustness and cost](#robustness-and-cost) ·
+  [where ankyra-lite is weak](#where-ankyra-lite-is-weak)
+- [External tests](#external-tests)
+- [Limitations](#limitations)
+- [Scoring-code check and reproduction](#scoring-code-check-and-reproduction)
+
+## Identity of the evidence
+
+**Every number of the nine-population comparison is a re-evaluation of test windows that had been read before. None is
+a first test.** The external tests ([EXTERNAL_TESTS.md](EXTERNAL_TESTS.md)) have their own identity, stated with each
+number there: first read of this candidate on a previously read population (LCL, UNICON, HKUST), and a same-source
+out-of-time supplementary check (GoiEner households).
+
+- **The test windows were read before.** They are the late windows of the first release, scored there for ANKYRA and
+  the 20 external baselines. The study then scored earlier versions of the small carrier on the same windows, made an
+  hourly-only comparison of the carrier with the baselines, and read them once more in the study that chose the recipe
+  (below).
+- **Parts of the design were chosen after looking at them.**
+  - The **copy pointer**: its direction (copying the unit's own recent days into the within-day shape and the daily
+    means) came from an analysis of the carrier's errors on these windows.
+  - The **seasonal-naive state rule** was written after an earlier scoring of these windows.
+  - The **released recipe (R)**, which returns the validation span to the training set, was chosen on 19 October 2026
+    after one directional reading of the span-return study on these test windows
+    ([below](#why-the-recipe-returns-the-validation-span)). The study's plan and its predictions were written before
+    that reading; the choice of recipe was made after it.
+- **Development windows** existed on six populations (Cambridge, HEEW, EWELD, Oslo, Drammen, CINELDI): windows between
+  a development cut 279 days before the training cut and the training cut, on which the carrier's configuration was
+  chosen. The three short-record populations (BDG2 2017 and both GoiEner populations) had none, so no design choice was
+  checked on them before their test windows were read.
+- **Consequence.** The tables describe how the released forecaster performs on these windows. They do not estimate how
+  it would perform on windows that played no part in its design. The external tests of this version on data outside
+  these test windows ([External tests](#external-tests)) do not either: their populations had been read before by
+  earlier forecasters, or share a source with a study population.
+
+Further caveats that apply to every table:
+
+- **Calendar.** 26 EWELD and 10 Cambridge test windows use a holiday calendar announced after their origin, for every
+  forecaster that reads day types ([DATA.md](DATA.md#calendar-caveat-holidays-announced-after-the-origin)).
+- **Pretraining overlap.** Seven BDG2 sites are in TimesFM 2.5's pretraining collection
+  ([DATA.md](DATA.md#bdg2-and-the-pretraining-collection-of-timesfm-25)).
+- **Linear-context model.** The baseline formerly labelled TiDE is a linear map of the load context
+  ([below](#the-linear-context-model-tide-implementation)).
+- **The Suzhou park** of the first release has no ankyra-lite forecast and is in no table; it contributes borrowed
+  training windows only.
+
+## Populations and tiers
+
+| Population | Country | Test windows / units | Tier | Development windows | Source |
+|---|---|---|---|---|---|
+| BDG2 2017, building meters | USA / Europe | 474 / 142 | test | no | Miller et al., *Sci. Data* 2020, [doi:10.1038/s41597-020-00712-x](https://doi.org/10.1038/s41597-020-00712-x) |
+| University of Cambridge estate | UK | 730 / 108 | test | yes | Langtry & Choudhary 2024, [doi:10.5281/zenodo.10955332](https://doi.org/10.5281/zenodo.10955332) |
+| HEEW, Arizona State University | USA | 658 / 138 | test | yes | Dong et al., *Sci. Data* 2025, [doi:10.1038/s41597-025-06010-8](https://doi.org/10.1038/s41597-025-06010-8) |
+| EWELD industrial and commercial meters | China | 523 / 197 | test | yes | Liu et al., *Sci. Data* 2023, [doi:10.1038/s41597-023-02503-6](https://doi.org/10.1038/s41597-023-02503-6) |
+| GoiEner non-household supply points | Spain | 890 / 481 | test | no | Quesada et al., *Sci. Data* 2024, [doi:10.1038/s41597-023-02846-0](https://doi.org/10.1038/s41597-023-02846-0) |
+| GoiEner households | Spain | 696 / 696 | test | no | as above |
+| COFACTOR-SBHUB Oslo schools | Norway | 581 / 41 | preview | yes | Lien et al., *Data in Brief* 2025, [doi:10.1016/j.dib.2025.112288](https://doi.org/10.1016/j.dib.2025.112288) |
+| COFACTOR Drammen municipal buildings | Norway | 689 / 43 | preview | yes | Lien et al., *Sci. Data* 2025, [doi:10.1038/s41597-025-04708-3](https://doi.org/10.1038/s41597-025-04708-3) |
+| CINELDI industrial customers | Norway | 475 / 45 | preview | yes | Sandell et al., *Data in Brief* 2023, [doi:10.1016/j.dib.2023.109121](https://doi.org/10.1016/j.dib.2023.109121) |
+
+**Tiers.** The tier names are the first release's: `test` for its six test populations and `preview` for Oslo, Drammen
+and CINELDI (its fourth preview population, the Suzhou park, is not here). In ankyra-lite every population has its own
+training cut and test set and is scored in the same way; the tier says only how the tables group them. As in the first
+release, the error by forecast day, the energy through the month, the error blocks and the pooled rank tests cover the
+six test populations; every other table covers all nine.
+
+Test windows are the late windows of the first release: month-start origins at or after the training cutoff of its
+trained baselines, with a complete 1,344-hour context and 744-hour target and six completed pseudo-origins
+([DATA.md](DATA.md#two-kinds-of-windows)). CINELDI is scored on the corrected store, with true dates.
+
+## Baselines
+
+ankyra-lite is compared with **21 baselines** (22 forecasters in all): the 20 external baselines of the first release
+and LSTM-T-KAN-M, the multivariate LSTM-T-KAN model built from its authors' public code and their exp2 feature list
+([below](#lstm-t-kan-m)). All are ordinary baselines here, in every table and every rank.
+
+| Information | Forecasters (model id in the result files) |
+|---|---|
+| Given the first release's shared covariate set (11 past, 10 future, 6 static features; no observed future weather); each uses what its architecture accepts | the linear-context model (`TiDE`; trained), iTransformer-X (trained; no future covariates), GBT-T (trained gradient boosting on 21 derived features), Chronos-2-X (zero-shot; no static features), TimesFM-X (zero-shot; covariates through linear regression) |
+| Load and calendar, trained | LSTM-T-KAN-M (16 channels derived from the past load and the past calendar; no temperature) |
+| Load only, zero-shot foundation models | TimesFM 2.5 (`TimesFM`), Chronos-2 (`Chronos-2`) |
+| Load only, trained per population | DLinear, PatchTST, iTransformer, LSTM |
+| Load only, statistical | Holt–Winters (damped, additive, period 168 h), MSTL (24 h and 168 h) |
+| Calendar and climatological temperature | per-unit ridge regression refitted at every origin (`RIDGE-L`) |
+| Simple | previous-month (`SP-profile`), last-year (`LYR-profile`) and 4-week (`WeekProf4`) profiles; seasonal naive with a period of one day (`SN-day`) and one week (`SN-week`); a zero-shot gradient-boosting model (`GBT`) |
+
+The shared covariate set is the first release's: load; temperature (its climatology in the horizon); the load one year
+earlier (lag 8,736 h, always before the origin) with its availability mask; sines and cosines of hour, weekday and day
+of year; a non-working-day flag; the category (one-hot); the log ratio of the long-history to the recent mean.
+
+**Training of the first release's trained baselines** (unchanged; their saved forecasts are scored): one model per
+population across its units; all training targets end before the cutoff, which is the first month start at or after
+the population's median evaluation origin (the start of the test set here); learning rate chosen from
+{1e-4, 3e-4, 1e-3} on the last 20% of training origins; at most 15 epochs with patience 3; three seeds averaged; scored
+on the late windows only. Leakage checks (feature time indices, lag indices, normalisation statistics, training-target
+end) are assertions in the study's code.
+
+### LSTM-T-KAN-M
+
+LSTM-T-KAN is the LSTM model with a temporal Kolmogorov–Arnold network head of Shen, Yang, Song and Liang (2026,
+doi:10.1016/j.scsadv.2026.100065). **LSTM-T-KAN-M is its multivariate version: model and training code copied line by
+line from the authors' public repository (commit `ce24938`, MIT licence), plus the authors' exp2 feature list.** In
+detail:
+
+- **Model code.** The classes `KANLinear`, `KAN` and `LSTM_T_KAN` of the repository's `src/load_forecasting/models/` were
+  copied by hand, line by line (only whitespace and comments condensed), with the hyper-parameters of the authors'
+  `configs/exp2.yaml`: a one-layer LSTM (hidden 64) over a 132-hour input window; the last hidden state, after dropout
+  0.1, feeds a linear head 64 → 744 plus a gated KAN residual tanh(α) · KAN(tanh(h / 4)) (α initialised at 0.5; KAN
+  layers 64 → 128 → 64 → 744, grid 5, cubic splines, no grid update). 709,481 parameters.
+- **Training code.** The training loop follows the authors' `src/load_forecasting/training/trainer.py` of the same
+  commit: AdamW (weight decay 10⁻⁵), learning-rate halving on plateau of the validation loss (patience 3, minimum
+  10⁻⁵), gradient-norm clipping at 1.0, batch 64 (shuffled, last partial batch kept), mean squared error on the
+  normalised target, early stopping on the validation loss with the best weights restored.
+- **Feature list.** The 16 input channels of the authors' `configs/exp2.yaml`, in their order: load (`Power (kW)`);
+  maximum, median and minimum of the 24 hours ending at the hour, their range (`Peak_to_Peak`) and their RMS; the load
+  1, 2 and 9 hours earlier; the 95th and 5th percentiles of the 168 hours ending at the hour (`Near_peak_load`,
+  `Near_base_load`) and the number of the last 24 hours above / below them (`High_load_duration`,
+  `Base_load_duration`); the largest absolute level-2 Haar approximation coefficient of the last 24 hours
+  (`Approx_max`); `Hour` = cos(2π h / 23) as in the authors' `run_exp2.py`; `Is_holiday` = 1 on day type 7. Every channel
+  is computed from hours before the origin only (299 hours of load); M reads no temperature and no calendar of the
+  forecast days.
+- **Not a strict reproduction of the paper.** The repository was read only (nothing in it was executed or installed),
+  and the configuration differs from the paper and from the authors' code in the ten points below and in the training
+  budget of the dated amendment that follows them.
+
+| # | The paper / the authors' code | LSTM-T-KAN-M here | Reason |
+|---|---|---|---|
+| 1 | horizons of 1–30 days, one model per horizon, longest 720 steps | one model, all 744 steps in one forward pass | the 744-hour horizon of this evaluation |
+| 2 | one model per building (a Suzhou office) | one model per population, trained across its units | the first release's rule for its trained baselines; most units have too few windows before the cutoff |
+| 3 | Min-Max scaling fitted on the first 70% | per-unit z-score with mean and standard deviation from hours before the cutoff | a model shared by many units needs per-unit scaling; as for the other trained baselines |
+| 4 | 70 / 10 / 20 chronological split, stride-1 windows | the first release's cutoff, origin step 24 h, at most 16,000 training and 2,000 selection pairs | the first release's rule |
+| 5 | 3-point smoothing of the series (paper) | none | the evaluation targets are not smoothed |
+| 6 | up to 100 epochs, early-stopping patience 10 (authors' configuration and trainer) | at most 30 epochs, patience 8 (amendment below; the protocol first set 50 and 10) | the study lead's decision on the training budget, taken before any forecast was scored |
+| 7 | learning rate 10⁻⁴ (configuration) or 10⁻³ (paper text) | chosen from {10⁻⁴, 3 × 10⁻⁴, 10⁻³} by the lowest selection loss of seed 0 | the two sources disagree; the grid contains both and is the first release's grid |
+| 8 | a single run, seed 42 | the mean of seeds 0, 1 and 2 (clipped at zero) | the first release's rule |
+| 9 | pre-engineered feature columns (the input file is not public); per-horizon feature selection in the paper | one fixed list of the 16 exp2 channels; the definitions above are the study's reading of the column names, because the repository holds no feature-construction code; no weather (none is in the exp2 list) | the authors' feature code is not public |
+| 10 | validation windows drawn inside the validation split | the selection set is the last 20% of training origins by time; the training targets end before its first origin | the first release's rule |
+
+**Amendment of the training budget (same day as the protocol, before any forecast was scored).** At most 30 epochs and
+early-stopping patience 8, against the authors' 100 epochs and patience 10; everything else of the authors' recipe is
+unchanged. Of LSTM-T-KAN-M, only the BDG2 model had already been trained under 50 epochs and patience 10; replaying the
+30 / 8 rule on its recorded per-epoch selection curves left the selected learning rate and the best epochs of all three
+seeds unchanged (12, 10 and 16), so its forecast was kept byte for byte. All other populations were trained under
+30 / 8.
+
+- **Data protocol of the first release's panel.** One model per population across its units, the panel's training
+  cutoff and training pairs, all training and selection targets ending at or before the cutoff, scoring on the late
+  windows only. Because the authors' trainer needs a validation set for its schedule, early stopping and weight
+  restoration, the final seeds are trained on the training pairs only (the selection pairs take no gradient steps).
+- **Budget.** At most 30 epochs with patience 8, a plateau schedule and best-weight restoration: larger than that of
+  the release's other trained baselines (at most 15 epochs, patience 3).
+- **Ranks.** The study's protocol for this baseline kept the multivariate version in tables of its own, without a rank;
+  in this repository it is an ordinary baseline in every table and rank, as are the 20 others.
+- **CINELDI.** Like the first release's trained baselines that read the calendar (GBT-T, the linear-context model,
+  iTransformer-X), LSTM-T-KAN-M was retrained on the corrected CINELDI store with the same code, protocol,
+  learning-rate grid and seeds. Before the retrain, the same code run on the original store reproduced the stored
+  original-store forecast bit for bit. The retrain passed its checks (training cutoff 2021-04-01, the CINELDI test
+  start; selected learning rate 10⁻³; best epochs 14, 12 and 11 for seeds 0, 1 and 2), and its forecast is the one
+  scored in every CINELDI row; the column `flag` is empty on every row of every result file
+  (`populations` → `cineldi` → `extra_baselines` in `results/compare_baselines.json`).
+
+### The linear-context model (TiDE implementation)
+
+The first release's TiDE implementation ends its temporal decoder in a layer normalisation over a single output, which
+is constant. Its forecast is therefore a linear map of the 1,344-hour load context plus a constant, and its covariates
+have no effect. It keeps the model id `TiDE` in the result files, is labelled `Linear-context (TiDE implementation)`,
+and was not retrained. It remains among the five baselines given the shared covariate set because it received them.
+
+### The corrected GBT-T
+
+GBT-T is the first release's own gradient-boosting implementation. Its first version normalised each window by its own
+context scale with a floor that exploded on flat or all-zero contexts; the scores here are of the corrected version,
+which uses the unit's pre-cutoff standard deviation only where the floor was active. On EWELD its per-window scaling
+still overshoots on many windows, so read GBT-T's EWELD result as a limit of that design.
+
+### What each side may know
+
+- **ankyra-lite** uses only pre-origin load and temperature, the forecast month's calendar, the category and a
+  temperature-anomaly scale fitted before the training cut ([METHOD.md](METHOD.md#information-at-the-origin)). Its
+  carrier's newest training label ends at least 186 days and 24 hours before the first test origin.
+- **The trained baselines** are fitted on targets that end before the test start: up to half a year more recent than
+  ankyra-lite's carrier. The 186-day gap is what lets the anchoring layer score the carrier out of sample at six
+  pseudo-origins; it is a structural disadvantage for ankyra-lite in recency, not an advantage.
+- **The covariate-informed baselines** receive future temperature only as its climatological expectation, never as
+  observed weather.
+- **LSTM-T-KAN-M** reads the last 299 hours of load and the calendar of those hours; it has no temperature, no
+  calendar of the forecast month and a shorter context than ankyra-lite.
+- **The zero-shot foundation models** have no local training; their pretraining corpora are the one exposure no
+  forecaster here controls.
+
+## Estimands
+
+The estimands, intervals and random streams are those of the first release.
+
+- **Unit-equal log RMS ratio (primary).** For unit i, R_i is the RMS of its hourly errors over its test windows, and
+  r = N⁻¹ Σ_i log(R_i^lite / R_i^baseline). It is reported as the improvement 100[1 − exp(r)]; positive favours
+  ankyra-lite. A unit whose error is exactly zero for either forecaster has no finite log ratio and drops out of that
+  contrast.
+- **Intervals.** 95% intervals from 2,000 bootstrap replicates that resample units and target-midpoint months
+  independently (unit × month). A contrast is *resolved* when its interval excludes zero; *not resolved* does not mean
+  equally good. Every hourly contrast draws from a fresh generator with the study's seed; the energy contrasts of one
+  population share one generator (models in sorted order); every peak contrast draws from a fresh generator.
+- **Mean per-unit rank.** The 22 forecasters are ranked within each unit by RMSE (rounded to 12 decimals, ties
+  averaged); the mean over units is reported, and the position is 1 + the number of forecasters with a lower mean rank.
+  It stays defined where some units have exactly zero error.
+- **Pooled MSE ratio.** The ratio of the two forecasters' mean squared errors over all windows; large units weigh more.
+- **Why several summaries.** Pooled and unit-equal summaries can disagree in sign for an algebraic reason (P19 in
+  [theory/PROOFS.md](../theory/PROOFS.md)), and absolute-error metrics favour median-type forecasts while squared-error
+  metrics favour mean-type ones. No single summary is reported alone.
+
+## How each table is scored
+
+Every table reads ankyra-lite's anchored forecast (its delivered trajectory, its level and peak readouts and its state
+flags) and the saved forecasts of the 21 baselines on the same test windows; nothing is trained or tuned for the
+comparison.
+
+| Quantity | Definition | File |
+|---|---|---|
+| Hourly contrasts | the primary estimand on the hourly errors over the 744 hours | `benchmark_pairwise.csv` |
+| Mean per-unit rank | as above, 22 forecasters | `benchmark_mean_unit_rank.csv` |
+| Rank tests | per-unit RMSE (unrounded), units as blocks: Friedman's test of equal ranks, the Nemenyi critical difference at 5%, paired Wilcoxon signed-rank tests of ankyra-lite against each baseline with Holm's correction; per population and for the six test populations pooled (units concatenated). Computed after scoring; descriptive | `rank_tests.csv` |
+| Conventional metrics | RMSE and MAE (mean over units, kW); CV(RMSE), NMBE and WAPE (median over units, %); WAPE pooled over windows; units with a mean load below 10⁻⁶ kW are left out of the ratio metrics | `conventional_metrics_late.csv` |
+| Scaled errors | each window's RMSE and MAE divided by the in-sample error of the weekly seasonal naive (lag 168 h) over its 1,344-hour context; median and geometric mean over units; windows with a zero scale left out. Descriptive | `scaled_errors.csv` |
+| Error by forecast day | for unit u and day d, the RMSE of that day's 24 hours over the unit's windows, in % of the unit's mean load; geometric mean over one fixed set of units whose daily errors are nonzero for all 22 forecasters (so the ratio of two curves on day d is the primary estimand restricted to that day); also unit-mean RMSE and MAE and median-unit CV(RMSE) and normalised MAE. Six test populations | `lead_day_metrics.csv` |
+| Energy through the month | the error of the energy of each day, and of the energy delivered from day 1 through day d, with the same aggregation; day 31 is the monthly energy error. Six test populations | `lead_day_energy.csv` |
+| Monthly energy | the primary estimand on the monthly energy error, 744 × the error of the window mean of the delivered trajectory (the first release's definition, applied to every forecaster); the median-unit absolute percentage energy error of each forecaster; BDG2 also without the three near-zero meters. A sensitivity replaces ankyra-lite's trajectory mean by its level readout (they differ only where the nonnegativity projection binds). Nine populations | `energy_error.csv` |
+| Error blocks | the hourly squared error of every window splits exactly into a level, a daily-path and a within-day part (P1); the share of each block, pooled and at the median unit, and ankyra-lite's contrast with TimesFM and with Chronos-2-X within each block. Six test populations; descriptive | `block_shares.csv` |
+| Peak readout | below | `peak_readout.csv` |
+
+**Peak readout rule.** ankyra-lite's peak readout is the anchoring layer's envelope operator on the daily means of its
+delivered trajectory (plus, for each day, the largest recent excursion of the same day type; the readout on the
+seasonal naive on state windows). The first release's rule compares it with **the same readout applied to each
+baseline's trajectory**, so that both sides use the same operator (`same readout on X`). The file also holds the
+contrast with each baseline's own trajectory maximum (`trajectory maximum of X`), with ankyra-lite's own trajectory
+maximum, and with the previous window's observed peak (the maximum of the last 744 context hours). The error is the
+absolute peak error; the estimand is the unit-equal log ratio on it.
+
+**Further tables** (ankyra-lite against versions of itself, its parts, its seeds, other carriers in the same anchoring
+layer, the history length, the anchoring record, the training curves, the recipe study, perturbed contexts, the
+constants and the cost) are described file by file in [results/README.md](../results/README.md). The rows of
+switched-off parts of the anchoring layer re-run the unchanged anchoring layer on the saved carrier forecasts
+(`evaluation/lite_reanchor.py`); the re-run of the three-seed ensemble must reproduce the evaluated forecast bit for bit
+before any of them is used. The rows of single seeds read each seed's stored anchored product; re-anchoring seed 0 on
+the first 8 test windows of each population must reproduce it bit for bit.
+
+## State windows and the three near-zero BDG2 meters
+
+On a window where the anchoring layer's off-state rule (the last 168 observed hours at most 10⁻⁶ kW) or micro-load rule
+(all 1,344 context hours within 10⁻³ kW of zero) fires, ankyra-lite delivers the weekly seasonal naive: the last
+168 hours repeated, missing hours as 0 ([METHOD.md](METHOD.md#state-windows-and-the-seasonal-naive-rule)). The rules
+read only the load context, so the same windows are state windows for every recipe: 33 of the 474 BDG2 test windows,
+13 of 890 on GoiEner non-household, 35 of 696 on the households and 245 of 523 on EWELD; none on the other five
+populations. The context of a test window is complete, so on these windows ankyra-lite's forecast equals that of the
+`SN-week` baseline.
+
+**The three near-zero BDG2 meters.** Three BDG2 meters (Lamb_education_Harold, Lamb_education_Hillary, Lamb_office_Jo)
+read 0.0002–0.0003 kW in every window and hold 10 of the 474 test windows. The micro-load rule fires on all of them, and
+the seasonal naive repeats the meter's constant reading, so ankyra-lite's error there is exactly zero. Consequences:
+
+- the unit-equal contrasts need a nonzero error on both sides, so these meters drop out of them: the BDG2 point
+  estimates with and without them are equal, and only the intervals differ (12 of the 21 hourly contrasts are
+  resolved better with them, 10 without; PatchTST and iTransformer-X are the two that are not resolved without them);
+- they count in the mean per-unit rank, where ankyra-lite shares the lowest error (RMSE rounded to 12 decimals, ties
+  averaged) with the forecasters that also repeat the constant reading, such as `SN-week`: its mean unit rank is 5.345
+  on all 142 units and 5.367 on the 139 without them, first of 22 in both cases;
+- in contrasts of the carrier alone, which has no state rule, they can dominate the BDG2 unit means, because the
+  carrier's error there is not zero while some baselines' errors are near zero.
+
+`bdg2_near_zero_sensitivity.csv` gives the BDG2 contrasts and ankyra-lite's mean rank with and without them;
+`energy_error.csv` and `seed_spread.csv` carry BDG2 rows without them.
+
+## Intervals
+
+ankyra-lite does not produce an interval of its own. For a description, the evaluation applies the anchoring layer's
+interval readout of the first release, unchanged, and places it around ankyra-lite's delivered trajectory:
+
+- the residuals are those of the **history-only forecaster** (historical level and daily path with the same-day-type
+  within-day default, no carrier) at up to 12 completed pseudo-origins of the unit; they do not depend on the carrier;
+- each residual is divided by its pseudo-window's origin scale, and the residuals are pooled by hour of day and workday
+  status; their empirical quantiles (levels 0.05, 0.1, 0.5, 0.9, 0.95), multiplied by the scale at the origin, are added
+  to ankyra-lite's delivered trajectory. The band is placed around the trajectory but is not symmetric about it, because
+  the residual quantiles of the history-only forecaster need not straddle zero;
+- they are compared with the native quantiles of TimesFM 2.5 (0.1, 0.5, 0.9) and Chronos-2 (0.05 to 0.95): coverage at
+  80% and 90%, by forecast week, width, pinball losses and the 80% Winkler score, whose unit-equal contrasts use the same
+  bootstrap as above.
+
+The interval was designed for the first release's forecaster and not re-designed or re-tuned for this carrier; its
+numbers are descriptive. On units that switch off (EWELD in particular) its residuals are divided by a scale at its
+floor, and its width carries no information.
+
+## Why the recipe returns the validation span
+
+The recipe was the last part of ankyra-lite to be fixed. Its first stage (training from scratch with early stopping on
+the fixed 93-day validation span) took 23.7–38.3% of the own windows of the three short-record populations out of
+training, and with them the season that part of their test months needed
+([DATA.md](DATA.md#training-validation-and-test-sets)). The study compared three continuations of the same stage-1
+checkpoints (three seeds each, on the test windows of all nine populations, Drammen and CINELDI on the corrected store).
+The codes in the last column are the values of `first_arm` and `second_arm` in
+[`results/recipe_history.csv`](../results/README.md#recipe-history):
+
+| Arm | What it does | Code |
+|---|---|---|
+| from-scratch stage alone | stage 1 only: the 93-day validation set held out, early stopping (at most 30 epochs, patience 5) | `P3s` |
+| plain continuation (control) | stage 1, then 8 more epochs with a fresh optimiser, the validation set still held out, final weights kept | `F` |
+| span return (**released**) | as the plain continuation, plus the validation span returned to the training set at the population's own sampling density (labels ending within 24 hours of the cut not returned) | `R` |
+| proportional validation set | stage 1, then a continuation with a validation span of 10% of the population's record (clipped to 38–93 days) and early stopping (the start weights count as epoch 0; at least 5, at most 30 epochs, patience 5) | `V` |
+
+**Status.** The plan and its predictions were written before the one reading of the arms; the test windows had been
+read many times before, so the reading gives directions and is not a confirmation. The plan predicted a gain on the
+*switch layer* (the test windows of the three short-record populations whose target month had no same-season training
+labels before the span is returned and has them after it: 150 BDG2, 406 GoiEner non-household and 415 household
+windows), a smaller gain on the three populations pooled, and about zero on their other test windows (the *non-switch
+layer*); its numeric ranges are in the study's plan, not in this repository. Estimand: the unit-equal log RMS ratio,
+pooled over populations with each population equally weighted. Interval: the unit × month bootstrap of the three-seed
+ensembles combined with the spread of the three single-seed contrasts (Welch 95%). Positive favours the first-named arm.
+Every number below is a row of `results/recipe_history.csv`, copied unrounded there from the study's scoring record.
+
+| Reading (hourly unless stated) | Span return against the plain continuation (`R vs F`) |
+|---|---|
+| Three short-record populations pooled (primary) | +1.17% [−0.64, +2.94], not resolved; all three seeds positive (+2.11, +1.11, +0.92); BDG2 +0.54, GoiEner non-household +2.21, households +0.74 |
+| Their switch layer | **+3.11% [+0.98, +5.21], resolved**; positive on every seed (+4.19, +3.54, +2.49) and population (BDG2 +2.80, GoiEner non-household +5.18, households +1.32) |
+| Their non-switch layer | −0.52% [−2.08, +1.02], not resolved |
+| Nine populations pooled | +0.11% [−0.82, +1.03], not resolved |
+| Six populations with development windows | −0.42% [−1.22, +0.37], not resolved |
+| **Six populations with development windows, forecast days 2–7** | **−1.35% [−2.43, −0.28], resolved against the span return** (Drammen −4.35, Oslo −2.05, CINELDI −1.60, HEEW −0.65, Cambridge +0.04, EWELD +0.41) |
+| **Drammen** (per-population point estimate, no interval) | **−2.90%**; monthly energy −8.76% (from the level readout and from the delivered trajectory alike); peak −4.24% |
+| Three short-record populations: monthly energy, peak | energy +3.95% [−3.93, +11.23] from the delivered trajectory (+4.09% [−3.67, +11.28] from the level readout); peak +0.67% [−3.88, +5.02]; none resolved |
+| Nine populations: hourly, monthly energy, peak (the plan's checks) | +0.11% [−0.82, +1.03]; +0.32% [−3.30, +3.81] (delivered trajectory); −0.61% [−2.52, +1.27]; every interval contains zero |
+
+- **The span return is not uniformly better.** Its gain is concentrated where the training set lacked the season of
+  the test month, as predicted; pooled over all nine populations it is not distinguishable from the plain
+  continuation, it is worse on Drammen (the largest point loss, in hourly error, energy and peak), and over the six
+  populations with development windows it is resolvably worse on forecast days 2–7. These losses are part of the
+  released recipe.
+- **The mechanism is not isolated.** Returning the span adds same-season data, but it also changes the recency of the
+  training data, the diversity of the samples and the replay of older windows. The readings support the season
+  explanation; they do not prove it.
+- **The proportional validation set brought no gain.** Three short-record populations +0.39% [−0.89, +1.65] against
+  the plain continuation, not resolved; on the four long-record populations, where it keeps the 93-day span and differs
+  from the plain continuation only in epoch selection and budget, −0.35% [−1.15, +0.43] (not resolved). On the switch
+  layer it is resolvably worse than the span return (−2.15% [−3.96, −0.36]), and on the non-switch layer its peak
+  readout is resolvably worse than the span return's (−4.92% [−9.52, −0.52]). Its early stopping counts the start
+  weights as epoch 0, and on BDG2 it kept them for every seed: its three-seed forecast there equals that of the
+  from-scratch stage (`V vs P3s`, BDG2: exactly 0.0%).
+- **Continuation alone.** Against the from-scratch stage alone, nine populations pooled (unit × month interval only, no
+  seed layer; descriptive): plain continuation +0.97% [+0.55, +1.52], span return +1.08% [+0.36, +1.86], proportional
+  validation set +0.86% [+0.56, +1.32]. Pooled over the nine populations, most of the difference between the released
+  recipe and the from-scratch stage comes from training longer, not from the returned span; on the three short-record
+  populations the span return against the from-scratch stage is +1.77% [−0.03, +3.36] and the plain continuation
+  +0.61% [−0.03, +1.48]. On Drammen the span return is 2.30% worse than the from-scratch stage alone (per-population
+  point estimate).
+
+**Decision.** The author chose the span return on 19 October 2026, with the disclosure of the Drammen loss and of the
+resolved loss on forecast days 2–7 above. It is a rule applied identically to every population (train, select the
+stopping epoch, then use all pre-cut data), not a per-population choice.
+
+Figure [18](../figures/fig18_recipe_history.png) shows the readings of the recipe study.
+
+## Results
+
+Every number of this section is a row of a file in [`results/`](../results/README.md), written by the full
+regeneration with the released recipe (each block names its file); [`results/SUMMARY.md`](../results/SUMMARY.md) is
+the readable summary of the same run. All of them re-evaluate test windows that had been read before
+([above](#identity-of-the-evidence)). Improvements are 100[1 − exp(r)] of the unit-equal log RMS ratio, positive in
+favour of ankyra-lite; `*` marks a contrast resolved in favour of ankyra-lite (the 95% unit × month interval lies
+below zero) and `(−)` one resolved against it.
+
+### Overview
+
+Resolved better / resolved worse, out of the 21 baselines (`benchmark_pairwise.csv`, `energy_error.csv`,
+`peak_readout.csv`; ranks from `benchmark_mean_unit_rank.csv`; state windows and the level-readout sensitivity from
+`compare_baselines.json`):
+
+| Population | Windows / units | State windows | Rank of 22 (mean unit rank) | Hourly | Energy | Energy (level readout) | Peak (same readout) | Peak (vs the baseline's trajectory maximum) |
+|---|---|---:|---|---|---|---|---|---|
+| BDG2 2017 | 474 / 142 | 33 | 1 (5.35) | 12 / 0 | 4 / 0 | 4 / 0 | 4 / 0 | 17 / 0 |
+| GoiEner non-household | 890 / 481 | 13 | 1 (5.42) | 14 / 0 | 14 / 0 | 14 / 0 | 1 / 0 | 18 / 0 |
+| GoiEner households | 696 / 696 | 35 | 1 (5.49) | 17 / 2 | 17 / 0 | 17 / 0 | 11 / 0 | 21 / 0 |
+| Cambridge | 730 / 108 | 0 | 1 (3.23) | 21 / 0 | 20 / 0 | 20 / 0 | 10 / 0 | 21 / 0 |
+| HEEW Arizona | 658 / 138 | 0 | 1 (5.56) | 12 / 0 | 5 / 0 | 5 / 0 | 5 / 0 | 16 / 0 |
+| EWELD | 523 / 197 | 245 | 1 (7.02) | 13 / 0 | 6 / 0 | 6 / 0 | 6 / 0 | 19 / 0 |
+| Oslo | 581 / 41 | 0 | 1 (1.76) | 20 / 0 | 19 / 0 | 19 / 0 | 17 / 0 | 17 / 0 |
+| Drammen | 689 / 43 | 0 | 1 (2.14) | 20 / 0 | 9 / 0 | 9 / 0 | 6 / 1 | 19 / 0 |
+| CINELDI | 475 / 45 | 0 | 1 (3.36) | 20 / 0 | 11 / 0 | 11 / 0 | 3 / 0 | 19 / 0 |
+
+- **Rank.** ankyra-lite has the lowest mean per-unit rank of the 22 forecasters on all nine populations. The next
+  forecaster is the per-unit ridge on BDG2 (6.91), GoiEner households (7.06) and CINELDI (5.67), iTransformer on
+  GoiEner non-household (7.15), iTransformer-X on Cambridge (5.98), Chronos-2-X on HEEW (6.78) and Drammen (3.58),
+  TimesFM on EWELD (8.17) and GBT-T on Oslo (2.71).
+- **Hourly.** The only resolved losses are on the GoiEner households, to TimesFM (−5.6%) and Chronos-2-X (−3.8%). The
+  resolved gains range from +3.4% (the per-unit ridge, households) to +54.2% (Oslo). On Oslo the one contrast that is
+  not resolved is GBT-T (+3.4%); on Drammen and CINELDI it is Chronos-2-X (+5.0%, +6.0%).
+- **Energy** (the monthly energy error of the delivered trajectory, the first release's definition): no resolved loss
+  on any population. Replacing the trajectory's mean by ankyra-lite's level readout gives the same counts; the two
+  differ only where the nonnegativity projection binds (BDG2 1, GoiEner non-household 142, households 29, Cambridge 9,
+  EWELD 21, Drammen 2, CINELDI 33 windows; none on HEEW and Oslo). By the median-unit absolute percentage energy error
+  ankyra-lite is first of 22 on GoiEner non-household (11.85%), the households (13.22%), Cambridge (4.55%), Oslo
+  (7.80%) and Drammen (8.96%), third on BDG2, fourth on CINELDI, fifth on HEEW and sixth on EWELD
+  (`energy_error.csv`).
+- **Peak.** Against the same readout on each baseline's trajectory (the first release's rule), the one resolved loss
+  is to GBT-T on Drammen (−10.9%). Against each baseline's own trajectory maximum the readout is resolved better on
+  16–21 of the 21 per population and worse on none, and against ankyra-lite's own trajectory maximum it is resolved
+  better on eight populations (+30.8% to +67.9%; Oslo +18.1%, not resolved). Against the previous window's observed
+  peak it is resolved better on Oslo (+27.4%) and resolved worse on CINELDI (−20.4%); elsewhere not resolved, from
+  −35.8% (GoiEner non-household) to +15.4% (Drammen).
+
+Figures [2](../figures/fig2_test_ranks.png) (ranks and head-to-head counts), [3](../figures/fig3_test_pairwise.png)
+(hourly contrasts with intervals), [11](../figures/fig11_energy_error.png) (monthly energy),
+[5](../figures/fig5_peak_operator.png) (peak readout) and [12](../figures/fig12_consistency.png) (position on every
+population); [figures/README.md](../figures/README.md) lists each figure's source files.
+
+### Against the zero-shot foundation models
+
+Improvement in % (`benchmark_pairwise.csv`, `energy_error.csv`, and `peak_readout.csv` with the same readout):
+
+| Population | Hourly vs TimesFM | Energy vs TimesFM | Peak vs TimesFM | Hourly vs Chronos-2-X | Energy vs Chronos-2-X | Peak vs Chronos-2-X |
+|---|---|---|---|---|---|---|
+| BDG2 2017 | −1.0 | +12.0 | +5.3 | −5.8 | +0.1 | +1.2 |
+| GoiEner non-household | +2.8 | +19.7 * | +0.1 | −2.4 | +11.9 | +2.7 |
+| GoiEner households | −5.6 (−) | +36.4 * | +11.0 * | −3.8 (−) | +36.4 * | +12.5 * |
+| Cambridge | +14.2 * | +23.1 * | +10.4 | +8.7 * | +18.2 * | +4.9 |
+| HEEW Arizona | +1.1 | −1.6 | −1.7 | −0.7 | −2.4 | −0.5 |
+| EWELD | +1.4 | −5.3 | +5.7 | +4.0 | +14.7 | +3.5 |
+| Oslo | +23.4 * | +35.4 * | +17.1 * | +15.0 * | +21.0 * | +7.9 |
+| Drammen | +18.9 * | +25.7 * | +14.3 | +5.0 | −0.1 | −1.4 |
+| CINELDI | +9.8 * | +21.2 * | +5.2 | +6.0 | +15.4 | +5.8 |
+
+On BDG2, GoiEner non-household, HEEW and EWELD no hourly contrast with the four zero-shot variants (TimesFM,
+TimesFM-X, Chronos-2, Chronos-2-X) is resolved, and several point estimates are negative (BDG2 against Chronos-2-X
+−5.8%, EWELD against Chronos-2 −0.4%). On the households the energy contrasts are resolved in favour of ankyra-lite
+against all four variants (+32.6% to +37.1%), and the hourly ones against it for TimesFM and Chronos-2-X (Chronos-2
+−3.8% and TimesFM-X −1.9% are not resolved).
+
+### Rank tests
+
+Per-unit RMSE, units as blocks (`rank_tests.csv`; computed after scoring, descriptive):
+
+- **Six test populations pooled** (1,762 units): Friedman p < 10⁻³⁰⁰; Nemenyi critical difference 0.786;
+  ankyra-lite's mean rank 5.496 of 22, against 7.438 for the next forecaster (the per-unit ridge) and 8.556 for the
+  third (iTransformer-X), a gap larger than the critical difference. Holm-corrected Wilcoxon tests find it better than
+  all 21 baselines and worse than none.
+- **Per population** it is significantly better than 21 of the 21 baselines on eight populations and than 20 on HEEW
+  (Chronos-2-X is not significantly different there); no baseline is significantly better on any population.
+
+Figure [15](../figures/fig15_rank_tests.png) shows the pooled mean ranks with the critical difference and the paired
+tests per population.
+
+### Conventional metrics
+
+ankyra-lite's position among the 22 forecasters (`conventional_metrics_late.csv`; RMSE and MAE are unit means in kW,
+CV(RMSE) and WAPE are taken at the median unit):
+
+| Metric | BDG2 | GoiEner NH | GoiEner HH | Cambridge | HEEW | EWELD | Oslo | Drammen | CINELDI |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| RMSE (unit mean) | 1 | 1 | 1 | 1 | 2 | 2 | 1 | 1 | 1 |
+| MAE (unit mean) | 2 | 2 | 5 | 1 | 5 | 4 | 1 | 1 | 5 |
+| CV(RMSE) (median unit) | 3 | 1 | 1 | 1 | 1 | 3 | 1 | 1 | 1 |
+| WAPE (median unit) | 2 | 4 | 5 | 1 | 4 | 4 | 1 | 1 | 2 |
+| WAPE (pooled) | 3 | 3 | 5 | 1 | 5 | 6 | 1 | 1 | 5 |
+
+The forecasters ahead of it are mostly the zero-shot foundation models (Chronos-2-X, Chronos-2, TimesFM, TimesFM-X).
+GBT-T is ahead on BDG2's CV(RMSE), on HEEW's RMSE, MAE and pooled WAPE and on CINELDI's MAE and pooled WAPE; the
+per-unit ridge on BDG2's pooled WAPE, the daily seasonal naive on EWELD's pooled WAPE, the four-week profile on
+CINELDI's MAE and iTransformer on CINELDI's pooled WAPE. MAE and WAPE are minimised by the median of the predictive distribution, squared-error
+metrics by its mean; ankyra-lite's carrier is trained, and the anchoring weights are estimated, on squared error.
+
+Figure [8](../figures/fig8_loss_metrics.png) shows the four losses of every forecaster on every population.
+
+### By forecast day and energy through the month
+
+Six test populations, 22 forecasters (`lead_day_metrics.csv`: each day's CV(RMSE) over its 24 hours, geometric mean
+over a fixed set of units; `lead_day_energy.csv`: the error of the energy delivered from day 1 through day d, day 31
+being the monthly energy):
+
+| | BDG2 | GoiEner NH | GoiEner HH | Cambridge | HEEW | EWELD |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| hourly loss: position on day 1 | 15 | 4 | 7 | 6 | 10 | 8 |
+| hourly loss: days of 31 on which it is lowest | 4 | 0 | 0 | 24 | 6 | 1 |
+| hourly loss: worst position on any day | 15 | 7 | 7 | 6 | 10 | 11 |
+| energy to date: days of 31 on which it is lowest | 6 | 8 | 6 | 24 | 5 | 0 |
+| energy to date: position on day 31 | 1 | 1 | 1 | 1 | 1 | 8 |
+| energy to date: days 8–31 below all four zero-shot variants (of 24) | 6 | 15 | 24 | 24 | 5 | 0 |
+
+- **The first days of the month are its weakest.** On day 1 zero-shot foundation models are ahead of it on every
+  population (all four variants on five populations; Chronos-2-X, Chronos-2 and TimesFM on GoiEner non-household), and
+  on every population except GoiEner non-household trained baselines are ahead as well (on BDG2 ten other
+  baselines besides the four variants).
+- **After the first week** its hourly loss is the lowest on 23 of the 24 days from day 8 on Cambridge, on 6 on HEEW, 4
+  on BDG2 and 1 on EWELD, and on none on either GoiEner population.
+- **Energy.** The cumulative energy error at day 31 is the lowest of the 22 on five of the six populations; on EWELD it
+  is eighth, behind PatchTST, TimesFM-X, Chronos-2, TimesFM, the weekly seasonal naive, iTransformer and the per-unit
+  ridge. From day 8 it stays below all four zero-shot variants on every day on the households and Cambridge.
+
+Figures [9](../figures/fig9_loss_by_day.png) (hourly loss by day), [9b](../figures/fig9b_energy_by_day.png) (energy to
+date) and [10](../figures/fig10_loss_by_day_relative.png) (each baseline relative to ankyra-lite).
+
+### Error blocks and scaled errors
+
+- `block_shares.csv` (six test populations, descriptive): the hourly squared error splits exactly into level, daily
+  path and within-day blocks. Pooled over windows, the within-day block carries 69.0% of ankyra-lite's error on the
+  households, 63.5% on Cambridge and 55.4% on GoiEner non-household; the level block the largest share on EWELD
+  (50.7%) and HEEW (38.5%); the daily path on BDG2 (43.2%). Against TimesFM by block, ankyra-lite is better in the
+  level on BDG2 (+12.0%), GoiEner non-household (+19.7%), the households (+36.4%) and Cambridge (+23.1%) and worse in
+  the level on HEEW (−1.6%) and EWELD (−5.3%); on the households its hourly deficit sits in the daily path (−9.3%) and
+  the within-day block (−4.6%). The block contrasts carry no interval.
+- `scaled_errors.csv` (descriptive): by median-unit RMSSE (weekly seasonal-naive in-sample scale) ankyra-lite is first
+  on six populations (the households, Cambridge, HEEW, Oslo, Drammen, CINELDI), second on GoiEner non-household, third
+  on BDG2 and fourth on EWELD. By median-unit MASE, an absolute-error scale, it is first on Cambridge, Oslo and
+  Drammen, second on CINELDI and fifth or sixth on the other five.
+
+Figure [14](../figures/fig14_block_attribution.png) shows the block shares and the block contrasts.
+
+### Intervals around ankyra-lite
+
+The anchoring layer's interval placed around ankyra-lite's trajectory (descriptive; [above](#intervals);
+`intervals_by_population.csv`, `intervals_winkler_contrasts.csv`, `intervals_households.json`):
+
+- **Coverage of the 80% band:** 0.758 (BDG2) to 0.851 (Oslo), against 0.345 to 0.606 for TimesFM's native quantiles
+  and 0.629 to 0.804 for Chronos-2's.
+- **80% Winkler score.** Against TimesFM's native interval it is resolved better on six populations (+6.3% on the
+  households to +21.2% on Oslo) and worse on none; against Chronos-2's it is resolved better on Oslo (+4.7%) and
+  resolved worse on EWELD (−40.0%), GoiEner non-household (−9.9%) and CINELDI (−4.7%). On EWELD the band's width
+  carries no information (mean 80% width 388,322 kW, from units that switch off).
+- **Households.** The same interval around the carrier alone instead of ankyra-lite changes the Winkler score by
+  0.15% (not resolved): the interval comes from the history-only residuals, not from the carrier.
+
+Figures [13](../figures/fig13_intervals.png) (households) and [16](../figures/fig16_intervals_populations.png) (coverage
+on every population and by forecast week).
+
+### What the parts add
+
+Hourly improvement of ankyra-lite over the version without the part (`component_contributions.csv`, `ablation.csv`;
+"identical": the two forecasts are the same on every window):
+
+| Part | BDG2 | GoiEner NH | GoiEner HH | Cambridge | HEEW | EWELD | Oslo | Drammen | CINELDI |
+|---|---|---|---|---|---|---|---|---|---|
+| the whole anchoring layer (against the carrier alone) | +3.2 * | +3.5 | −1.0 | +0.3 | +1.4 | +1.2 | +0.0 | +0.4 | +2.6 * |
+| the carrier inside the anchoring layer (against the history-only configuration) | +6.4 * | +19.5 * | +11.1 * | +13.8 * | +12.6 * | +16.6 * | +20.5 * | +15.3 * | +5.4 * |
+| within-day anchoring | +0.9 * | +3.2 * | −0.1 | +0.5 * | +0.9 * | −0.0 | +0.5 * | +1.0 * | +1.2 * |
+| seasonal-naive state rule | +0.2 | −0.0 | +0.3 | identical | identical | +2.6 | identical | identical | identical |
+| three-seed ensemble (against one seed, mean of three contrasts) | +0.8 | +0.8 | +0.3 | +1.5 | +1.9 | +0.6 | +1.8 | +1.4 | +0.8 |
+| released recipe (against the from-scratch stage alone) | +1.2 | +2.7 | +1.4 * | +1.7 * | +0.9 * | +1.1 | +2.2 * | −2.3 | +0.8 |
+| span return (against the plain continuation) | +0.5 | +2.2 | +0.7 | +0.5 | −0.2 | −0.3 | +0.1 | −2.9 (−) | +0.3 |
+
+- **Anchoring the carrier.** Contrast (i), the whole anchoring layer against the carrier alone, is resolved on two
+  populations in hourly error and on one in monthly energy (CINELDI +7.8%); on the households it is −1.0% (not
+  resolved). Contrast (ii), against the history-only configuration, is resolved on all nine in hourly error (+5.4% to
+  +20.5%) and on four in monthly energy (Cambridge +18.5%, HEEW +13.2%, EWELD +33.2%, Oslo +21.4%).
+- **Small switches.** One within-day trust value per window, the short-gap rule and the micro-load rule each change the
+  hourly error by at most 0.2%. The state rule matters only where state windows exist; on GoiEner non-household it
+  costs monthly energy (−0.9%, resolved against it).
+- **Intervals of these rows** resample units and months only. The two recipe rows have no seed layer here; the Welch
+  intervals with the seed layer are those of [the recipe study](#why-the-recipe-returns-the-validation-span).
+- **Earlier carriers** (`ablation.csv`; eight populations, none on the corrected CINELDI store): against the same
+  network without the copy pointer on the from-scratch recipe, ankyra-lite is better by +1.2% to +3.7% on seven
+  populations (resolved on Cambridge, HEEW and Oslo) and −0.3% on Drammen; against the earlier structured network
+  without the pointer, trained on weekly windows, by +1.1% to +10.4% (resolved on six).
+
+Figure [4](../figures/fig4_ablation.png) shows these and the other rows of `ablation.csv`.
+
+### Seeds
+
+`seed_spread.csv`: the hourly contrast against TimesFM of the anchored forecast of each seed's carrier, and of the
+three-seed ensemble:
+
+| Population | Seed 0 | Seed 1 | Seed 2 | Ensemble |
+|---|---|---|---|---|
+| BDG2 2017 | −1.6 | −3.6 | −0.4 | −1.0 |
+| GoiEner non-household | +3.3 | +1.7 | +1.2 | +2.8 |
+| GoiEner households | −6.3 (−) | −5.6 (−) | −6.0 (−) | −5.6 (−) |
+| Cambridge | +13.4 * | +12.8 * | +12.3 * | +14.2 * |
+| HEEW Arizona | +0.6 | +0.4 | −3.5 | +1.1 |
+| EWELD | +0.9 | +0.8 | +0.5 | +1.4 |
+| Oslo | +23.0 * | +20.5 * | +22.4 * | +23.4 * |
+| Drammen | +17.5 * | +20.2 * | +15.7 * | +18.9 * |
+| CINELDI | +9.0 * | +8.7 * | +9.4 * | +9.8 * |
+
+The three seeds' contrasts differ by up to 4.5 points (Drammen; HEEW 4.2); the verdict is the same for every seed and
+the ensemble on every population. The spread across seeds is the only measure of retraining noise in `results/`; the
+intervals of the main tables do not include it.
+
+### Other carriers in the same anchoring layer
+
+`carriers_in_anchoring_layer.csv`: the same anchoring layer with three other trained carriers, trained on their own
+population only with the same training cut as the small carrier (on state windows the layer returns their own
+forecasts). Populations, of nine, resolved better / not resolved / resolved worse:
+
+| Carrier | (i) anchored vs carrier alone, hourly | (i) energy | (ii) anchored vs history only, hourly | (ii) energy | ankyra-lite vs the anchored carrier, hourly | energy |
+|---|---|---|---|---|---|---|
+| small carrier network (ankyra-lite) | 2 / 7 / 0 | 1 / 8 / 0 | 9 / 0 / 0 | 4 / 5 / 0 | — | — |
+| LSTM | 8 / 1 / 0 | 6 / 3 / 0 | 3 / 5 / 1 | 0 / 7 / 2 | 9 / 0 / 0 | 5 / 4 / 0 |
+| PatchTST | 7 / 2 / 0 | 3 / 6 / 0 | 7 / 2 / 0 | 3 / 6 / 0 | 5 / 4 / 0 | 1 / 8 / 0 |
+| LSTM-T-KAN-M | 8 / 1 / 0 | 7 / 2 / 0 | 1 / 6 / 2 | 0 / 5 / 4 | 9 / 0 / 0 | 6 / 3 / 0 |
+
+The anchoring layer improves the weaker carriers more (contrast (i)); with the small carrier the combination improves
+on the history-only configuration on all nine populations in hourly error, with the LSTM and LSTM-T-KAN-M on three and
+one. The resolved losses of contrast (ii) include EWELD for both (hourly −83.1% and −104.4%), where the layer returns
+those carriers' forecasts on its 245 state windows. No anchored carrier is resolved better than ankyra-lite on any
+population.
+
+### Contrast (ii) by block and the carrier-free control
+
+`contrast_ii_blocks.csv`, `contrast_ii_control.csv` (descriptive): populations, of nine, on which the first-named
+forecast is resolved better / not resolved / resolved worse, all test windows:
+
+| Contrast | Hourly | Level | Daily path | Within-day |
+|---|---|---|---|---|
+| ankyra-lite vs history only | 9 / 0 / 0 | 4 / 5 / 0 | 5 / 4 / 0 | 8 / 1 / 0 |
+| ankyra-lite vs carrier alone | 2 / 7 / 0 | 1 / 8 / 0 | 1 / 6 / 2 | 7 / 2 / 0 |
+| carrier alone vs history only | 6 / 3 / 0 | 2 / 7 / 0 | 5 / 3 / 1 | 7 / 2 / 0 |
+| ankyra-lite vs carrier-free control | 9 / 0 / 0 | 4 / 5 / 0 | 5 / 4 / 0 | 7 / 2 / 0 |
+| carrier-free control vs history only | 8 / 1 / 0 | 0 / 9 / 0 | 1 / 8 / 0 | 8 / 1 / 0 |
+
+Against the carrier-free control (the same procedure with the history-only forecasts in the carrier's place),
+ankyra-lite is resolved better in hourly error on all nine populations (+3.0% on CINELDI to +15.8% on Oslo). The
+carrier's forecast enters the level candidates, the handover and the within-day mixture at once, so the split by
+block locates the difference only roughly.
+
+### History length and the anchoring record
+
+- `history_length.csv`, all nine populations pooled (descriptive; the strata are confounded with the population):
+
+  | Hours since the unit's first observation, at the origin | Windows | vs carrier alone | vs TimesFM | vs Chronos-2-X |
+  |---|---:|---|---|---|
+  | < 10,248 h (no annual candidate) | 450 | −0.6 | −3.7 | −3.9 |
+  | 10,248 h – 2 years | 1,715 | +1.8 * | −1.3 | −4.4 |
+  | 2–3 years | 829 | +2.6 | +10.8 | +6.1 |
+  | ≥ 3 years | 2,722 | +0.3 | +8.3 * | +5.0 |
+
+  Against the zero-shot foundation models the point estimates are negative below two years and positive above; only
+  the ≥ 3-year stratum against TimesFM is resolved. No test window has fewer than 9 complete pseudo-origin windows
+  (`K_eff` 9–11: 451 windows; `K_eff` 12: 5,265).
+- `anchoring_gain_deciles.csv` (deciles of 538–539 windows each over the nine populations: the windows with a finite
+  statistic, units with a mean load below 10⁻⁶ kW left out; descriptive): ankyra-lite's monthly-level gain over its
+  carrier alone is largest in the lowest decile of the carrier's level weight (+7.1%) and slightly negative in the two
+  highest (−1.4%, −1.1%); by `history_vs_carrier_log_ratio` it is largest in the two lowest deciles, where the unit's
+  history beat the carrier at earlier pseudo-origins (+9.5%, +8.0%; the hourly gain is resolved there, +2.9% and
+  +2.5%). Neither statistic orders the gain monotonically, and the carrier weight is the layer's own weight, so its
+  association with the gain is partly mechanical.
+
+### Robustness and cost
+
+- `robustness.csv`: 64 Drammen test windows (43 units) re-forecast on the CPU with the released checkpoints from a
+  corrupted context. Removing 5% or 20% of the context hours (filled by interpolation) changes the hourly error by at
+  most 0.1%; a 24-hour zero block in the last week raises it by 3.2% (carrier alone 3.0%); a shift of the context by
+  +1 / −1 hour by 9.4% / 11.7% (carrier alone 9.2% / 12.7%); one spike at ten times the context maximum by 41.1%
+  (carrier alone 23.6%), and the spike moves the peak readout by a median of +998%. Scaling the whole history by 0.5 or
+  2 leaves the forecast exactly scale-equivariant (largest deviation 0). On every corrupted context except the spike,
+  ankyra-lite's hourly error is 1.9–3.1% below that of the carrier alone on the same record; with the spike it is
+  11.8% above. No state rule fired on any corrupted context.
+- `cost_per_window.csv`: 0.584 s per forecast on one CPU thread (6 Oslo test windows), of which 0.075 s are the carrier
+  forecasts at 7 issue times × 3 seeds and 0.509 s the anchoring layer ([METHOD.md](METHOD.md#inference-cost)).
+
+### Where ankyra-lite is weak
+
+- **Households, hourly.** On the GoiEner households TimesFM (−5.6%) and Chronos-2-X (−3.8%) have the resolvably lower
+  hourly error; the anchoring layer does not improve the carrier there (−1.0%, not resolved), and ankyra-lite ranks
+  fifth by MAE and WAPE. Its monthly energy and peak errors there are resolvably lower than those of all four zero-shot
+  variants.
+- **The first days of the month.** On day 1 it ranks 4th to 15th of 22 on the six test populations, behind zero-shot
+  foundation models on all of them.
+- **Short records and the zero-shot foundation models.** On BDG2 and GoiEner non-household, which had no development
+  windows and the shortest training records, and on HEEW and EWELD, the hourly contrasts with the four zero-shot
+  variants are not resolved, with negative point estimates on BDG2 (Chronos-2-X −5.8%, TimesFM −1.0%) and GoiEner
+  non-household (Chronos-2-X −2.4%). The monthly energy against TimesFM is −1.6% on HEEW and −5.3% on EWELD (not
+  resolved), and on EWELD the cumulative energy at day 31 ranks eighth.
+- **The recipe.** The released span return is 2.90% worse than the plain continuation on Drammen and resolvably worse
+  on forecast days 2–7 of the six populations with development windows (−1.35%)
+  ([above](#why-the-recipe-returns-the-validation-span)).
+- **Peak against the last observed peak.** On CINELDI the previous window's observed peak is resolvably closer to the
+  realised peak (−20.4%); on GoiEner non-household and EWELD the point estimates are −35.8% and −20.2%.
+- **A spike in the context** raises the hourly error by 41% and ruins the peak readout ([above](#robustness-and-cost)).
+
+## External tests
+
+The external tests of this version are reported in [EXTERNAL_TESTS.md](EXTERNAL_TESTS.md) (Figure 17,
+`results/external_tests.csv`). The run was frozen on 19 October 2026 before any training on these data; for each test
+set a carrier was trained with the released recipe (six seeds; the three-seed release configuration is a secondary
+readout), anchored by the unchanged layer with the seasonal-naive state rule, and scored once after its forecasts had
+been hashed. The split rule is that of the nine populations (test start C at the first month start at or after the
+median evaluation origin, training cut C′ = C − 186 days, validation set the 93 days before C′).
+
+- **LCL, UNICON and HKUST**: first read of this candidate on a previously read population. Earlier forecasters,
+  earlier versions of the small network among them, had been scored there, and the anchoring layer was fixed after
+  those readings. HKUST is secondary (small sample).
+- **GoiEner households, out of time**: a same-source out-of-time supplementary check (new households, a later period of
+  study population 6's source), not a new population.
+- **Helsinki (retrospective)**: trained, anchored and sealed; not scored (the prospective Helsinki test it was tied to
+  is not being pursued for now, author decision of 19 October 2026). **UCI370**: skipped in this round.
+
+The primary readouts, hourly error, six seeds (\* resolved better; no pass line; not resolved is not a finding of no
+difference). They are 12 of 15 pre-specified nominal intervals (3 contrasts × 5 test sets, Helsinki's sealed), with no
+multiplicity correction: with no true difference, about 0.75 of the 15 would be resolved by chance. LCL is in the
+pretraining data of TimesFM 2.5, Chronos and Chronos-2; whether GoiEner is in it is not verified; UNICON and HKUST are
+not on the published lists, which does not establish absence.
+
+| Test set | Identity | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
+|---|---|---|---|---|---|
+| LCL households (London) | first read of this candidate on a previously read population (retrospective external re-evaluation) | 710 / 710 / 5 | +2.68% [−1.22, +6.43] | +24.32% [+17.65, +30.46] * | +3.08% [+2.08, +4.07] * |
+| UNICON (La Trobe University campuses) | first read of this candidate on a previously read population (retrospective external re-evaluation); the anchoring layer and the network family were seen at design time on these targets | 450 / 59 / 23 | −5.54% [−19.45, +6.76] | +9.15% [−3.73, +20.42] | +8.00% [+3.69, +12.11] * |
+| HKUST campus incomer meters (secondary) | first read of this candidate on a previously read population (retrospective external re-evaluation) (secondary test set, small sample) | 89 / 29 / 8 | +10.24% [−9.22, +26.23] | +25.65% [+6.33, +40.98] * | +3.95% [−4.11, +11.38] |
+| GoiEner households, out of time (supplementary) | same-source out-of-time supplementary check (new units, new period), not an external population; correlated with the result on study population 6 (GoiEner households) | 1,417 / 282 / 6 | +4.19% [+1.59, +6.72] * | +25.99% [+23.87, +28.05] * | +5.48% [+3.59, +7.34] * |
+
+On forecast day 1 ankyra-lite is resolved worse than zero-shot TimesFM 2.5 on LCL (−16.11%; LCL is in TimesFM 2.5's
+pretraining data) and UNICON (−35.95%), first reads of this candidate on previously read populations. Other readouts,
+the release configuration, the descriptive contrasts, the subgroups, the two decisions awaiting the author's review
+and the run notes are in [EXTERNAL_TESTS.md](EXTERNAL_TESTS.md).
+
+## Limitations
+
+- **Re-evaluation only on the nine populations.** No test set of the nine-population comparison is unseen by the
+  design ([above](#identity-of-the-evidence)); the external tests are first reads of this candidate on previously read
+  populations and one same-source out-of-time check, not tests on unseen populations ([External tests](#external-tests)).
+- **One carrier per population.** Transfer of a checkpoint to another building or population has not been evaluated.
+- **Short records.** BDG2 2017 and both GoiEner populations have the shortest training records, no development
+  windows, and test sets of 5–8 months of one year; read their results as the second half of that year.
+- **Recipe.** Against the continuation without the returned span, the released recipe gains on the windows that lacked
+  same-season training data (+3.11%, resolved) and loses on Drammen (−2.90%) and on forecast days 2–7 of the
+  populations with development windows (−1.35%, resolved); over the nine populations its advantage over that control
+  is not resolved (+0.11%) (`recipe_history.csv`).
+- **Recency.** The carrier's newest training label is at least 186 days older than the trained baselines' allow; this is
+  the price of out-of-sample pseudo-origins.
+- **Calendar.** 36 test windows (26 EWELD, 10 Cambridge) contain a holiday announced after their origin; the forecasts
+  were not remade without it.
+- **Pretraining overlap.** Seven BDG2 sites are in TimesFM 2.5's pretraining collection; its effect on the BDG2
+  comparisons is not measured.
+- **Baselines.** The release's trained baselines have a budget of 15 epochs and patience 3, LSTM-T-KAN-M 30
+  and 8; the verdicts were not re-checked here under a larger budget. The linear-context model's covariates are inert.
+  GBT-T overshoots on EWELD. LSTM-T-KAN-M is not a strict reproduction of its paper (ten disclosed deviations and a smaller
+  training budget than the authors'; [above](#lstm-t-kan-m)); on CINELDI it is the retrain on the corrected store,
+  which passed its checks.
+- **Intervals** are descriptive and were not designed for this carrier.
+- **Training is not bitwise repeatable** on a GPU; three seeds are averaged, and the seed spread is reported
+  (`seed_spread.csv`), but the intervals of the main tables resample units and months only, not retraining.
+- **Multiplicity.** 21 baselines × 9 populations × several quantities give hundreds of intervals; counts of resolved
+  contrasts are descriptive summaries, not a multiplicity-adjusted test.
+
+## Scoring-code check and reproduction
+
+- **Scoring-code check.** Before ankyra-lite is put in the reference position, `evaluation/compare_baselines.py`
+  recomputes the late-window rows of ten result tables of the first release with the release's own reference
+  forecaster and compares them field by field, at the published rounding, with the published files read from the first
+  release repository's commit `487e0d2` (`git show`, read-only). A table that does not reproduce exactly is not written.
+  The recomputed release numbers are not part of any result file here. In the regeneration all ten tables reproduced,
+  with 0 mismatches in 94,131 compared fields (all exact). Record:
+  [`results/REPRODUCTION_CHECK.json`](../results/README.md#reproduction-and-records).
+- **Same windows.** For every population the anchored product must have exactly the study's test windows, state flags
+  and targets; otherwise the script stops.
+- **Product reading.** The per-population contrasts of the released recipe against the plain continuation and against
+  the from-scratch stage, recomputed from the anchored products, equal those of the study's own scorer on 9 of 9
+  populations (largest difference 0.0 percentage points; `study_scorer_crosscheck` in `results/compare_baselines.json`).
+  The re-anchoring of the three-seed ensemble reproduces every stored product bit for bit, and re-anchoring seed 0 on
+  the first 8 test windows of each population reproduces its stored single-seed product (`extra` → `reanchor`,
+  `seed_products` in the same file).
+- **Scoring module.** `evaluation/scoring.py`, a clean re-implementation of the study's scoring on top of
+  `ankyra_lite.anchor.metrics`, gave identical values to the study's scoring functions on BDG2 and Oslo
+  ([evaluation/README.md](../evaluation/README.md#what-was-checked)).
+- **Package against the research code.** The anchoring layer is byte-identical to ANKYRA 2.2.1 and gives bit-identical
+  forecasts (`tests/test_anchor_equivalence.py`); the carrier's features, initialisation and forecasts and the training
+  recipe reproduce the research code (`tests/test_carrier_equivalence.py`, `tests/test_train.py`).
+- **Which forecasts are scored.** `evaluation/products.json` names, per population, the anchored three-seed product of
+  the released recipe and the research runs behind it (paths relative to the study's research folder).
+
+### Numbers that are not in `results/`
+
+Every number of the evaluation comes from a file of `results/`, with these exceptions, which come from the study's own
+records (in its research folder, not part of this repository), from the data or from public lists:
+
+| Number | Where it appears | Source |
+|---|---|---|
+| 8,486 compared values of the scoring-module check (7,528 on BDG2, 958 on Oslo) | [evaluation/README.md](../evaluation/README.md#what-was-checked) | the output of that one-off check, run on 18 October 2026; it was not repeated in the regeneration |
+| 26 of the 523 EWELD and 10 of the 730 Cambridge test windows with a holiday announced after the origin | [Limitations](#limitations), [DATA.md](DATA.md#calendar-caveat-holidays-announced-after-the-origin) | the study's calendar check (`paper_writing/EO_CALENDAR_AND_CINELDI_START_FINDINGS_v1_20261018.md`); the totals 523 and 730 are the test windows of `datasets.csv` |
+| 13 BDG2 units with the category Commercial | [DATA.md](DATA.md#1-bdg2-2017-building-meters-usa--europe) | the category labels (`groups`) of the BDG2 data store |
+| 709,481 parameters of LSTM-T-KAN-M; best epochs 12, 10 and 16 of its BDG2 seeds | [LSTM-T-KAN-M](#lstm-t-kan-m) | the study's LSTM-T-KAN training record (`paper_writing/EO_LSTM_TKAN_BASELINE_RESULTS_v2_20261011.md`) |
+| Seven BDG2 sites (Bear, Bull, Cockatoo, Fox, Hog, Panther, Rat) listed in the GIFT-Eval pretraining collection of TimesFM 2.5, none named in the Chronos or Chronos-2 training tables | [Limitations](#limitations), [DATA.md](DATA.md#bdg2-and-the-pretraining-collection-of-timesfm-25), the README (results and limitations) and `results/SUMMARY.md` | the study's check of the public lists on 10 October 2026 (the TimesFM 2.5 model card, the file lists of the GIFT-Eval pretraining collection and of LOTSA, the Chronos and Chronos-2 training tables), recorded in `paper_writing/EO_V47_CHANGE_LIST_v1_20261010.md`; it is a check of names in lists, not a measurement of the data |
+
+Run the tests from the repository root with `python -m unittest discover -s tests -t .` and the theory checks with
+`python -m unittest discover -s theory -t .`; the tests that need the first release's checkout or the study's local
+data skip with a reason when those are absent. On the author's machine, with both available and on the regenerated
+`results/` (19 October 2026, CPU, one thread): 176 tests, of which 175 passed and 1 skipped, and 58 theory checks, all
+passed. The skipped test compares the hourly numbers with the earlier hourly-only comparison, which scored the
+from-scratch stage, not the released products.
+
+| Module | Tests |
+|---|---:|
+| `tests/anchor/` (the anchoring layer's own tests) | 62 |
+| `tests/test_anchor_equivalence.py` | 14 |
+| `tests/test_carrier_unit.py` | 14 |
+| `tests/test_carrier_equivalence.py` (study's local data) | 7 |
+| `tests/test_train.py` (part on the study's local data) | 19 |
+| `tests/test_compare_baselines.py` (part on the first release's files, the study's data and `results/`) | 33 |
+| `tests/test_evaluation.py` | 15 |
+| `tests/test_external_tables.py` (the external-test table) | 12 |
+| `theory/test_operators.py`, `theory/test_carrier_properties.py` | 31, 27 |

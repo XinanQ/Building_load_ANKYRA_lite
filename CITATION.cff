@@ -1,0 +1,43 @@
+cff-version: 1.2.0
+message: "If you use this software or its results, please cite it as below, together with ANKYRA (listed under references)."
+type: software
+title: "Building_load_ANKYRA_lite (ankyra-lite): month-ahead hourly load forecasting with a small self-developed carrier network and the ANKYRA anchoring layer"
+abstract: >-
+  ankyra-lite is a self-contained month-ahead (744-hour) hourly load forecaster for buildings, industrial meters and
+  households that needs no foundation model. A small self-developed carrier network (a copy-pointer structured load
+  network with 61,613 parameters, trained from scratch per population) forecasts the month after a forecast origin
+  from the unit's own history and the known calendar. Its forecasts at the origin and at up to six earlier
+  pseudo-origins are passed to an unchanged copy of the ANKYRA 2.2.1 anchoring layer, which estimates per-unit
+  combination weights from the unit's own completed pseudo-forecasts and returns the hourly trajectory, the month's
+  energy and the monthly peak readout. The repository contains the package, its training recipe, equivalence tests
+  against the research code and the original ANKYRA package, the evaluation code, and a re-evaluation against 21
+  baselines (22 forecasters) on nine populations (hourly, energy, peak, conventional metrics, forecast-day,
+  error-block, scaled-error and rank-test tables).
+authors:
+  - family-names: Qin
+    given-names: Xinan
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # add if available
+version: "0.1.0"
+date-released: "2026-10-19"
+license: MIT
+repository-code: "https://github.com/XinanQ/Building_load_ANKYRA_lite"
+# doi: "10.5281/zenodo.XXXXXXX"   # add the Zenodo DOI after the first archived release
+keywords:
+  - load forecasting
+  - month-ahead forecasting
+  - building energy
+  - forecast combination
+  - small neural network
+  - energy readout
+  - peak demand
+references:
+  - type: software
+    title: "ANKYRA: anchoring month-ahead load forecasters to each unit's own history, and when the combination is worth making"
+    authors:
+      - family-names: Qin
+        given-names: Xinan
+    version: "2.2.1"
+    date-released: "2026-10-11"
+    license: MIT
+    repository-code: "https://github.com/XinanQ/Building_load_ANKYRA"
+    notes: "ankyra_lite/anchor is a byte-identical copy of the ankyra package at commit 487e0d2, whose ankyra/ tree is identical to tag v2.2.1 (tagged 2026-10-11)."

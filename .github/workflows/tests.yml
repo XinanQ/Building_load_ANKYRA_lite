@@ -1,0 +1,43 @@
+name: tests
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      OPENBLAS_NUM_THREADS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install (CPU)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install -e ".[figures]"
+      # Tests that need the original ANKYRA checkout, the study's local data or the comparison's inputs skip with a
+      # reason: neither sibling folder exists on the runner.
+      - name: Forecaster, carrier, training and evaluation tests
+        run: python -m unittest discover -s tests -t . -v
+      - name: Exact properties
+        if: hashFiles('theory/test_*.py') != ''
+        run: python -m unittest discover -s theory -t . -v
+      - name: Quickstart (the shipped Cambridge checkpoints on an artificial building)
+        run: python examples/quickstart.py
+      - name: Evaluation example
+        run: python -m evaluation.run_example
+      - name: Figures regenerate from results/
+        if: matrix.python-version == '3.11' && hashFiles('figures/make_figures.py') != ''
+        run: python figures/make_figures.py
