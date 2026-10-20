@@ -17,6 +17,13 @@ Steps
      (missing hours as 0), and the level readout is its mean. ``state_rule=None`` keeps the anchoring layer's output;
   4. the monthly peak readout of the anchoring layer (``anchor.readouts.peak_readout``) on the delivered trajectory.
 
+``forecast(history, None, ...)`` is the history-only configuration: ``ankyra_lite.anchor.forecast(...,
+foundation=None)``, the historical level and daily path with the same-day-type within-day default (no carrier, no
+carrier level candidate, no handover, no within-day anchoring). The anchoring layer applies neither the off-state nor
+the micro-load rule to it, so no state rule is applied either; step 4 reads the peak from its trajectory.
+
+The interval, the block split and the energy added by the projection are in :mod:`ankyra_lite.readouts`.
+
 Only the public API of the anchoring layer is used.
 """
 from __future__ import annotations
@@ -28,7 +35,7 @@ import numpy as np
 
 from .carrier.inference import CONTEXT, HORIZON, STEP, carrier_forecasts
 
-__all__ = ["forecast", "ForecastResult", "seasonal_naive"]
+__all__ = ["forecast", "ForecastResult", "seasonal_naive", "peak"]
 
 HR, WEEK = 24, 168
 
@@ -46,13 +53,19 @@ class ForecastResult:
     level_kw            delivered window mean readout (the anchoring layer's level, before its nonnegativity
                         projection; on a state window with the seasonal-naive rule, the mean of that forecast)
     peak_kw             monthly peak readout of the delivered trajectory
-    state_window        the anchoring layer reported off_state or micro_load
+    state_window        the anchoring layer reported off_state or micro_load (always False for the history-only
+                        configuration, to which neither rule applies)
     state_rule          the state rule that was applied ("seasonal_naive") or None
     anchored            the anchoring layer's own result (``ankyra_lite.anchor.AnkyraForecast``)
-    carrier             {k: (744,)} the carrier forecasts passed to the anchoring layer
+    carrier             {k: (744,)} the carrier forecasts passed to the anchoring layer ({} for the history-only
+                        configuration)
 
     Any other attribute (``off_state``, ``micro_load``, ``level_weights``, ``lead_week_weights``,
-    ``anchoring_record``, ...) is read from ``anchored``.
+    ``anchoring_record``, ``daily_means_kw``, ``within_day_kw``, ``foundation_within_day_kw`` (the carrier's own
+    within-day block), ``analog_shape_kw``, ``fixed_division_daily_means_kw``, ...) is read from ``anchored``.  On a
+    state window these describe the anchoring layer's return (the carrier forecast at the origin, with the weights,
+    the fixed division and the analog fields at their defaults), not the seasonal-naive trajectory delivered by the
+    default state rule.
     """
     trajectory_kw: np.ndarray
     level_kw: float
@@ -106,8 +119,10 @@ def forecast(history, carriers, *, group: str, temp_sigma_std: float, dst_region
 
     history          ``ankyra_lite.anchor.History`` (pre-origin load and temperature, day types through the horizon,
                      start timestamp January 1 00:00 UTC, optional observed mask)
-    carriers         a carrier network, a sequence of carrier networks (ensemble average), or a precomputed mapping
-                     {k: (744,) carrier forecast issued at origin - 744 k}
+    carriers         a carrier network, a sequence of carrier networks (ensemble average), a precomputed mapping
+                     {k: (744,) carrier forecast issued at origin - 744 k}, or None for the history-only
+                     configuration (``ankyra_lite.anchor.forecast(..., foundation=None)``; no state rule is applied,
+                     ``carrier`` is {}, and ``cut`` and ``device`` are not used)
     group, temp_sigma_std, dst_region, **anchor_kwargs
                      passed to ``ankyra_lite.anchor.forecast``; ``group`` is also the carrier's category feature
     cut              the carrier's training cut (hour index): pseudo-origins before it are not used (they are not
@@ -120,6 +135,12 @@ def forecast(history, carriers, *, group: str, temp_sigma_std: float, dst_region
     anchor = _anchor()
     load = _masked_load(history)
     o = len(load)
+    if carriers is None:                                     # history-only configuration: neither state rule applies to it
+        r = anchor.forecast(history, foundation=None, group=group, temp_sigma_std=temp_sigma_std, dst_region=dst_region,
+                            **anchor_kwargs)
+        tr = np.asarray(r.trajectory_kw, dtype=np.float64)
+        return ForecastResult(trajectory_kw=tr, level_kw=float(r.level_kw), peak_kw=peak(tr, load, history.day_types),
+                              state_window=False, state_rule=None, anchored=r, carrier={})
     if isinstance(carriers, Mapping):
         F = {int(k): np.asarray(v, dtype=np.float64) for k, v in carriers.items()}
         if cut is not None:                                  # the rule of carrier_forecasts(..., cut=cut), on the mapping

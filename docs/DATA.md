@@ -12,7 +12,7 @@ record of the sources; this page repeats what ankyra-lite needs and adds what is
 network, the split, the windows borrowed from other populations, and the corrected CINELDI store.
 
 Contents: [What is and is not in this repository](#what-is-and-is-not-in-this-repository) ·
-[Input format](#the-input-format) · [Two kinds of windows](#two-kinds-of-windows) ·
+[Input format](#the-input-format) · [How much history](#how-much-history) · [Two kinds of windows](#two-kinds-of-windows) ·
 [Training, validation and test sets](#training-validation-and-test-sets) ·
 [Borrowed windows](#windows-borrowed-from-other-populations) ·
 [Calendar caveat](#calendar-caveat-holidays-announced-after-the-origin) ·
@@ -77,6 +77,55 @@ Points that matter when rebuilding:
   (NaN), not shifted. The original CINELDI store missed this padding ([below](#9-cineldi-industrial-customers-norway)).
 - **Day types** are the weekday of the grid's calendar date, replaced by 7 on a public holiday of the population's
   country.
+
+## How much history
+
+The two parts need different amounts of history. The carrier needs no complete hours: it masks unobserved hours and
+days (C6) and reads at most the last 366 days for its daily tokens, the 24 blocks of 744 hours before them for its
+monthly tokens (26,640 hours, about three years, in all) and the last 8,760 hours for its scale; older hours are not
+read. The anchoring layer reads the whole pre-origin record and needs **complete hours**: a context and a
+pseudo-target count only when completely observed (90% observed for the seven-candidate level and the handover
+pairs), and every missing hour can only lower the counts below (P7). With a complete record of m hours before the
+origin:
+
+| Complete hours before the origin | What the code can then do | Code |
+|---:|---|---|
+| 1,344 (56 days) | the forecast runs: the 1,344-hour context at the origin must be completely observed, or `anchor.InputError` is raised (`ankyra_lite.forecast` raises `ValueError` earlier, when it computes the carrier forecasts). With no completed pseudo-origin the level weights are equal, the handover weights are ½ and the within-day trust is 0 | `anchor.forecast`, `history.api._validate_history` |
+| 2,088 (1,344 + 744) | the first pseudo-origin completes: the handover weights leave ½ (α_w = (λ̂_w + 1)/3 with one pair) | `anchor.lead_week_weights` |
+| 2,832 (1,344 + 2 × 744; 118 days) | two pseudo-origin errors per candidate: the level weights leave equal weights (data share K_eff/(K_eff + 8) = 0.2), and so do the daily-path weights | P7; `history/_day.py` |
+| 5,808 (1,344 + 6 × 744) | all six carrier pseudo-origins: the carrier candidate and the handover have their full evidence | `core.K_FM` |
+| about 13 months | analog days at the same dates one year earlier: the within-day anchoring can act (its trust needs analog days at a completed pseudo-origin as well) | `anchor.analog.AnalogShapes` |
+| 10,248 (8,760 + 2 × 744; about 14 months) | the annual level candidates get two pseudo-origin errors and can be weighted | P7 |
+| 10,272 (1,344 + 12 × 744) | all twelve pseudo-origins of the historical candidates: K_eff = 12, data share 0.6 | P7 |
+
+These are necessary support lengths, not accuracy guarantees. Every test window of the nine populations had at least
+9 complete pseudo-origin windows ([EVALUATION.md](EVALUATION.md#history-length-and-the-anchoring-record)).
+
+**The released checkpoints and the 186-day rule.** A checkpoint belongs to one population and its training cut. Pass
+that cut as `cut=` to `ankyra_lite.forecast` (or to `carrier_forecasts`): a pseudo-origin before the cut is then not
+used, and an origin before the cut raises `ValueError`. Only an origin at least 186 days (6 × 744 hours) after the cut
+keeps all six carrier pseudo-origins; nearer the cut the carrier candidate and the handover rest on fewer pairs. For a
+unit whose record is not in the carrier's training data, `cut=None` drops nothing
+([METHOD.md](METHOD.md#why-the-test-set-starts-186-days-after-the-cut)).
+
+**A record that starts in the middle of a year.** Pad the load back to 1 January 00:00 of the first year with NaN (or
+`observed = False`), give a finite temperature for the padded hours too (archive temperature where it exists: the
+layer's climatology is fitted on every day before the origin, the padded days included, and a temperature that does
+not vary over the year before the origin raises `SignatureDegeneracy`), write the day types of the padded days, and
+pass `start_timestamp` as that 1 January 00:00 with a `+00:00` offset. No date is converted: keep the record on one
+fixed-offset grid. [`examples/own_unit.py`](../examples/own_unit.py) does this for an artificial meter that starts on
+18 March 2019, with holidays and gaps, and shows the forecast with the shipped checkpoints and `cut=None`, the
+history-only configuration, the interval readout and the anchoring record.
+
+**Gaps in a user's own record.** `ankyra_lite.fill_short_gaps` (= `ankyra_lite.anchor.fill_short_gaps`) returns a
+copy of the pre-origin load in which every gap of at most 6 hours is linearly interpolated between its two observed
+neighbours, provided the gap and both neighbours lie inside one 744-hour block counted back from the origin (the end of
+the array). It leaves gaps that touch the origin, the start of the record or a block boundary, and gaps longer than
+6 hours, as NaN. The anchoring layer applies the same rule to the copy its own estimator reads, but it requires the
+context at the origin to be complete first and never fills it, and the carrier reads the record as supplied (an
+interpolated hour is a missing hour for it unless the caller filled it). Filling the record before the call therefore
+also hands the interpolated hours to the carrier ([METHOD.md](METHOD.md#short-gap-rule)). The study's test windows
+have complete contexts and targets and did not need it.
 
 ## Two kinds of windows
 

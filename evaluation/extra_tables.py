@@ -23,6 +23,24 @@ counterpart exists, with ankyra-lite in ANKYRA's place; ``results/README.md`` de
                                     the span return), validation criterion and training loss by epoch
   recipe_history.csv, constants.csv the recipe arms of the study and every constant                   (recipe_tables.py)
 
+Files added on 19 October 2026 (the first release's analyses of the same name or purpose, with ankyra-lite's numbers; the
+ones marked "fields" read the ``fields`` mode of lite_reanchor.py, the anchoring layer's own fields of every window):
+
+  training_budget_sensitivity.csv   ankyra-lite against the four trained load-only baselines under the original and a
+                                    relaxed training budget                                          (budget_tables.py)
+  handover_granularity.csv          the handover arms: none, a fixed half weight, one weight per window, the weekly weights  (fields)
+  lead_weeks.csv                    ankyra-lite and the fixed division against the carrier alone and TimesFM by forecast week,
+                                    and the mean handover weight on the carrier                                      (fields)
+  within_day_trust.csv              where the within-day anchoring acts: mean trust, windows with trust > 0, analog shape kept (fields)
+  generic_combinations.csv          one whole-window combination weight of the carrier with the history side against the same
+                                    with three generic forecasters, and equal-weight averages                         (fields)
+  level_candidate_hit_rate.csv      how often the level candidate with the smallest pseudo-origin error is the best one at
+                                    the origin, against chance (P20)                                                 (fields)
+  long_context_baselines.csv        ankyra-lite against TimesFM and Chronos-2 with a year of context     (long_context_tables.py)
+  energy_level_readout.csv          the energy contrasts with ankyra-lite's level readout in place of its trajectory mean
+  rows added to ablation.csv, component_contributions.csv (fixed division, fixed half handover weight, one whole-window
+  combination weight, half-and-half average; fields) and peak_readout.csv (the same readout on the carrier alone)
+
 Interval estimand and contrasts are the release's: 2,000-draw unit x target-month bootstrap of the unit-equal log
 ratio (tools_hcr_ext_drammen_score_v1), a fresh random stream per contrast.
 """
@@ -87,6 +105,47 @@ BLOCKS = ("hourly", "level", "daily path", "within-day")
 BLOCK_SEED = {"hourly": 9, "level": 11, "daily path": 13, "within-day": 15}           # tools_contrast_ii_blocks_v1 (release)
 STATE_EXCLUDED = "off-state and micro-load windows excluded"
 DRAMMEN_OLD_POOL = "Drammen: trained with the original CINELDI store in its pooled training set"
+# ---- added on 19 October 2026 (tables that read the fields mode of lite_reanchor.py)
+FIXED_DIVISION = "fixed division (history level and daily path, no handover)"
+HALF_HANDOVER = "fixed half handover weight"
+WHOLE_WINDOW = "one whole-window combination weight of the history side and the carrier"
+HALF_AVERAGE = "half-and-half average of the history side and the carrier"
+COMPONENT.update({WHOLE_WINDOW: "block-wise weights instead of one whole-window weight",
+                  HALF_AVERAGE: "block-wise weights against a half-and-half average"})
+ADDED_ABLATIONS = (FIXED_DIVISION, HALF_HANDOVER, WHOLE_WINDOW, HALF_AVERAGE)
+ARMS = ("A0", "Ah", "AM", "AW")                     # handover arms (the first release's names; Ah = a fixed weight of one half)
+ARM_WORDS = {"A0": "no handover (history-side daily means only)", "Ah": "fixed half handover weight",
+             "AM": "one handover weight per unit and window", "AW": "weekly handover weights (ankyra-lite)"}
+HANDOVER_CONTRASTS = (("C1 AW vs Ah", "AW", "Ah"), ("C2 AW vs AM", "AW", "AM"), ("C3 AM vs Ah", "AM", "Ah"), ("C4 Ah vs A0", "Ah", "A0"),
+                      ("AW vs A0", "AW", "A0"), ("AM vs A0", "AM", "A0"))
+WEEKS4 = ((0, 7), (7, 14), (14, 21), (21, 31))
+CARRIER_PEAK = "same readout on the carrier alone"
+GENERIC_X = ("SN-week", "WeekProf4", "LYR-profile")
+EW_X = ("SN-week", "WeekProf4", "LYR-profile", "RIDGE-L", "MSTL")
+HIT_SEED = 20261019                                  # unit bootstrap of the level-candidate hit rate
+ADDED_FILES = {
+    "handover_granularity.csv": ("handover_granularity", ["set", "tier", "contrast", "log_ratio", "um_low", "um_high", "improvement_pct", "pooled_mse_ratio", "flag"],
+                                 "the handover arms (none, a fixed half weight, one weight per window, the weekly weights) against each other, the carrier alone, TimesFM and the fixed division"),
+    "lead_weeks.csv": ("lead_weeks", ["set", "tier", "week", "days", "windows", "units",
+                                      "ankyra_lite_vs_carrier_log_ratio", "ankyra_lite_vs_carrier_um_low", "ankyra_lite_vs_carrier_um_high",
+                                      "ankyra_lite_vs_timesfm_log_ratio", "ankyra_lite_vs_timesfm_um_low", "ankyra_lite_vs_timesfm_um_high",
+                                      "fixed_division_vs_carrier_log_ratio", "fixed_division_vs_carrier_um_low", "fixed_division_vs_carrier_um_high",
+                                      "fixed_division_vs_timesfm_log_ratio", "fixed_division_vs_timesfm_um_low", "fixed_division_vs_timesfm_um_high",
+                                      "mean_weight_on_carrier", "flag"],
+                       "ankyra-lite and the fixed division against the carrier alone and TimesFM by forecast week, and the mean handover weight on the carrier"),
+    "within_day_trust.csv": ("within_day_trust", ["set", "tier", "windows", "state_windows", "anchored_windows", "mean_trust", "median_trust", "share_trust_positive",
+                                                  "share_analog_kept", "mean_triples", "share_three_triples", "flag"],
+                             "where the within-day anchoring acts: trust on the analog-day shape, windows with a positive trust, analog shape kept"),
+    "generic_combinations.csv": ("generic_combinations", ["set", "tier", "subset", "windows", "units", "contrast", "best", "candidates", "error", "log_ratio", "um_low",
+                                                          "um_high", "improvement_pct", "resolved", "availability_note", "flag"],
+                                 "one whole-window combination weight of the carrier with the history side against the same with generic forecasters, and equal-weight averages"),
+    "level_candidate_hit_rate.csv": ("level_candidate_hit_rate", ["set", "tier", "candidates", "windows", "units", "windows_tied_excluded", "hit_rate", "chance_rate",
+                                                                  "hit_minus_chance", "um_low", "um_high", "share_carrier_selected", "share_carrier_best", "flag"],
+                                     "how often the level candidate with the smallest pseudo-origin error is the best one at the origin, against chance"),
+    "energy_level_readout.csv": ("energy_level_readout", ["set", "tier", "windows", "units", "model", "model_label", "log_ratio", "um_low", "um_high", "improvement_pct",
+                                                          "resolved", "median_energy_ape_pct", "windows_projection_binds", "flag"],
+                                 "the energy contrasts with ankyra-lite's level readout (744 x level) in place of its delivered trajectory's mean"),
+}
 
 def _resolved(lo, hi, identical=False):
     if identical:
@@ -103,6 +162,7 @@ class Collector:
         self.rec = {}
         self.hist_pool = []
         self.dec_pool = []
+        self.hit_pool = []
         self.extra_json = {}
         self.faces = []
         self.notes = defaultdict(list)
@@ -152,7 +212,12 @@ class Collector:
         return np.asarray(z[key])[idx]
 
     # ------------------------------------------------------------------ one population
-    def face(self, face, entry, P, prod, baselines, flag):
+    def face(self, face, entry, P, prod, baselines, flag, hourly_ref=None):
+        rec = self._face_main(face, entry, P, prod, baselines, flag)
+        rec.update(self.added(face, entry, P, prod, baselines, flag, hourly_ref=hourly_ref))
+        return rec
+
+    def _face_main(self, face, entry, P, prod, baselines, flag):
         self.faces.append(face)
         rec = {"flag": flag or None}
         seeds, ens = CB.load_carriers(entry, prod["origins_product"], P["wbL"])
@@ -185,7 +250,7 @@ class Collector:
         import lite_reanchor as LR
         out = {}
         for mode in LR.MODES:
-            if mode in LR.SEED_MODES and entry.get("seed_paths"):
+            if (mode in LR.SEED_MODES and entry.get("seed_paths")) or mode in LR.FIELD_MODES:    # fields: read by added()
                 continue
             z, m = LR.load_mode(self.prods["label"], face, mode)
             if z is None:
@@ -791,6 +856,455 @@ class Collector:
                               "eA": (A.mean(1) - ybar)[keep] ** 2, "eC": (Cr.mean(1) - ybar)[keep] ** 2,
                               "mA": ((A - y) ** 2).mean(1)[keep], "mC": ((Cr - y) ** 2).mean(1)[keep]})
 
+    # ------------------------------------------------------------------ files added on 19 October 2026
+    def added(self, face, entry, P, prod, baselines, flag, hourly_ref=None, ens=None, parts=None):
+        """The per-population part of the files added on 19 October 2026 (``compare_baselines.py --supplement`` runs this
+        alone): training budget, long-context baselines, the carrier-alone peak row and, from the fields cache, the
+        handover arms, lead weeks, within-day trust, whole-window combination, generic partners and the hit rate.
+        ``parts=("budget",)``: the training budget only (``compare_baselines.py --budget``)."""
+        import budget_tables as BT
+        import long_context_tables as LC
+        if face not in self.faces:
+            self.faces.append(face)
+        out = {}
+        relaxed = BT.relaxed_forecasts(face, P, prod, entry)
+        if relaxed:
+            rows, out["budget"] = BT.rows_for(self.T, P, prod, baselines, relaxed, flag, hourly_ref=hourly_ref)
+            self.rows["training_budget_sensitivity"] += rows
+        if parts is not None and set(parts) <= {"budget"}:
+            self.rec.setdefault(face, {}).update(out)
+            return out
+        if ens is None:
+            _, ens = CB.load_carriers(entry, prod["origins_product"], P["wbL"])
+        lc = LC.long_context(face, P, prod)
+        if lc:
+            rows, out["long_context"] = LC.rows_for(self, P, prod, baselines, lc, flag)
+            self.rows["long_context_baselines"] += rows
+        out["peak_carrier"] = self._peak_carrier(P, prod, ens, flag)
+        F = self._fields(face, entry, P, prod)
+        if F is None:
+            self.notes[face].append("no complete fields cache of lite_reanchor.py (mode fields); the handover, lead-week, within-day, "
+                                    "whole-window and hit-rate tables were not computed")
+        else:
+            out["fields_gate"] = F["_gate"]
+            out["handover"] = self._handover(face, P, prod, ens, baselines, flag, F)
+            out["combination"] = self._combination(face, P, prod, ens, baselines, flag, F)
+            out["within_trust"] = self._within_trust(P, prod, flag, F)
+            out["hit_rate"] = self._hit_rate(face, P, prod, flag, F)
+        self.rec.setdefault(face, {}).update(out)
+        return out
+
+    def _fields(self, face, entry, P, prod):
+        """The fields cache (lite_reanchor mode ``fields``) aligned to the panel order, or None when it is missing, stale,
+        partial or did not pass its gate."""
+        import lite_reanchor as LR
+        z, m = LR.load_mode(self.prods["label"], face, "fields")
+        if z is None:
+            return None
+        if m.get("product_sha256") != LR._sha(entry["npz_path"]) or m.get("limit") is not None or m.get("error_count"):
+            self.notes[face].append("fields cache is stale, partial or has failed windows; not used")
+            return None
+        if not (m.get("gate") or {}).get("pass"):
+            self.notes[face].append("fields cache did not pass its gate (product bit for bit, rebuilt pairs, triples and level); not used")
+            return None
+        F = {}
+        for key in ("traj", "level", "off", "micro") + tuple(LR.FIELD_ARRAYS):
+            a = self.align(z, P, pad=prod["pad"], key=key)
+            if a is None:
+                self.notes[face].append("fields cache does not cover the test windows; not used")
+                return None
+            F[key] = a
+        st = prod["state"]
+        if not (np.array_equal(F["off"] | F["micro"], st) and np.array_equal(F["fields_ok"], ~st) and F["rebuild_ok"][~st].all()):
+            self.notes[face].append("fields cache: state flags or fields do not match the product; not used")
+            return None
+        if not np.array_equal(F["traj"].astype(np.float32), prod["raw"].astype(np.float32)):
+            self.notes[face].append("fields cache: trajectory differs from the product; not used")
+            return None
+        F["_gate"] = {k: m["gate"].get(k) for k in ("traj_equal", "level_equal", "state_flags_equal", "fields_pass", "pass")} | {"fields": m.get("fields")}
+        return F
+
+    def _rows_ablation(self, P, flag, variants, out):
+        """ablation.csv / component_contributions.csv rows of added variants: {label: (forecast, note)}, as _ablation."""
+        y, unit, month = P["yL"], P["uL"], P["mL"]
+        L0 = self.losses(y, self._lite)
+        for lab, (v, note) in variants.items():
+            Lv = self.losses(y, v)
+            for err, off in (("hourly", 9), ("energy", 11)):
+                c = self.ctr(L0[err], Lv[err], unit, month, off)
+                out[f"{lab}|{err}"] = c
+                r = self.rnd(c)
+                self.rows["ablation"].append({"set": P["name"], "tier": P["tier"], "ablation": lab, "log_ratio": r["log_ratio"], "um_low": r["um_low"],
+                                              "um_high": r["um_high"], "improvement_pct": r["improvement_pct"], "error": err, "windows": len(y),
+                                              "units": int(len(np.unique(unit))), "resolved": c["resolved"], "note": note, "flag": flag})
+                if lab in COMPONENT:
+                    self.rows["component_contributions"].append({"set": P["name"], "component": COMPONENT[lab], "improvement_pct": r["improvement_pct"],
+                                                                 "log_ratio": r["log_ratio"], "um_low": r["um_low"], "um_high": r["um_high"],
+                                                                 "kind": "direct contrast", "error": err, "resolved": c["resolved"], "flag": flag})
+
+    @staticmethod
+    def _f32(x):
+        return np.asarray(x, dtype=np.float64).astype(np.float32).astype(np.float64)       # stored like the products (float32)
+
+    def _handover(self, face, P, prod, ens, baselines, flag, F):
+        """The first release's handover ablation with ankyra-lite's anchoring layer: four arms that share the level with the
+        carrier candidate, the delivered within-day block and the projection, and differ only in the weight on the
+        carrier's daily means (A0 none, Ah one half, AM one per window from the same pairs with the 31 days pooled, AW the
+        weekly weights = ankyra-lite); the fixed division (history level and daily path, the carrier's own within-day
+        block); seasonal naive on state windows in every arm."""
+        import lite_reanchor as LR
+        LR._paths()                                                                     # the repository root (ankyra_lite) on sys.path
+        from ankyra_lite.anchor import core as AC
+        y, unit, month = P["yL"], P["uL"], P["mL"]
+        st, SN = prod["state"], prod["SN"]
+        ns = ~st
+        n = len(y)
+        mT = ens.reshape(n, DAYS, HR).mean(2)
+        mH, W, al, am = F["mh"], F["within"], F["alphas"], F["alpha_month"]
+        aday = np.repeat(al, [7, 7, 7, 10], axis=1)                                     # weight of each forecast day
+        rec_mh = (F["daily"] - aday * mT) / (1 - aday)                                   # m^H from the handover identity (alpha <= 7/8)
+        rel = np.abs(rec_mh - mH)[ns].max() / max(1.0, np.abs(mH[ns]).max()) if ns.any() else 0.0
+        daily = {"A0": mH, "Ah": 0.5 * mH + 0.5 * mT, "AM": (1 - am[:, None]) * mH + am[:, None] * mT}
+        daily["AW"] = np.stack([AC.lead_week_transition(mH[i], mT[i], al[i]) if ns[i] else np.full(DAYS, np.nan) for i in range(n)])
+        tr = {}
+        for a in ARMS:
+            raw = np.maximum(np.repeat(np.where(ns[:, None], daily[a], 0.0), HR, axis=1) + np.where(ns[:, None], W, 0.0), 0.0)
+            tr[a] = np.where(st[:, None], SN, self._f32(raw))
+        fixed = np.where(st[:, None], SN, self._f32(np.maximum(np.repeat(np.where(ns[:, None], F["fixed"], 0.0), HR, axis=1) + np.where(ns[:, None], F["fwithin"], 0.0), 0.0)))
+        gate = {"aw_equals_the_product": bool(np.array_equal(tr["AW"], prod["traj"])), "m_h_identity_max_rel_diff": float(rel),
+                "daily_means_reproduced": bool(np.array_equal(np.where(ns[:, None], daily["AW"], 0.0), np.where(ns[:, None], F["daily"], 0.0)))}
+        if not (gate["aw_equals_the_product"] and gate["daily_means_reproduced"] and rel < 1e-9):
+            self.notes[face].append(f"handover arms: AW does not reproduce ankyra-lite ({gate}); not written")
+            return {"gate": gate}
+        tr["AW"] = prod["traj"]
+        hm = {a: ((v - y) ** 2).mean(1) for a, v in tr.items()}
+        hm |= {"carrier alone": ((ens - y) ** 2).mean(1), "TimesFM": ((baselines["TimesFM"] - y) ** 2).mean(1), "fixed division": ((fixed - y) ** 2).mean(1)}
+        wk = {a: np.stack([((v - y) ** 2)[:, 24 * a0:24 * a1].mean(1) for a0, a1 in WEEKS4], 1) for a, v in (list(tr.items()) + [("carrier alone", ens),
+              ("TimesFM", baselines["TimesFM"]), ("fixed division", fixed)])}
+        out = {"gate": gate, "contrasts": {}, "weeks": {}}
+        base = {"set": P["name"], "tier": P["tier"], "windows": int(n), "units": int(len(np.unique(unit))), "flag": flag or ""}
+
+        def add(lab, a, b):
+            c = self.ctr(a, b, unit, month, 9)
+            c["pooled_mse_ratio"] = float(a.mean() / b.mean())
+            out["contrasts"][lab] = c
+            r = self.rnd(c)
+            self.rows["handover_granularity"].append(base | {"contrast": lab, **{k: r[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct")},
+                                                             "pooled_mse_ratio": round(c["pooled_mse_ratio"], 6)})
+            return c
+        for lab, a, b in HANDOVER_CONTRASTS:
+            add(lab, hm[a], hm[b])
+        for a in ARMS:
+            for other in ("carrier alone", "TimesFM", "fixed division"):
+                add(f"{a} vs {other}", hm[a], hm[other])
+        for lab, a, b in HANDOVER_CONTRASTS[:2]:
+            for w in range(4):
+                add(f"{lab}, week {w + 1}", wk[a][:, w], wk[b][:, w])
+        tot = out["contrasts"]["AW vs A0"]["log_ratio"]
+        out["share_of_AW_gain"] = ({"Ah": out["contrasts"]["C4 Ah vs A0"]["log_ratio"] / tot, "AM": out["contrasts"]["AM vs A0"]["log_ratio"] / tot}
+                                   if tot is not None and tot < 0 else None)
+        out["alpha_week_mean"] = np.nanmean(al[ns], 0).tolist() if ns.any() else None
+        out["alpha_month_mean"] = float(np.nanmean(am[ns])) if ns.any() else None
+        out["pairs_mean"] = float(F["npairs"][ns].mean()) if ns.any() else None
+        lw = {}
+        for w, (a0, a1) in enumerate(WEEKS4):                                            # lead_weeks.csv
+            row = base | {"week": w + 1, "days": f"{a0 + 1}-{a1}"}
+            for first, fk in (("ankyra_lite", "AW"), ("fixed_division", "fixed division")):
+                for second, sk in (("carrier", "carrier alone"), ("timesfm", "TimesFM")):
+                    c = self.ctr(wk[fk][:, w], wk[sk][:, w], unit, month, 9)
+                    lw[f"{first} vs {second}|week {w + 1}"] = c
+                    r = self.rnd(c)
+                    row |= {f"{first}_vs_{second}_log_ratio": r["log_ratio"], f"{first}_vs_{second}_um_low": r["um_low"],
+                            f"{first}_vs_{second}_um_high": r["um_high"]}
+            row["mean_weight_on_carrier"] = round(float(np.nanmean(al[ns, w])), 4) if ns.any() else ""
+            self.rows["lead_weeks"].append(row)
+        out["lead_weeks"] = lw
+        out["mean_weight_on_carrier_by_week"] = out["alpha_week_mean"]
+        self._lite = prod["traj"]
+        abl = {}
+        self._rows_ablation(P, flag, {FIXED_DIVISION: (fixed, "fixed-division daily means (historical level and daily path, no carrier candidate) plus the carrier's "
+                                                              "within-day block, projected; seasonal naive on state windows; from the anchoring layer's own fields"),
+                                      HALF_HANDOVER: (tr["Ah"], "the carrier's daily means mixed in at a fixed weight of one half instead of the weekly weights; "
+                                                                "everything else as ankyra-lite; seasonal naive on state windows")}, abl)
+        out["ablation"] = abl
+        return out
+
+    def _combination(self, face, P, prod, ens, baselines, flag, F):
+        """One whole-window combination weight (the first release's B2) and the half-and-half average (B1) of the history
+        side H (fixed-division daily means plus the analog-day shape S0) and the carrier C at the origin; the same weight
+        with three generic forecasters X in place of H, and equal-weight averages of the carrier with X.  The weight is the
+        least-squares weight of C against the partner over the whole 744-hour trajectory at the unit's completed
+        pseudo-origins (daily part: the handover pairs, 24 x the daily sums; within-day part: the trust triples; each part
+        divided by its number of pseudo-origins), clipped to [0, 1] and shrunk to 1/2 by n/(n + 2), n = handover pairs."""
+        y, unit, month = P["yL"], P["uL"], P["mL"]
+        st, SN = prod["state"], prod["SN"]
+        ns = ~st
+        n = len(y)
+        nd, nw = F["npairs"].astype(np.float64), F["ntrip"].astype(np.float64)
+
+        def weight(s):                                                                    # s: (n, 4) daily num, den, within num, den
+            num = np.where(nd > 0, 24 * s[:, 0] / np.maximum(nd, 1), 0.0) + np.where(nw > 0, s[:, 2] / np.maximum(nw, 1), 0.0)
+            den = np.where(nd > 0, 24 * s[:, 1] / np.maximum(nd, 1), 0.0) + np.where(nw > 0, s[:, 3] / np.maximum(nw, 1), 0.0)
+            with np.errstate(all="ignore"):
+                lam = np.where(den > 0, np.clip(num / np.where(den > 0, den, 1.0), 0.0, 1.0), 0.5)
+            return np.where(ns, (nd * lam + 1.0) / (nd + 2.0), np.nan)
+
+        s = F["b2_sums"]
+        sH = np.stack([s[:, 0], s[:, 1], s[:, 3] - s[:, 2], s[:, 3]], 1)                  # within-day: <y - S, C - S> = den - num of the trust sums
+        aH = weight(sH)
+        H = np.where(ns[:, None], np.repeat(np.where(ns[:, None], F["fixed"], 0.0), HR, axis=1) + np.where(ns[:, None], F["analog"], 0.0), 0.0)
+
+        def comb(a, X):
+            return np.where(st[:, None], SN, self._f32(np.maximum((1 - np.where(ns, a, 0.5))[:, None] * X + np.where(ns, a, 0.5)[:, None] * ens, 0.0)))
+        B2, B1 = comb(aH, H), comb(np.full(n, 0.5), H)
+        self._lite = prod["traj"]
+        abl = {}
+        self._rows_ablation(P, flag, {WHOLE_WINDOW: (B2, "one least-squares weight per window between the history side (fixed-division daily means plus the "
+                                                         "analog-day shape) and the carrier, from the unit's handover pairs and trust triples, shrunk to 1/2; "
+                                                         "seasonal naive on state windows"),
+                                      HALF_AVERAGE: (B1, "the history side and the carrier averaged with weight 1/2 each; seasonal naive on state windows")}, abl)
+        out = {"ablation": abl, "weight_on_carrier": {"mean": float(np.nanmean(aH)), "quantiles_5_25_50_75_95": np.nanpercentile(aH, [5, 25, 50, 75, 95]).tolist()}}
+        # generic partners
+        gate = {}
+        import lite_reanchor as LR
+        for x in ("SN-week", "WeekProf4"):
+            mine = np.stack([LR.x_forecast(x, c, CONTEXT) for c in P["ctxL"]])
+            gate[x] = float((np.abs(mine - baselines[x]).max(1) / np.maximum(np.abs(baselines[x]).max(1), 1e-9)).max())
+        out["generic_origin_reproduction_max_rel"] = gate
+        cand = {"B2(H)": B2}
+        for j, x in enumerate(GENERIC_X):
+            cand[f"B2({x})"] = comb(weight(F["gen_sums"][:, j, :]), baselines[x])
+        for x in EW_X:
+            if x in baselines:
+                cand[f"EW({x})"] = np.where(st[:, None], SN, np.maximum(0.5 * baselines[x] + 0.5 * ens, 0.0))
+        L = {k: self.losses(y, v) for k, v in cand.items()}
+        L["ankyra-lite"] = self.losses(y, prod["traj"])
+        base = {"set": P["name"], "tier": P["tier"], "subset": "late", "windows": int(n), "units": int(len(np.unique(unit))), "availability_note": "", "flag": flag or ""}
+        res = {}
+        for err, off in (("hourly", 9), ("energy", 11)):
+            got = {}
+            for x in GENERIC_X:
+                got[f"B2(H) vs B2({x})"] = ("", "", self.ctr(L["B2(H)"][err], L[f"B2({x})"][err], unit, month, off))
+            b2x = [f"B2({x})" for x in GENERIC_X]
+            ews = [k for k in cand if k.startswith("EW(")]
+            for lab, first, pool in (("B2(H) vs best B2(X)", "B2(H)", b2x), ("B2(H) vs best equal-weight", "B2(H)", ews),
+                                     ("ankyra-lite vs best generic", "ankyra-lite", ews + b2x)):
+                cs = {k: self.ctr(L[first][err], L[k][err], unit, month, off) for k in pool}
+                best = max(pool, key=lambda k: (cs[k]["log_ratio"] if cs[k]["log_ratio"] is not None else -np.inf))
+                got[lab] = (best, "; ".join(pool), cs[best])
+            for lab, (best, pool, c) in got.items():
+                r = self.rnd(c)
+                res[f"{lab}|{err}"] = c | {"best": best}
+                self.rows["generic_combinations"].append(base | {"contrast": lab, "best": best, "candidates": pool, "error": err,
+                                                                 **{k: r[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct")}, "resolved": c["resolved"]})
+        out["generic"] = res
+        out["generic_weights_mean"] = {x: float(np.nanmean(weight(F["gen_sums"][:, j, :]))) for j, x in enumerate(GENERIC_X)}
+        return out
+
+    def _within_trust(self, P, prod, flag, F):
+        st = prod["state"]
+        ns = ~st
+        tr = F["trust"][:, 0]
+        row = {"set": P["name"], "tier": P["tier"], "windows": int(len(st)), "state_windows": int(st.sum()), "anchored_windows": int(ns.sum()), "flag": flag or ""}
+        if ns.any():
+            row |= {"mean_trust": round(float(tr[ns].mean()), 4), "median_trust": round(float(np.median(tr[ns])), 4),
+                    "share_trust_positive": round(float((tr[ns] > 0).mean()), 4), "share_analog_kept": round(float(F["kept"][ns].mean()), 4),
+                    "mean_triples": round(float(F["ntrip"][ns].mean()), 3), "share_three_triples": round(float((F["ntrip"][ns] == 3).mean()), 4)}
+        self.rows["within_day_trust"].append(row)
+        return {k: v for k, v in row.items() if k not in ("set", "tier", "flag")}
+
+    def _hit_rate(self, face, P, prod, flag, F):
+        """P20: per window, is the level candidate with the largest weight (the smallest pseudo-origin error; ties excluded)
+        the candidate whose window mean at the origin is closest to the realised window mean?  Seven candidates (six
+        historical and the carrier's window mean) and the six historical alone; chance = the mean of 1 / (candidates
+        available).  Descriptive."""
+        y = P["yL"]
+        ns = ~prod["state"]
+        ybar = y.mean(1)
+        out, rows = {}, []
+        for lab, idx in (("seven (six historical and the carrier)", list(range(7))), ("six historical", list(range(6)))):
+            w, c = F["lw"][:, idx], F["cand"][:, idx]
+            avail = np.isfinite(c) & np.isfinite(w)
+            ww = np.where(avail, w, -np.inf)
+            top = ww.max(1)
+            tied = (np.isclose(ww, top[:, None], rtol=0, atol=1e-12) & avail).sum(1) > 1
+            sel = np.argmax(ww, 1)
+            best = np.argmin(np.where(avail, np.abs(c - ybar[:, None]), np.inf), 1)
+            use = ns & avail.any(1) & ~tied
+            hit = (sel == best).astype(np.float64)
+            chance = 1.0 / np.maximum(avail.sum(1), 1)
+            self.hit_pool.append({"face": face, "set": lab, "unit": np.array([f"{face}:{u}" for u in P["uL"]])[use], "hit": hit[use], "chance": chance[use]})
+            r = self._hit_row(P["name"], P["tier"], lab, P["uL"][use], hit[use], chance[use], int((ns & tied).sum()), flag)
+            if 6 in idx:
+                r["share_carrier_selected"] = round(float((sel[use] == 6).mean()), 4) if use.any() else ""
+                r["share_carrier_best"] = round(float((best[use] == 6).mean()), 4) if use.any() else ""
+            rows.append(r)
+            out[lab] = {k: v for k, v in r.items() if k not in ("set", "tier", "candidates", "flag")}
+        self.rows["level_candidate_hit_rate"] += rows
+        return out
+
+    @staticmethod
+    def _hit_row(name, tier, lab, unit, hit, chance, tied, flag):
+        r = {"set": name, "tier": tier, "candidates": lab, "windows": int(len(hit)), "units": int(len(np.unique(unit))), "windows_tied_excluded": tied,
+             "share_carrier_selected": "", "share_carrier_best": "", "flag": flag or ""}
+        if not len(hit):
+            return r
+        uu, inv = np.unique(unit, return_inverse=True)
+        d = hit - chance
+        su, cu = np.bincount(inv, d, len(uu)), np.bincount(inv, minlength=len(uu)).astype(np.float64)
+        rng = np.random.default_rng(HIT_SEED)
+        draws = []
+        for _ in range(2000):
+            k = rng.integers(0, len(uu), len(uu))
+            draws.append(su[k].sum() / cu[k].sum())
+        lo, hi = np.percentile(draws, [2.5, 97.5])
+        r |= {"hit_rate": round(float(hit.mean()), 4), "chance_rate": round(float(chance.mean()), 4), "hit_minus_chance": round(float(d.mean()), 4),
+              "um_low": round(float(lo), 4), "um_high": round(float(hi), 4)}
+        return r
+
+    def _peak_carrier(self, P, prod, ens, flag):
+        """peak_readout.csv row: ankyra-lite's peak readout against the same readout on the carrier alone (the three-seed
+        carrier forecast at the origin, no anchoring layer, no state rule); fresh stream SEED + 13 as every peak row."""
+        PK = self.T.PK
+        y, ctx, unit, month = P["yL"], P["ctxL"], P["uL"], P["mL"]
+        ypk = y.max(1)
+        e_ref = np.abs(prod["peak"] - ypk)
+        e_c = np.abs(PK.peak_readout_scalar(ens, ctx, P["ctL"], P["ttL"], 1.0) - ypk)
+        with np.errstate(all="ignore"):
+            c = CB.contrast_um(self.T, e_ref ** 2, e_c ** 2, unit, month, np.random.default_rng(self.T.DS.SEED + 13))
+        ape_a, ape_p = CB.ape_mum(e_ref, ypk, unit), CB.ape_mum(np.abs(ctx[:, -HORIZON:].max(1) - ypk), ypk, unit)
+        row = {"set": P["name"], "tier": P["tier"], "comparator": CARRIER_PEAK, "log_ratio": round(c["log_ratio"], 6), "um_low": round(c["UM"][0], 6),
+               "um_high": round(c["UM"][1], 6), "improvement_pct": round(100 * (1 - math.exp(c["log_ratio"])), 3),
+               "median_peak_ape_ankyra_pct": round(ape_a, 2), "median_peak_ape_previous_peak_pct": round(ape_p, 2), "flag": flag or ""}
+        self.rows["peak_readout_added"].append(row)
+        return {"log_ratio": float(c["log_ratio"]), "UM": [float(c["UM"][0]), float(c["UM"][1])], "median_peak_ape_carrier_readout_pct": CB.ape_mum(e_c, ypk, unit)}
+
+    def _hit_pooled(self):
+        """The hit rate pooled over the populations of the run (units of all populations resampled)."""
+        rows = []
+        for lab in ("seven (six historical and the carrier)", "six historical"):
+            parts = [x for x in self.hit_pool if x["set"] == lab]
+            if len(parts) < 2:
+                continue
+            name = "all nine populations" if sorted(x["face"] for x in parts) == sorted(CB.NINE) else "all populations of this run"
+            rows.append(self._hit_row(name, "", lab, np.concatenate([x["unit"] for x in parts]), np.concatenate([x["hit"] for x in parts]),
+                                      np.concatenate([x["chance"] for x in parts]), "", ""))
+        self.rows["level_candidate_hit_rate"] += rows
+        return rows
+
+    def _summary_added(self, x, order, name, cell):
+        """SUMMARY.md sections of the files added on 19 October 2026 (from the saved record only)."""
+        import budget_tables as BT
+        import long_context_tables as LC
+        L = []
+        R = {f: self.rec[f] for f in order}
+        names = {f: name(f) for f in order}
+        ho = [(f, r["handover"]) for f, r in R.items() if (r.get("handover") or {}).get("contrasts")]
+        if ho:
+            L += ["## What the handover contributes (`handover_granularity.csv`, `lead_weeks.csv`)", "",
+                  "Four arms share the level with the carrier candidate, the delivered within-day block, the projection and the state rule; they",
+                  "differ only in the weight on the carrier's daily means: none (A0), a fixed half (Ah), one weight per window from the handover",
+                  "pairs (AM), the weekly weights (AW = ankyra-lite). Hourly improvement of the first-named arm in % (`*` resolved better, `(-)` resolved",
+                  "worse); `share` = the part of AW's gain over A0 that the fixed half weight already gives (log-ratio share).", "",
+                  "| Population | AW vs Ah | AW vs AM | Ah vs A0 | AW vs A0 | share (Ah) | ankyra-lite vs fixed division | mean weight on the carrier, weeks 1-4 |",
+                  "|---|---|---|---|---|---|---|---|"]
+            for f, h in ho:
+                c = h["contrasts"]
+                sh = h.get("share_of_AW_gain") or {}
+                fd = (R[f].get("ablation") or {}).get(f"{FIXED_DIVISION}|hourly") or (h.get("ablation") or {}).get(f"{FIXED_DIVISION}|hourly")
+                share_txt = f"{100 * sh['Ah']:.0f}%" if sh.get("Ah") is not None else "-"
+                L.append(f"| {name(f)} | {cell(c['C1 AW vs Ah'])} | {cell(c['C2 AW vs AM'])} | {cell(c['C4 Ah vs A0'])} | {cell(c['AW vs A0'])} | "
+                         f"{share_txt} | {cell(fd)} | "
+                         f"{' / '.join(f'{v:.2f}' for v in (h.get('alpha_week_mean') or []))} |")
+            L += ["", "By forecast week (`lead_weeks.csv`), hourly improvement of ankyra-lite and of the fixed division over the carrier alone:", "",
+                  "| Population | ankyra-lite vs carrier, weeks 1-4 | fixed division vs carrier, weeks 1-4 |", "|---|---|---|"]
+            for f, h in ho:
+                lw = h.get("lead_weeks") or {}
+                L.append(f"| {name(f)} | " + " ".join(cell(lw.get(f'ankyra_lite vs carrier|week {w}')) for w in range(1, 5)) + " | "
+                         + " ".join(cell(lw.get(f'fixed_division vs carrier|week {w}')) for w in range(1, 5)) + " |")
+            L += ["", "The arms are rebuilt from the anchoring layer's own fields (lite_reanchor.py, mode `fields`); AW reproduces the delivered",
+                  "forecast bit for bit, and the history-side daily means before the handover are those of the layer's own level.", ""]
+        wt = [(f, r["within_trust"]) for f, r in R.items() if (r.get("within_trust") or {}).get("mean_trust") is not None]
+        if wt:
+            L += ["## Within-day anchoring: where it acts (`within_day_trust.csv`)", "",
+                  "| Population | Anchored windows | Mean trust on the analog shape | Windows with trust > 0 | Analog shape kept |", "|---|---:|---:|---:|---:|"]
+            for f, w in wt:
+                L.append(f"| {name(f)} | {w['anchored_windows']} | {w['mean_trust']:.3f} | {100 * w['share_trust_positive']:.0f}% | {100 * w['share_analog_kept']:.0f}% |")
+            L += [""]
+        cb = [(f, r["combination"]) for f, r in R.items() if (r.get("combination") or {}).get("ablation")]
+        if cb:
+            L += ["## Block-wise weights against one whole-window weight (`ablation.csv`, `component_contributions.csv`, `generic_combinations.csv`)", "",
+                  "ankyra-lite against one whole-window combination weight of the same two forecasts (the history side: fixed-division daily",
+                  "means plus the analog-day shape; the carrier at the origin; one least-squares weight per window from the unit's pseudo-origins,",
+                  "shrunk to 1/2) and against their half-and-half average; improvement of ankyra-lite in %:", "",
+                  "| Population | vs whole-window weight (hourly / energy) | vs half-and-half (hourly / energy) | mean weight on the carrier |", "|---|---|---|---:|"]
+            for f, c in cb:
+                a = c["ablation"]
+                L.append(f"| {name(f)} | {cell(a.get(f'{WHOLE_WINDOW}|hourly'))} / {cell(a.get(f'{WHOLE_WINDOW}|energy'))} | "
+                         f"{cell(a.get(f'{HALF_AVERAGE}|hourly'))} / {cell(a.get(f'{HALF_AVERAGE}|energy'))} | {c['weight_on_carrier']['mean']:.2f} |")
+            gl = ("B2(H) vs B2(SN-week)", "B2(H) vs B2(WeekProf4)", "B2(H) vs B2(LYR-profile)", "B2(H) vs best B2(X)", "B2(H) vs best equal-weight",
+                  "ankyra-lite vs best generic")
+            L += ["", f"Generic partners (`generic_combinations.csv`), populations (of {len(cb)}) first-named resolved better / not resolved / resolved worse:", "",
+                  "| Contrast | Hourly | Energy |", "|---|---|---|"]
+            for lab in gl:
+                cnt = []
+                for err in ("hourly", "energy"):
+                    v = [c["generic"].get(f"{lab}|{err}", {}).get("resolved") for _, c in cb]
+                    cnt.append(f"{v.count('first better')} / {v.count('not resolved') + v.count('identical forecasts')} / {v.count('second better')}")
+                L.append(f"| {lab} | {cnt[0]} | {cnt[1]} |")
+            L += ["", "B2(H) is the whole-window weight with the history side, B2(X) the same with a generic forecaster X in its place (X computed",
+                  "from the load at every pseudo-origin), EW(X) the equal-weight average of the carrier and X; `best` was picked after scoring.", ""]
+        hr = [(f, r["hit_rate"]) for f, r in R.items() if r.get("hit_rate")]
+        if hr:
+            L += ["## Level candidates: hit rate of the pseudo-selected candidate (`level_candidate_hit_rate.csv`)", "",
+                  "| Population | Seven candidates: hit rate / chance | Six historical: hit rate / chance |", "|---|---|---|"]
+            for f, h in hr:
+                a, b = h.get("seven (six historical and the carrier)", {}), h.get("six historical", {})
+                L.append(f"| {name(f)} | {a.get('hit_rate', float('nan')):.3f} / {a.get('chance_rate', float('nan')):.3f} | "
+                         f"{b.get('hit_rate', float('nan')):.3f} / {b.get('chance_rate', float('nan')):.3f} |")
+            for r in x.get("level_candidate_hit_rate_pooled") or []:
+                L.append(f"| {r['set']} ({r['candidates']}) | {r['hit_rate']:.3f} / {r['chance_rate']:.3f} (difference {r['hit_minus_chance']:+.3f}, "
+                         f"95% unit bootstrap {r['um_low']:+.3f} to {r['um_high']:+.3f}) | |")
+            L += ["", "Descriptive (P20): the candidate with the largest weight (smallest pseudo-origin error) against the candidate whose window",
+                  "mean at the origin is closest to the realised mean; windows with tied weights (no evidence) are left out.", ""]
+        pc = [(f, r["peak_carrier"]) for f, r in R.items() if r.get("peak_carrier")]
+        if pc:
+            L += ["Peak readout of ankyra-lite against the same readout on the carrier alone (`peak_readout.csv`, comparator `" + CARRIER_PEAK + "`): "
+                  + "; ".join(f"{name(f)} {cell({'improvement_pct': 100 * (1 - math.exp(p['log_ratio'])), 'log_ratio': p['log_ratio'], 'um_low': p['UM'][0], 'um_high': p['UM'][1]})}"
+                              for f, p in pc) + ".", ""]
+        L += BT.summary(x.get("budget"), names)
+        L += LC.summary(x.get("long_context"), names)
+        return L
+
+    def write_added(self, out_dir, rec, parts=None):
+        """Write the files added on 19 October 2026 and return (written, files, record).  ``parts=("budget",)``: the
+        training budget file only."""
+        import budget_tables as BT
+        import long_context_tables as LC
+        written, files = [], {}
+        only_budget = parts is not None and set(parts) <= {"budget"}
+        hp = [] if only_budget else self._hit_pooled()
+        if not only_budget:
+            self.rows["energy_level_readout"] = energy_level_rows(rec, self.T)
+        specs = {} if only_budget else dict(ADDED_FILES)
+        specs[BT.FILE] = ("training_budget_sensitivity", BT.FIELDS, BT.DESCRIPTION)
+        if not only_budget:
+            specs[LC.FILE] = ("long_context_baselines", LC.FIELDS, LC.DESCRIPTION)
+        for name, (key, fields, desc) in specs.items():
+            rows = self.rows.get(key)
+            if not rows:
+                continue
+            CB.write_rows(name, rows, fields)
+            written.append(name)
+            files[name] = desc
+        x = {"budget": {"populations": {f: r["budget"] for f, r in self.rec.items() if r.get("budget")}}}
+        if not only_budget:
+            x |= {"long_context": {"populations": {f: r["long_context"] for f, r in self.rec.items() if r.get("long_context")}},
+                  "level_candidate_hit_rate_pooled": [{k: v for k, v in r.items() if k not in ("flag",)} for r in hp]}
+        if x["budget"]["populations"]:
+            x["budget"]["counts"] = BT.counts(x["budget"]["populations"])
+        return written, files, x
+
     # ------------------------------------------------------------------ after the last population
     def finish(self, out_dir, rec, cost=True, robustness=True, robustness_face=None, robustness_windows=None):
         written, files = [], {}
@@ -874,8 +1388,11 @@ class Collector:
             written.append(name)
             files[name] = {"intervals_households.json": "the interval on GoiEner households: four arms and contrasts",
                            "example_window_cambridge.json": "the building, period, day types and source of the example window"}[name]
+        w2, f2, x2 = self.write_added(out_dir, rec)
+        written += w2
+        files.update(f2)
         rec_out = {"populations": self.rec, "history_length_pooled": hist_pooled, "anchoring_gain_deciles": dec and dec["rec"],
-                   "cost": cost_rec, "robustness": rob_rec, **rt_rec, "notes": dict(self.notes), "absent_files": ABSENT}
+                   "cost": cost_rec, "robustness": rob_rec, **rt_rec, **x2, "notes": dict(self.notes), "absent_files": ABSENT}
         return written, rec_out, self.summary(rec, rec_out), files
 
     def _history_pooled(self, rec):
@@ -1109,6 +1626,7 @@ class Collector:
                   f"{x['constants']['carrier_rows']} carrier rows (training recipe, span return, network; read from the package defaults) and "
                   f"{x['constants']['anchoring_rows']} anchoring-layer rows (group, constant, value and where_fixed as in the first release; the layer",
                   "is a byte-identical copy). The `sensitivity` column holds the study's recipe readouts where a recipe constant was varied.", ""]
+        L += self._summary_added(x, order, name, cell)
         notes = [f"{name(f)}: {plain(n)}" for f, ns in x["notes"].items() for n in ns if f in pops]
         L += ["## Files of the first release without a counterpart here", "", "| File | Why there is none |", "|---|---|"]
         for k, v in ABSENT.items():
@@ -1139,13 +1657,34 @@ def summary_from_record(rec):
     return c.summary(rec, rec["extra"])
 
 
+def energy_level_rows(rec, T=None):
+    """energy_level_readout.csv from the saved record: the sensitivity ``energy_level_readout`` of compare_baselines.json
+    (ankyra-lite's level readout, 744 x level, in place of its delivered trajectory's mean; same estimator, random stream
+    and model order as energy_error.csv).  ``energy_error.csv`` keeps the release definition."""
+    rows = []
+    for f, p in rec.get("populations", {}).items():
+        el = p.get("energy_level_readout")
+        if not el:
+            continue
+        for m in sorted(el["vs"]):
+            v = el["vs"][m]
+            lr, (lo, hi) = v["log_ratio"], v["UM"]
+            rows.append({"set": p["name"], "tier": p["tier"], "windows": p["windows"], "units": p["units"], "model": m,
+                         "model_label": (CB.TIDE_LABEL if m == "TiDE" else T.label(m, CB.REF_B, CB.REF_B_LABEL)) if T is not None else m,
+                         "log_ratio": round(lr, 6) + 0.0, "um_low": round(lo, 6) + 0.0, "um_high": round(hi, 6) + 0.0,
+                         "improvement_pct": round(100 * (1 - math.exp(lr)), 3) + 0.0, "resolved": _resolved(lo, hi),
+                         "median_energy_ape_pct": round(el["median_energy_ape_pct"], 3),
+                         "windows_projection_binds": p["product"]["level_vs_trajectory_mean_windows_over_1e-6"], "flag": p.get("flag") or ""})
+    return rows
+
+
 ABSENT = {
     "conventional_metrics.csv": "the release's file covers all windows; ankyra-lite forecasts exist on the test windows only (the earlier windows lie in or before its training period); `conventional_metrics_late.csv` holds the test windows",
-    "handover_granularity.csv": "needs other handover rules inside the anchoring layer, which must stay byte-identical to ANKYRA 2.2.1",
-    "constants_sensitivity.csv": "the release ran it on design windows without any test window; ankyra-lite forecasts exist on the test windows only; the recipe constants the study varied are in `recipe_history.csv` and the `sensitivity` column of `constants.csv`",
+    "constants_sensitivity.csv": "the release ran it on design windows without any test window; ankyra-lite forecasts exist on the test windows only, and the anchoring layer's constants are fixed in its byte-identical copy; the recipe constants the study varied are in `recipe_history.csv` and the `sensitivity` column of `constants.csv`",
     "contrast_ii_control_description.csv": "describes the calls of the carrier-free control, which does not involve the carrier (the same control as in the first release; `contrast_ii_control.csv` holds the contrasts)",
-    "lead_weeks_first_read.csv, ankyra_2_vs_1x_by_day.csv, bdg2_micro_load_windows.csv, carrier_swap*.csv, long_context_carriers.csv, generic_combinations.csv, trained_carriers_sensitivity.csv, training_budget_sensitivity.csv":
-        "records of ANKYRA's own versions, carriers or baselines; the comparable ankyra-lite content is in `ablation.csv`, `carriers_in_anchoring_layer.csv`, `seed_spread.csv` and `recipe_history.csv`",
+    "ankyra_2_vs_1x_by_day.csv, bdg2_micro_load_windows.csv, reevaluation_2_*.json, closeout_status.json": "records of ANKYRA's own versions and design decisions; ankyra-lite's own recipe history is `recipe_history.csv`",
+    "carrier_swap*.csv, long_context_carriers.csv (the anchored rows)": "foundation models as ANKYRA's carrier are ANKYRA configurations; the two zero-shot long-context forecasts of `long_context_carriers.csv` are scored against ankyra-lite in `long_context_baselines.csv`, and trained carriers inside this anchoring layer are in `carriers_in_anchoring_layer.csv`",
+    "trained_carriers_sensitivity.csv": "it measures what the earlier training cutoff of a trained carrier costs that carrier alone; ankyra-lite's carriers, and the other carriers of `carriers_in_anchoring_layer.csv`, are trained with that earlier cutoff already",
     "lcl_*, hkust_*, helsinki_*, unicon_*": "the external tests of this version are reported differently: carriers trained with the released recipe for each test set, LCL, UNICON and HKUST scored once (first read of this candidate on a previously read population) and a same-source out-of-time supplementary check (GoiEner households), all in `external_tests.csv` and docs/EXTERNAL_TESTS.md; Helsinki (retrospective) is trained and sealed, not yet scored; UCI370 was skipped",
     "ankyra_1x/, ankyra_2_0_0/, ankyra_2_0_1/, ankyra_2_1/ (version archives)": "ankyra-lite's version history is `recipe_history.csv` (the from-scratch stage and the recipe arms of the study)",
 }

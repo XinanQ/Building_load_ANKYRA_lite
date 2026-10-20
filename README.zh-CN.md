@@ -12,7 +12,7 @@
 
 ankyra-lite（包名 `ankyra-lite`，发行名 `building-load-ankyra-lite`，导入名 `ankyra_lite`）根据一个单位（一栋楼、一块电表、一个用电点或一户住户）截至起报点的自身记录，预测其后 744 小时（31 天）的逐时负荷。它由两部分组成。一个小型**载体网络**（复制指针结构化负荷网络，61,613 个参数，每个人群从零训练，不用任何预训练权重）根据单位的历史和已知日历，在起报点和六个更早的伪起报点上预测这个月。一个**锚定层**（从 ANKYRA 2.2.1 包逐字节复制而来）在单位已经经历过的月份上给载体的伪起报点预测打分，并用这些误差逐块（月水平、日路径、日内形状）在载体和单位的长期历史之间定权。输出是 744 小时的轨迹、月电量和月峰值读出。用三个种子时，一次预测在单个 CPU 线程上约需 0.58 秒（[耗时](#每个窗口的耗时)），不下载任何东西。本仓库包含这个包、27 个训练好的检查点（九个人群 × 三个种子）、训练配方、评分代码、与 21 个外部基线在九个人群上的评分比较、图，以及两部分各自的精确性质。
 
-> **状态（0.1.0 版，2026 年 10 月 19 日）。**
+> **状态（0.1.1 版，2026 年 10 月 19 日）。**
 >
 > - **证据性质：在此前读过的测试窗口上的复用评估。** 这些测试窗口在发布配置定下之前已经读过，部分设计（复制指针的方向、季节性朴素状态规则）是看过它们之后选定的。本页九个人群比较中的每个数字描述的都是发布的预测器在这些窗口上的表现，没有一个是首次检验（[先读这一节](#先读这一节)）。外部检验的数字有各自的结果身份，与每个数字写在一起。
 > - **配方是在一次方向性读数之后选定的。** 发布的训练配方 R（验证段归还）是 2026 年 10 月 19 日、在这些测试窗口上对验证段归还研究做了一次方向性读数之后选定的。它的负面结果是发布内容的一部分，并已披露（[配方历史](#配方历史r-是怎样选定的以及它的负面结果)）。
@@ -30,7 +30,15 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
 | 月电量 | 每个人群上明确好于 21 个中的 4–20 个（189 个中的 105 个）；没有明确更差的 | 九个人群 | `energy_error.csv` |
 | 秩检验 | 平均名次 5.496，下一个预测器（逐单位岭回归）为 7.438；Nemenyi 临界差 0.786 | 六个测试人群合并，1,762 个单位 | `rank_tests.csv` |
 | 峰值读出 | 峰值误差比它自身轨迹的最大值低 18.1–67.9%；在八个人群上明确（奥斯陆除外） | 九个人群 | `peak_readout.csv` |
+| 对比 (i)：锚定层对单独的载体 | 人群数（明确更好 / 不明确 / 明确更差）：逐时误差 **2 / 7 / 0**，月电量 **1 / 8 / 0** | 九个人群 | `carriers_in_anchoring_layer.csv` |
+| 对比 (ii)：含载体对纯历史配置 | 逐时 **9 / 0 / 0**（+5.4% 到 +20.5%），月电量 **4 / 5 / 0** | 九个人群 | `carriers_in_anchoring_layer.csv` |
+| 对无载体对照（同一流程，把纯历史预测放在载体的位置上） | 逐时 **9 / 0 / 0**（+3.0% 到 +15.8%） | 九个人群 | `contrast_ii_control.csv` |
+| 80% 预测区间 | 覆盖 0.758–0.851 的小时（90%：0.850–0.921）；TimesFM 原生分位数为 0.345–0.606，Chronos-2 为 0.629–0.804 | 九个人群 | `intervals_by_population.csv` |
 | 耗时 | 每次预测 0.584 秒（载体在 7 个发布时刻 × 3 个种子、锚定层、峰值读出） | 单个 CPU 线程，6 个奥斯陆窗口 | `cost_per_window.csv` |
+
+- **读出。** 电量由水平读出（744 × 水平，在非负投影之前），月峰值由偏移包络读出（每天的预测均值加上同日类型近期的最大偏移），预测区间由单位自己纯历史伪预测的残差得到（[读出](#读出)）。
+- **诊断记录。** 每个预测都精确拆成水平、日路径和日内三块（P1），每一块的权重随预测一起返回（水平权重、按周的交接权重、日内信任），`anchoring_record` 报告载体在单位自己过去几个月上相对历史的表现（[输出](#输出)）。
+- **对比不是包含检验。** 对比 (i) 和 (ii) 衡量的是在这些窗口上一种配置相对另一种的增量精度，不是正式的预测包含检验（Chong 和 Hendry 1986；Harvey、Leybourne 和 Newbold 1998）：不明确的对比不说明一个预测包含了另一个，锚定层收缩后的权重是用于预测的估计量，不是检验统计量（[参考文献](#来源许可与引用)）。
 
 **它的边界在哪里。**
 
@@ -43,7 +51,7 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
 
 ![ankyra-lite 的结构](figures/fig1_architecture.png)
 
-*图 1. 结构：起报时已知的输入、载体网络、它在起报点和六个伪起报点上的预测、锚定层（水平权重、交接权重、日内信任、状态窗口）和输出。每次预测的耗时取自 `results/cost_per_window.csv`。*
+*图 1. 结构，按时间展开。a，载体网络在起报点 o 和至多六个伪起报点 o − 744k（Δ = 744 小时）上各发布一次预测，每次只用该发布时刻之前的数据；每个伪起报点预测覆盖的那个月在 o 时已经观测到，并在这个月上打分（e_k）。b，载体网络：日 token、月 token 和预测日 token，因果空洞卷积编码器，注意力读出（31 个日查询和一个学到的全局查询），覆盖单位最近 56 个完整日的复制指针，以及能量预算解码器 F(d, h) = 744 · ℓ · p_d · q_d(h)。c，锚定层（ANKYRA 2.2.1 的副本，其中没有任何东西被训练）按打分 e_k 设定权重，在载体和单位自己的历史之间为月水平、日均值和日内形状定权，输出轨迹、电量和峰值。图中的序列以及所有曲线、柱和权重都是合成的示意，不是结果。每次预测的耗时取自 `results/cost_per_window.csv`。*
 
 **简要原理。** 术语的定义见[本页用到的术语](#本页用到的术语)。
 
@@ -56,7 +64,7 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
 ## 目录
 
 - **使用：** [仓库结构](#仓库结构) · [安装与运行](#安装与运行) · [快速上手](#快速上手) ·
-  [输入与输出](#输入与输出)（[输入](#输入) · [输出](#输出) ·
+  [输入与输出](#输入与输出)（[输入](#输入) · [输出](#输出) · [读出](#读出) ·
   [需要多少历史](#需要多少历史) · [什么时候不该用](#什么时候不该用)） · [检查点](#检查点)
 - **原理：** [模型卡](#模型卡) ·
   [锚定层怎样使用载体](#锚定层怎样使用载体) ·
@@ -70,6 +78,7 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
   [各部分带来什么](#各部分带来什么) · [种子](#种子) ·
   [锚定层中的其他载体](#同一锚定层中的其他载体) ·
   [历史长度](#历史长度与锚定记录) · [稳健性](#对受损上下文的稳健性) ·
+  [训练预算](#稳健性训练型基线的训练预算) · [一年上下文](#一年上下文的基础模型) ·
   [耗时](#每个窗口的耗时) · [配方历史](#配方历史r-是怎样选定的以及它的负面结果)） ·
   [ankyra-lite 的薄弱之处](#ankyra-lite-的薄弱之处) · [局限](#局限) · [外部检验](#外部检验)
 - **核对：** [测试](#测试) · [理论](#理论精确性质) · [可复现性](#可复现性) ·
@@ -79,7 +88,9 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
 
 ```
 ankyra_lite/                 the forecaster (import ankyra_lite)
-  forecast.py                forecast(): carrier forecasts -> anchoring layer -> state rule -> peak readout; ForecastResult
+  forecast.py                forecast(): carrier forecasts -> anchoring layer -> state rule -> peak readout; ForecastResult;
+                             forecast(history, None) is the history-only configuration
+  readouts.py                readouts of a forecast: interval, blocks, raw_trajectory, projection_energy_increase, peak
   carrier/                   the carrier network
     model.py                 CopyPointerNetwork, build_carrier, load_carrier, forecast_loss, param_groups (61,613 parameters)
     features.py              the carrier's inputs at one issue time, from data before it only
@@ -88,17 +99,21 @@ ankyra_lite/                 the forecaster (import ankyra_lite)
   anchor/                    byte-identical copy of the ANKYRA 2.2.1 anchoring layer (17 files; PROVENANCE.md lists their hashes)
 checkpoints/                 the 27 released carriers (9 populations x 3 seeds) and MANIFEST.json (hashes, cuts, source runs)
 examples/quickstart.py       end to end on an artificial building with the shipped checkpoints
-tests/                       176 tests: the anchoring layer's own tests, equivalence with the original package and the
+examples/own_unit.py         your own unit's record, on an artificial meter: a record that starts in the middle of a year,
+                             holidays, gaps, the history-only call, the interval and the anchoring record
+tests/                       196 tests: the anchoring layer's own tests, equivalence with the original package and the
                              research code, the carrier, the training recipe, the evaluation module, the comparison script
                              and the external-test table
 theory/                      the exact properties: P1-P20 (anchoring layer) and C1-C10 (carrier), proofs, operators, 58 checks
 evaluation/                  the scoring module, a runnable example, and the scripts that wrote results/ (need the study's data)
 results/                     every scored statistic (CSV / JSON), SUMMARY.md, the reproduction record; README.md lists the columns
-figures/                     make_figures.py and the figures (PDF and PNG), drawn from results/ (Figure 7 also from theory/)
+figures/                     make_figures.py, architecture.py (the drawing of Figure 1) and the figures (PDF and PNG), drawn
+                             from results/ (Figure 7 also from theory/)
 docs/                        METHOD.md (network, recipe, anchoring, constants), EVALUATION.md (protocol, baselines, full tables),
                              DATA.md (sources, preparation, splits, borrowed windows), EXTERNAL_TESTS.md (the external tests)
 tools/export_checkpoints.py  the export of the 27 checkpoints with their verification (needs the study's data)
-.github/workflows/tests.yml  CI: tests, theory checks, quickstart, evaluation example, figures (Python 3.10-3.13, CPU)
+.github/workflows/tests.yml  CI (Python 3.10-3.13, CPU): tests, theory checks, quickstart, own-unit example, evaluation
+                             example; the figures regenerated from results/ on Python 3.11
 pyproject.toml, LICENSE (MIT), CITATION.cff, README.zh-CN.md
 ```
 
@@ -124,7 +139,7 @@ python -B examples/quickstart.py
 **软件环境。** 仓库记录了以下内容，仅此而已：
 
 - `pyproject.toml` 只给出版本下限：Python ≥ 3.10、NumPy ≥ 1.26、SciPy ≥ 1.11、PyTorch ≥ 2.4；画图可选 Matplotlib ≥ 3.8。
-- CI（`.github/workflows/tests.yml`）在 Python 3.10、3.11、3.12 和 3.13（Ubuntu，只用 CPU 的 PyTorch）上运行两套测试、快速上手和评估示例，并在 Python 3.11 上重新生成图。需要研究本地数据或 ANKYRA 仓库副本的测试在那里会跳过。
+- CI（`.github/workflows/tests.yml`）在 Python 3.10、3.11、3.12 和 3.13（Ubuntu，只用 CPU 的 PyTorch）上运行两套测试、快速上手、自己单位的示例和评估示例，并在 Python 3.11 上重新生成图。需要研究本地数据或 ANKYRA 仓库副本的测试在那里会跳过。
 - 发布的图用 Python 3.11、Matplotlib 3.11.0 和 NumPy 2.4.4 绘制（[figures/README.md](figures/README.md)）。快速上手和本页的代码于 2026 年 10 月 19 日在 CPU 单线程上用 Python 3.11、NumPy 2.4.4 和 PyTorch 2.11 运行过。
 - 发布的检查点来自研究在 GPU 上的运行；这些运行所用的软件包版本没有记录在本仓库中。
 
@@ -196,9 +211,11 @@ print(r.lead_week_weights, r.pseudo_pairs)   # read through to the anchoring lay
 | `start_timestamp` | 第一年的 1 月 1 日 00:00，带 `+00:00` 偏移，例如 `"2019-01-01T00:00:00+00:00"`（固定偏移的网格） | 每个 token 的年相位和记录的绝对时间 | 年温度谐波的相位，以及相似日的夏令时状态 |
 | `observed`（可选） | 负荷的布尔掩码 | 被屏蔽的小时按缺测处理 | `False` 的小时被忽略 |
 
+**记录从年中开始。** 用 NaN 把负荷向前补到第一年的 1 月 1 日 00:00，补齐的小时也要给出有限的温度（有档案温度就用档案温度），写出补齐那些天的日类型，并把这个 1 月 1 日 00:00 作为 `start_timestamp`。[`examples/own_unit.py`](examples/own_unit.py) 在一块从 2019 年 3 月 18 日开始、有法定假日和三处缺测的人工电表上从头到尾做了这些，并用发布的检查点（`cut=None`）运行预测、纯历史配置、区间读出和锚定记录（`python -B examples/own_unit.py`；细节见 [docs/DATA.md](docs/DATA.md#how-much-history)）。
+
 `forecast(history, carriers, *, group, temp_sigma_std, dst_region="none", cut=None, state_rule="seasonal_naive", device="cpu", **anchor_kwargs)` 的其他参数：
 
-- `carriers`：一个载体网络、一个载体列表（集成，取平均），或预先算好的映射 `{k: (744,) carrier forecast issued at origin − 744k}`。
+- `carriers`：一个载体网络、一个载体列表（集成，取平均），或预先算好的映射 `{k: (744,) carrier forecast issued at origin − 744k}`；传 `None` 得到**纯历史配置**（没有载体的锚定层：历史水平和日路径，加上同日类型的日内默认形状；不用状态规则；`carrier` 为 `{}`），即对比 (ii) 中的简化配置。
 - `group`：`"Industrial"`、`"Office"`、`"Public"`、`"Residential"` 或 `"Commercial"`。它既是载体的类别输入，也是锚定层选择固定温度特征先验的依据。`"Commercial"` 在锚定层中没有先验曲线（温度特征为零），与 ANKYRA 2.2.1 相同。
 - `temp_sigma_std`：该人群的温度异常尺度，一个正数，单位为 10 °C，在训练截点之前的日子上拟合（[研究中怎样拟合](docs/DATA.md#the-input-format)）。
 - `dst_region`：`"EU"`、`"US"` 或 `"none"`；只用于从相同的夏令时状态中取相似日。
@@ -234,13 +251,29 @@ print(r.lead_week_weights, r.pseudo_pairs)   # read through to the anchoring lay
 | `analog_shape_kept` | `analog_kept` | 相似日形状大得不合理、整个窗口改用载体形状时为 `False` |
 | — | `off_state`、`micro_load` | 锚定层的哪条状态规则被触发 |
 | — | `anchoring_record` | 单位伪预测记录在水平上的两个统计量，预测本身不使用：`carrier_level_weight` 和 `history_vs_carrier_log_ratio`（[表](#历史长度与锚定记录)） |
-| `interval_80pct_first_hour_kw`、`interval_pseudo_windows` | `anchor.readouts.interval_bands`、`residual_quantiles` | 一个 80% 区间：由单位纯历史伪预测的残差分位数得到，加到轨迹上；这是单独的调用，不属于预测器；它配合这个载体时的覆盖率见[预测区间](#预测区间) |
+| — | `daily_means_kw` | (31,) 交接之后、非负投影之前的日均值；`level_kw` 是它们的均值 |
+| — | `fixed_division_daily_means_kw` | (31,) **固定分工**：历史水平和日路径，不含载体的水平候选，也不做交接 |
+| — | `within_day_kw` | (744,) 交付的日内块：载体的日内块按信任混入相似日形状 |
+| — | `foundation_within_day_kw` | (744,) 载体自己的日内块（字段名沿用锚定层的名字） |
+| — | `analog_shape_kw` | (744,) 单位的相似日形状（合理性检查回退时为载体的块） |
+| `interval_80pct_first_hour_kw`、`interval_pseudo_windows` | `ankyra_lite.interval(history, r, group=..., temp_sigma_std=...)` | 80% 和 90% 区间（(5, 744) 区间带的第 1、3 行和第 0、4 行）：由单位纯历史伪预测的残差分位数得到，加到轨迹上；这是单独的读出，不属于预测器（[读出](#读出)） |
+
+在状态窗口上，这些字段描述的是锚定层的返回值（载体的预测，权重、固定分工和相似日字段取默认值），而不是默认状态规则交付的季节性朴素预测。`np.repeat(r.daily_means_kw, 24) + r.within_day_kw` 是投影之前的预测（`ankyra_lite.readouts.raw_trajectory`），`ankyra_lite.readouts.blocks` 把任何轨迹拆成三块。全部字段见 [docs/METHOD.md](docs/METHOD.md#output-fields)。
 
 **状态窗口。** 当最后 168 小时都不超过 10⁻⁶ kW（停机），或整个 1,344 小时上下文都在 0 附近 10⁻³ kW 以内（微负荷）时，锚定层原样交回载体的预测。在默认的 `state_rule="seasonal_naive"` 下，ankyra-lite 改为交付最后一个观测周的重复（缺测小时记为 0）；这是评估过的配置。`state_rule=None` 保留锚定层的返回值（[docs/METHOD.md](docs/METHOD.md#state-windows-and-the-seasonal-naive-rule)）。
 
+### 读出
+
+每个预测附带三种读出，都只用起报时可得的信息（[docs/METHOD.md](docs/METHOD.md#readouts)）：
+
+- **电量**（`r.energy_kwh`）：744 × 水平，在非负投影之前读出（P3）。投影起作用的地方，交付轨迹的电量更多；`ankyra_lite.readouts.projection_energy_increase(r)` 给出差额，它在起报时已知（P11–P12）。评估对每个预测器都按交付轨迹的均值评分（发布版的定义），水平读出作为敏感性分析（[月电量](#月电量与月内累计电量)）。
+- **峰值**（`r.peak_kw`）：U = 各天 d 上 (L̂_d + A_τd) 的最大值，即每个预测日的均值，加上同日类型最近四个上下文日中最大的偏移（日最大值减日均值）。56 个上下文日中没有出现的日类型取全部上下文日的最大偏移，没有出现的假日类型取周日的值。由于最大值可交换，U 等于逐小时的包络；U ≥ max_d L̂_d ≥ 水平，其误差可拆成水平、日路径、幅度和选择四项，所以水平上的改进会传到峰值（P15–P17）。`ankyra_lite.readouts.peak` 可对任何轨迹做同样的读出（[结果](#峰值读出)）。
+- **区间**（`ankyra_lite.interval(history, r, group=..., temp_sigma_std=...)`，单独调用）：单位自己纯历史伪预测在最多 12 个已完成伪起报点上的逐时残差，各除以该窗口的起报尺度，按一天中的小时和工作日合并，得到分位数，再乘以起报尺度加到轨迹上（在零处截断，各水平单调）。残差不涉及载体（[结果](#预测区间)）。
+
 ### 需要多少历史
 
-- **锚定层**需要起报点之前的 1,344 小时完整观测。随着已完成的伪起报点增多（每个是一步 744 小时），它的权重逐渐离开先验；用到一年前窗口的候选需要 10,248 小时。评估的每个测试窗口都至少有 9 个完整的 744 小时伪起报点窗口（`results/history_length.csv`：`K_eff` 为 9–11 的有 451 个窗口，为 12 的有 5,265 个）。
+- **锚定层**需要起报点之前的 1,344 小时完整观测。随着已完成的伪起报点增多（每个是一步 744 小时），它的权重逐渐离开先验：有 2,088 个完整小时时交接权重离开 ½（一个已完成的伪起报点），有 2,832 个时水平权重离开等权（两个），用到一年前窗口的候选需要 10,248 小时（[完整列表](docs/DATA.md#how-much-history)）。评估的每个测试窗口都至少有 9 个完整的 744 小时伪起报点窗口（`results/history_length.csv`：`K_eff` 为 9–11 的有 451 个窗口，为 12 的有 5,265 个）。
+- **缺口。** 更早记录中、同一个 744 小时块内不超过 6 小时的缺口，在锚定层估计器读取的副本中做插值（短缺口规则）；对自己的记录，`ankyra_lite.fill_short_gaps(load_kw)` 返回这个副本。起报点处的 1,344 小时上下文从不填补。
 - **载体**最多读最近 366 天（日 token）和其前的 24 个 744 小时块；缺测的日和块被屏蔽，所以它在更短的记录上也能运行。
 - **使用检查点时**，起报点至少要在其训练截点之后 186 天：这样锚定层打分的每个伪起报点预测都是在载体训练期之后发布的（[原因](#锚定层怎样使用载体)）。
 
@@ -290,11 +323,17 @@ print(r.lead_week_weights, r.pseudo_pairs)   # read through to the anchoring lay
 `ankyra_lite.anchor.forecast(history, foundation={k: forecast issued at o − 744k}, ...)` 就是 ANKYRA 2.2.1 的锚定层，没有改动；它的代码和文档字符串里说到基础模型的地方，接收的是载体的预测。
 
 - **伪起报点。** 锚定层读取载体在起报点 o（k = 0）和 q = o − 744k（k = 1 … 6，相邻两个相隔 31 天）发布的预测，前提是 q 之前的 1,344 小时上下文完整观测。伪起报点的目标月 [q, q + 744) 在 o 时已经观测到，所以锚定层可以在已经发生的月份上，拿载体和单位自己的历史作比较、打分。`carrier_forecasts(..., origin=o, cut=C′)` 正好计算这些预测，每个只用它自己发布时刻之前的数据，并丢掉截点之前的伪起报点。
-- **它为每个单位估计什么**（[docs/METHOD.md](docs/METHOD.md#what-the-layer-estimates-from-the-completed-pseudo-forecasts)）：
+- **它为每个单位估计什么**（[docs/METHOD.md](docs/METHOD.md#how-the-anchoring-layer-uses-the-carrier)）：
   - **水平权重**：载体的窗口均值作为第七个候选，与六个历史水平候选（近期、长期历史和一年前的均值，各有不作和作天气修正两种）并列，按误差倒数定权，并向等权收缩；
   - **交接权重**：在第 1–7、8–14、15–21 和 22–31 天中，载体日均值相对历史侧的权重，用最小二乘估计，并向 ½ 收缩；
   - **日内信任**：在载体的日内形状里混入多少单位自己的相似日形状，每个窗口一个值，向零收缩，上限为 ½。
 - **为什么测试集从截点之后 186 天开始。** 载体在伪起报点上的每个预测，对载体来说都必须是真正的预测：在训练截点 C′ 或之后发布，这样它预测的那个月从来不是训练标签。测试起报点至少在 C′ 之后 6 × 744 小时 = 186 天，所以对每个 k ≤ 6 都有 q = o − 744k ≥ C′（性质 C10）。没有这段间隔，逐单位权重就会在载体的样本内误差上估计，从而过度信任载体。代价是这里的载体比实际使用时至少旧半年。
+- **交接在这些人群上怎样起作用**（`handover_granularity.csv`、`lead_weeks.csv`、图 4d–f；描述性，在此前读过的测试窗口上）。按周的权重在单位已完成的伪起报点上，用**固定分工**（历史侧的水平和日路径）对载体来估计，然后用到含载体水平候选的历史侧日均值上（[细节](docs/METHOD.md#week-by-week-handover)）。
+  - 在这里，单独的载体几乎在每个预测周都好于固定分工：在六个人群上至少有一周明确（剑桥、HEEW、EWELD、GoiEner 住户、奥斯陆、德拉门；按周为 −4.8% 到 −17.5%），在 BDG2、GoiEner 非住户和 CINELDI 上不明确。锚定层因此把一半以上的日均值放在载体上：BDG2 和 CINELDI 上每周的平均权重为 0.49–0.54，其余为 0.53–0.73（没有证据时为 ½）。
+  - ankyra-lite 在全部九个人群上的逐时误差都好于固定分工（+2.5% 到 +9.5%，全部明确），在四个人群上的月电量明确更好（剑桥 +18.7%、HEEW +15.0%、EWELD +23.2%、奥斯陆 +21.4%）。固定分工也没有载体的水平候选和日内锚定，所以这部分收益不只来自交接。
+  - **哪一部分起作用。** 以固定的 ½ 权重混入载体的日均值，就已经得到按周权重相对不交接的大部分收益：在这一收益明确的七个人群上（+1.6% 到 +7.2%），固定 ½ 权重按对数计给出其中的 46%（BDG2）到 96%（奥斯陆）。根据单位自己的伪预测逐单位估计权重，相对固定 ½ 增加 −0.2% 到 +1.4%（BDG2 +0.9%、HEEW +1.1% 明确；从未明确更差）；每周分开的权重相对每个窗口一个权重没有增益（−0.5% 到 −0.1%，都不明确）。带来收益的是把载体的日均值按单位自己的误差混入历史侧；按周的权重描述的是平衡怎样随提前期变化。
+  - **按预测周**对单独的载体，ankyra-lite 在 BDG2 的第 2–4 周和 CINELDI 的全部四周明确更好，在 GoiEner 住户的第 2、3 周明确更差（−1.9% 和 −3.2%），其余在 −2.9% 到 +4.1% 之间，都不明确。
+  - **按预测周对 TimesFM**（同一文件），ankyra-lite 在 BDG2、HEEW、GoiEner 非住户和住户的第 1 周明确更差（BDG2 第 2 周也是，住户每一周都是），在剑桥、奥斯陆、德拉门和 CINELDI 的后几周明确更好。BDG2 的这两个劣势（−92.4% 和 −14.4%）反映的是少数几块电表，不是整个人群：第 1 周有三块电表（Lamb_office_Vasiliki、Lamb_assembly_Bertie、Lamb_office_Velma）整周读数是同一个很小的非零值，TimesFM 几乎原样重复这个值，所以这几块电表的误差比主导了单位均值；第 2 周另有两块读数恒定的电表起同样的作用（[细节](results/README.md#handover-within-day-trust-and-combinations)）。
 
 ![一个剑桥测试窗口](figures/fig6_example_window.png)
 
@@ -411,6 +450,7 @@ final = train_ensemble(target, sources, stage2, checkpoint_dir=f"runs/{target}")
 - **配方 R**（验证段归还，已发布）、**F**（同样 8 轮的继续训练，但不归还验证段）、**V**（按比例划分的验证集，带早停）、**P3s**（只有第 1 阶段）：配方研究的各个方案。
 - **短记录人群**：BDG2 2017、GoiEner 非住户和 GoiEner 住户。**切换层**：它们的测试窗口中，目标月在归还验证段之前没有同季训练标签、归还之后有了的那些窗口。
 - **纯历史配置**：没有载体的锚定层（`foundation=None`）。**无载体对照**：把纯历史配置自己的预测放在载体的位置上，调用未改动的锚定层。
+- **固定分工**：水平和日路径只用历史侧（历史估计器的水平和日路径，不含载体的水平候选，也不做交接），日内块用载体的，再投影到非负负荷。交接权重在伪起报点上就是对它估计的（`fixed_division_daily_means_kw`）。
 - **对比 (i)**：锚定后对单独的载体（单位的历史对载体有没有帮助？）。**对比 (ii)**：锚定后对纯历史配置（含载体的配置是否好于只用历史？）。
 - **明确**：一个对比的 95% 区间不含零。**不明确**不等于一样好。
 - **层级**：该人群在 ANKYRA 2.2.1 发布版中的角色：测试（`test`，六个人群）或预览（`preview`，奥斯陆、德拉门、CINELDI）。在这里，每个人群都有自己的训练截点和测试集，评分方式相同；层级只用于给表格分组。
@@ -466,7 +506,13 @@ ankyra-lite 与 **21 个基线**（共 22 个预测器）比较：ANKYRA 2.2.1 �
 
 ## 评估
 
-本节的每个数字都是 [`results/`](results/README.md) 中某个文件的一行，由 2026 年 10 月 19 日用发布配方完成的全量重新生成写出；每一部分都注明了文件，[`results/SUMMARY.md`](results/SUMMARY.md) 是同一次运行的可读摘要。图由 [`figures/make_figures.py`](figures/README.md) 从同样的文件绘制。完整表格和评估协议见 [docs/EVALUATION.md](docs/EVALUATION.md)。
+本节的每个数字都是 [`results/`](results/README.md) 中某个文件的一行，由 2026 年 10 月 19 日用发布配方完成的全量重新生成及同一天的补充运行（`compare_baselines.py --supplement`：训练预算、交接各臂、整窗权重、通用组合伙伴、水平候选、一年上下文；全量重新生成的数字都没有改变）写出；每一部分都注明了文件，[`results/SUMMARY.md`](results/SUMMARY.md) 是同一次运行的可读摘要。图由 [`figures/make_figures.py`](figures/README.md) 从同样的文件绘制。完整表格和评估协议见 [docs/EVALUATION.md](docs/EVALUATION.md)。
+
+![ankyra-lite 与四种零样本基础模型在逐时误差、月电量和月峰值上的比较](figures/fig0_advantage.png)
+
+*图 0. ankyra-lite 对四种零样本基础模型变体（TimesFM、TimesFM-X、Chronos-2、Chronos-2-X），在每个人群的测试窗口上，按发布版的主估计量：逐时误差（a）、月电量误差（b），以及月峰值，对比把同一读出用在各变体轨迹上的结果（c）。改进附 95% 单位与月份区间；实心 = 明确更好，空心 = 不明确，红色 = 明确更差。*
+
+在月电量和月峰值上，与四种变体的对比（每种读出 36 项）没有一项明确不利于 ankyra-lite：电量有 16 项明确更好（+17.2% 到 +39.2%；剑桥、GoiEner 住户和奥斯陆上对全部四种变体，另有 GoiEner 非住户、德拉门和 CINELDI 上的四项），峰值有 7 项（+10.9% 到 +17.5%；住户上全部四种，奥斯陆上三种），点估计分别在 36 项中的 30 项和 32 项偏向 ankyra-lite。逐时误差在剑桥（+8.7% 到 +15.6%）和奥斯陆（+15.0% 到 +25.4%）上明确好于全部四种变体，在德拉门（+14.5% 到 +18.9%）和 CINELDI（+7.8% 到 +9.8%）上明确好于其中三种（Chronos-2-X 为 +5.0% 和 +6.0%，不明确）；在 BDG2、HEEW、EWELD 和 GoiEner 非住户上两个方向都不明确（−5.8% 到 +4.0%）；在 GoiEner 住户上对 TimesFM（−5.6%）和 Chronos-2-X（−3.8%）明确更差（TimesFM-X −1.9% 和 Chronos-2 −3.8% 不明确）。逐时误差逐日怎样变化、按预测日的面板为什么读起来不同，见[按预测日](#按预测日)。
 
 ### 先读这一节
 
@@ -502,7 +548,7 @@ ankyra-lite 与 **21 个基线**（共 22 个预测器）比较：ANKYRA 2.2.1 �
 
 - **逐时。** 唯一的明确落后在 GoiEner 住户上，对 TimesFM（−5.6%）和 Chronos-2-X（−3.8%）。明确的领先从 +3.4%（逐单位岭回归，住户）到 +54.2%（奥斯陆）。不明确的例子：奥斯陆上的 GBT-T（+3.4%），以及德拉门（+5.0%）和 CINELDI（+6.0%）上的 Chronos-2-X。
 - **去掉三块近零电表后的 BDG2**：点估计相同；明确更好的逐时对比是 10 个而不是 12 个（PatchTST 和 iTransformer-X 不再明确），在 139 个单位上的单位平均名次为 5.367，22 个中第一（`bdg2_near_zero_sensitivity.csv`）。
-- **电量**在任何人群上都没有明确差于任何基线。把交付轨迹的均值换成 ankyra-lite 的水平读出，个数相同；两者只在非负投影起作用的窗口上不同（BDG2 1 个、GoiEner 非住户 142 个、住户 29 个、剑桥 9 个、EWELD 21 个、德拉门 2 个、CINELDI 33 个窗口）。
+- **电量**在任何人群上都没有明确差于任何基线。把交付轨迹的均值换成 ankyra-lite 的水平读出，个数相同（`energy_level_readout.csv`）；两者只在非负投影起作用的窗口上不同（BDG2 1 个、GoiEner 非住户 142 个、住户 29 个、剑桥 9 个、EWELD 21 个、德拉门 2 个、CINELDI 33 个窗口）。
 - 明确对比的个数是对数百个区间的描述性汇总，不是经过多重比较校正的检验。
 
 ![测试集名次与两两胜负](figures/fig2_test_ranks.png)
@@ -582,6 +628,7 @@ ankyra-lite 在 22 个预测器中的位置（`conventional_metrics_late.csv`；
 
 - **月初几天是它最弱的时候。** 第 1 天，零样本基础模型在每个人群上都领先于它（五个人群上是全部四种变体；GoiEner 非住户上是 Chronos-2-X、Chronos-2 和 TimesFM），而且除 GoiEner 非住户外，每个人群上还有训练型基线领先（BDG2 上除四种变体外还有十个基线）。
 - **第一周之后**，它的逐时损失在剑桥第 8 天起的 24 天中有 23 天最低，HEEW 6 天，BDG2 4 天，EWELD 1 天；在两个 GoiEner 人群上一天也没有，那里最低的是零样本 Chronos-2-X 或 Chronos-2。
+- **按预测日的损失衡量的是什么。** 上表和图 9、图 10 用的是发布版的逐日 CV(RMSE) 几何平均：每个单位在其各窗口中某一天 24 小时上的 RMS 误差（住户上每个单位只有一个窗口），以该单位平均负荷的百分比计，在一组固定的单位上按对数取平均。它更像绝对误差类指标，偏向偏低的、中位数型的预测；而主估计量是每个单位全部窗口 744 小时上的逐时 RMS，对误差大的日子权重更大。按同一文件中以 kW 计的单位平均 RMSE，ankyra-lite 在 GoiEner 住户上 31 天中有 21 天是 22 个中最低（严格最低 20 天；第 17 天按文件的四位小数与 Chronos-2 并列），剑桥 28 天，BDG2 10 天，GoiEner 非住户 7 天，HEEW 5 天，EWELD 2 天；按以 kW 计的单位平均 MAE，它在两个 GoiEner 人群上 31 天中一天也不是最低。在住户上，四种零样本变体的预测低于实测负荷（中位单位 NMBE，实测减预测：+17.7% 到 +22.4%，ankyra-lite 为 +2.8%；`conventional_metrics_late.csv`）。
 
 ![按预测日的损失](figures/fig9_loss_by_day.png)
 
@@ -621,6 +668,7 @@ ankyra-lite 的峰值读出是锚定层的包络算子，作用在其交付轨�
 - **对每个基线自己轨迹的最大值**：每个人群上明确好于 21 个中的 16–21 个，没有明确更差的。
 - **对它自己轨迹的最大值**：在八个人群上明确更好（从德拉门的 +30.8% 到住户的 +67.9%）；奥斯陆 +18.1%，不明确。
 - **对上个月的实测峰值**（最后 744 个上下文小时的最大值）：奥斯陆明确更好（+27.4%），CINELDI 明确更差（−20.4%）；其余不明确，从 −35.8%（GoiEner 非住户）到 +15.4%（德拉门）。
+- **对单独载体上的同一读出**（载体在起报点上的三种子预测，比较项 `same readout on the carrier alone`）：七个人群上不明确（BDG2 −3.0% 到 EWELD +11.3%），奥斯陆（−3.1%）和德拉门（−3.1%）明确更差。读出会把日均值上的改进带到峰值（P16），但锚定层在水平上相对载体的改进在这里很小（月电量只在一个人群上明确，对比 (i)），在峰值上也看不出来。
 
 ![峰值读出](figures/fig5_peak_operator.png)
 
@@ -689,15 +737,40 @@ ankyra-lite 相对去掉某一部分的版本的逐时改进（`component_contri
 | 三种子集成（对单个种子；三个对比的平均） | +0.8 | +0.8 | +0.3 | +1.5 | +1.9 | +0.6 | +1.8 | +1.4 | +0.8 |
 | 发布的配方（对只有从零训练阶段） | +1.2 | +2.7 | +1.4 * | +1.7 * | +0.9 * | +1.1 | +2.2 * | −2.3 | +0.8 |
 | 验证段归还（对不归还的同一继续训练） | +0.5 | +2.2 | +0.7 | +0.5 | −0.2 | −0.3 | +0.1 | −2.9 (−) | +0.3 |
+| 载体的水平候选、交接和日内锚定（对固定分工） | +2.8 * | +5.1 * | +2.5 * | +8.3 * | +7.9 * | +9.5 * | +9.2 * | +7.0 * | +2.9 * |
+| 按周的交接权重（对固定 ½ 权重） | +0.9 * | −0.2 | +0.4 | +1.3 | +1.1 * | +1.4 | +0.2 | +0.4 | +0.0 |
+| 分块定权（对同样两个预测的一个整窗权重） | −0.4 | −0.8 | +1.4 * | +0.5 | +0.0 | +0.7 | +0.5 | −0.3 | −0.3 |
+| 分块定权（对同样两个预测的各半平均） | +0.7 * | +1.6 | +3.8 * | +3.8 * | +3.1 * | +3.5 * | +2.4 * | +0.6 | +0.1 |
 
 - **对比 (i)**，即整个锚定层对单独的载体，在逐时误差上有两个人群明确，在月电量上有一个（CINELDI +7.8%）；在住户上为 −1.0%（不明确）。**对比 (ii)**，即对纯历史配置，在逐时误差上九个人群全部明确（+5.4% 到 +20.5%），在月电量上有四个（剑桥 +18.5%、HEEW +13.2%、EWELD +33.2%、奥斯陆 +21.4%）。
 - **小开关。** 每个窗口一个日内信任值（相对于每个提前期块一个值）、短缺口规则和微负荷规则，各自对逐时误差的影响都不超过 0.2%。状态规则只在有状态窗口的地方起作用；在 GoiEner 非住户上它使月电量变差（−0.9%，明确不利）。
 - **早期载体**（八个人群；修正后的 CINELDI 数据仓库上没有）：对去掉复制指针、用从零配方训练的同一网络，ankyra-lite 在七个人群上好 +1.2% 到 +3.7%（剑桥、HEEW 和奥斯陆上明确），在德拉门上为 −0.3%；对更早的、没有指针、在按周窗口上训练的结构化网络，好 +1.1% 到 +10.4%（六个人群上明确）。
 - 这些行的区间只重抽单位和月份；带种子层的配方各行见[配方历史](#配方历史r-是怎样选定的以及它的负面结果)。
+- **日内锚定在哪里起作用**（`within_day_trust.csv`）。在八个非住户人群上，对单位相似日形状的信任平均为 0.14–0.22（上限 ½），在 76–90% 的锚定窗口上为正；在 GoiEner 住户上平均为 0.06（中位数为 0，43% 为正），所以那里基本保留载体的日内形状，与该行的 −0.1% 一致。合理性检查在 94–100% 的窗口上保留了相似日形状。
+- 最后加入的四行由锚定层在每个窗口上自己的字段重建（`evaluation/lite_reanchor.py` 的 `fields` 模式；重建的按周权重、信任、水平权重和日均值与锚定层自己的完全相等，按周权重那一臂逐位复现交付的预测）。交接各行的讨论见[锚定层怎样使用载体](#锚定层怎样使用载体)。
+
+**分块定权对一个整窗权重。** 这个对照检验另一种解释：收益来自对水平、日路径和日内三块分别定权。它把锚定层用的同样两个预测，即历史侧（固定分工日均值加上相似日形状）和载体，用**一个**覆盖全部 744 小时的最小二乘权重组合起来；权重由单位自己已完成的伪预测（交接配对和信任三元组）得到，并向 ½ 收缩。ANKYRA 2.2.1 发布版称之为 B2，称各半平均为 B1。载体上的平均权重为 0.55–0.71。
+
+- 在逐时误差上，一个整窗权重与 ankyra-lite 相差不超过 ±1.4%：ankyra-lite 只在 GoiEner 住户上明确更好（+1.4%），其余八个人群没有分开（−0.8% 到 +0.7%）。在月电量上没有人群分开（−2.7% 到 +2.4%）。
+- 各半平均更弱：ankyra-lite 在六个人群上的逐时误差明确好于它（+0.7% 到 +3.8%），月电量上没有。
+- 解读：在这些人群上，分块定权不是收益的必要解释。比较之后留下来的是历史侧预测本身和按单位自己伪预测误差的加权；分块分解仍是用于解释、读出和诊断的精确恒等式（P1）。这个对照只是把锚定层自己的分块定权和它自己的整窗特例相比，不涉及其他分块定权方式。
+
+**通用的组合伙伴**（`generic_combinations.csv`）。历史侧提供的是否多于一个通用的局部预测？B2(X) 是同一个整窗组合，把历史侧换成 X：周季节性朴素、四周曲线或去年同期曲线，各在每个伪起报点之前的负荷上计算；EW(X) 是载体与 X 的等权平均（X 还包括逐单位岭回归和 MSTL）。人群数（共九个），前者明确更好 / 不明确 / 明确更差：
+
+| 对比 | 逐时 | 月电量 |
+|---|---|---|
+| B2(历史侧) 对 B2(周季节性朴素) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(历史侧) 对 B2(四周曲线) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(历史侧) 对 B2(去年同期曲线) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(历史侧) 对最好的 B2(X) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(历史侧) 对最好的等权平均 | 1 / 8 / 0 | 0 / 8 / 1 |
+| ankyra-lite 对其中最好的一个 | 0 / 9 / 0 | 0 / 8 / 1 |
+
+“最好”是在评分之后按人群和误差挑出的，这偏向通用一方。对同一组合中三个通用预测中的每一个，历史侧或明确更好（四个对比），或没有分开；对其中最好的一个，在任何人群上都没有分开。唯一明确的损失是德拉门的月电量，对载体与逐单位岭回归的等权平均（−16.6%；ankyra-lite −16.9%）。
 
 ![消融](figures/fig4_ablation.png)
 
-*图 4. ankyra-lite 对它自己的简化版和替代版（逐时误差）：关掉锚定层部分组件和状态规则、单独的载体和纯历史配置（a）；一个种子代替三个（b）；同一锚定层中的早期载体和其他配方方案（c）。*
+*图 4. ankyra-lite 对它自己的简化版和替代版（逐时误差）：关掉锚定层部分组件和状态规则、单独的载体和纯历史配置（a）；一个种子代替三个（b）；同一锚定层中的早期载体和其他配方方案（c）；交接的各臂和一个整窗权重（d）；按预测周，ankyra-lite 和固定分工对单独的载体（e）；按周的载体平均交接权重（f）。*
 
 ### 种子
 
@@ -758,6 +831,8 @@ ankyra-lite 相对去掉某一部分的版本的逐时改进（`component_contri
 
 `anchoring_gain_deciles.csv`（`anchoring_record` 的两个统计量与 ankyra-lite 相对单独载体的实际收益之间的关系；九个人群上每个十分位 538–539 个窗口，不含状态窗口和平均负荷接近零的单位；描述性）：月水平收益在载体水平权重最低的十分位中最大（+7.1%），在最高的两个十分位中略为负（−1.4%、−1.1%）；按 `history_vs_carrier_log_ratio` 分，收益在最低的两个十分位中最大，在那里单位的历史在更早的伪起报点上胜过了载体（+9.5%、+8.0%；那里的逐时收益明确，分别为 +2.9% 和 +2.5%）。两个统计量都不能把收益单调排序；载体权重是锚定层自己的权重，所以它与收益的关联有一部分是机械性的。
 
+**伪预测多常选中最好的水平候选**（`level_candidate_hit_rate.csv`，P20；描述性）。权重最大的水平候选，即在单位已完成伪起报点上误差最小的那个，在九个人群合并的 20.9% 的窗口上正是窗口均值最接近实际值的候选；七个候选中的随机命中率为 14.4%（差 +6.5 个百分点，95% 单位自助区间 +5.4 到 +7.6）。各人群为 17.3% 到 24.8%，差值在七个人群上明确（EWELD 和 CINELDI 不明确）。只看六个历史候选时为 23.3% 对 16.9%。载体的窗口均值在 38–71% 的窗口上权重最大，但只在 17–28% 的窗口上最接近。可见伪起报点误差对哪个候选最好有一些信息，绝对量很小，这正是水平权重强收缩所假定的。
+
 ### 对受损上下文的稳健性
 
 `robustness.csv`：64 个德拉门测试窗口（43 个单位），用发布的检查点在 CPU 上从受损的上下文重新预测（各发布时刻的载体、锚定层、状态规则）；目标不变。逐时 RMS 误差相对干净上下文的变化（正数 = 更差）：
@@ -776,6 +851,31 @@ ankyra-lite 相对去掉某一部分的版本的逐时改进（`component_contri
 - 整个历史乘以 0.5 或 2 时，预测严格按同一比例变化（最大偏差为 0），只要没有记录跨过状态阈值（阈值是以 kW 计的绝对值）。
 - 尖峰使峰值读出的中位数变化 +998%：读出取的是近期最大偏移。
 - 在任何受损的上下文上都没有触发状态规则。
+
+### 稳健性：训练型基线的训练预算
+
+对与训练型模型比较结果的一种解释是：这些模型受限于较小的训练预算。ANKYRA 2.2.1 发布版把 DLinear、iTransformer、LSTM 和 PatchTST 在每个人群上用最多 30 轮、早停 patience 8 重新训练（原为 15 和 3；一次放宽，在训练之前固定；截止时间、训练配对、选择集、学习率网格和种子都不变）。`results/training_budget_sensitivity.csv` 在同样的测试窗口上把这些保存的预测与 ankyra-lite 比较（这里没有重新训练）：
+
+- **逐时误差：** 全部 36 个判定（九个人群 × 四个模型）都不变，30 个对 ankyra-lite 明确有利、6 个不明确，与原来相同；没有点估计改变符号；把四个模型换成放宽预算的版本后，ankyra-lite 在每个人群上的单位平均名次仍然第一。
+- **月电量：** 36 个判定中 34 个不变。在 CINELDI 上，对 iTransformer 的对比变为明确（+13.9% → +14.4%），对 LSTM 的不再明确（+27.0% → +10.1%）；两个点估计改变符号但都不明确（EWELD，iTransformer −0.4% → +4.8%；德拉门，PatchTST +4.5% → −0.3%）。
+- **模型本身：** LSTM 在七个人群上明确变好（相对原版 +2.0% 到 +11.9%），在剑桥和 GoiEner 非住户上选中的是第 30 轮，所以更大的预算对它可能仍然不够。36 个放宽预算的模型中有 14 个选中同样的学习率和轮数，重复原来的预测；有三个在测试窗口上明确差于原版（EWELD 和住户上的 DLinear，EWELD 上的 iTransformer）。
+
+在这一次放宽下判定保持不变。这只是一个替代预算，不是对预算的搜索；带协变量的训练型模型没有重新训练，LSTM-T-KAN-M 本来就是用 30 轮、patience 8 训练的（[细节](docs/EVALUATION.md)）。
+
+### 一年上下文的基础模型
+
+零样本 TimesFM 2.5 用 8,736 小时（52 周）上下文、Chronos-2 用 8,192 小时（其配置的上限），作为另外两个基线评分，不计入 22 个预测器及其名次（`results/long_context_baselines.csv`；ANKYRA 2.2.1 发布版保存的预测，记录较短时用截至起报点、最长的完整观测段，在这些窗口上至少 5,809 小时）。人群数（共九个），ankyra-lite 明确更好 / 不明确 / 明确更差：
+
+| 对 | 逐时 | 月电量 |
+|---|---|---|
+| TimesFM-8736 | 4 / 3 / 2 | 4 / 5 / 0 |
+| Chronos-2-8192 | 4 / 4 / 1 | 4 / 5 / 0 |
+| TimesFM（1,344 小时，主表） | 4 / 4 / 1 | 6 / 3 / 0 |
+| Chronos-2（1,344 小时，主表） | 4 / 5 / 0 | 3 / 6 / 0 |
+
+- 有了一年的上下文，TimesFM 在 BDG2（−7.9%）和 GoiEner 住户（−6.3%）上的逐时误差明确低于 ankyra-lite，Chronos-2 在住户上（−6.2%）也是如此；ankyra-lite 在剑桥、奥斯陆、德拉门和 CINELDI 上明确好于两者（+6.9% 到 +25.2%）。
+- 更长的上下文使 TimesFM 在四个人群上明确变好（剑桥、GoiEner 非住户、德拉门、CINELDI：逐时 +3.1% 到 +6.6%），使 Chronos-2 在住户上变好（+4.4%）；用 8,192 小时的 Chronos-2 在 BDG2 和 EWELD 上明确差于用 1,344 小时的。
+- 在 BDG2 上，ankyra-lite 的对比与主表一样不含三个接近零的电表（它在那里的误差恰好为零）；两种 TimesFM 上下文之间的对比包含它们。
 
 ### 每个窗口的耗时
 
@@ -837,6 +937,7 @@ ankyra-lite 相对去掉某一部分的版本的逐时改进（`component_contri
 - **绝对误差类指标。** 按 MAE，它在四个人群（住户、HEEW、EWELD、CINELDI）上排第四或第五；按中位单位 WAPE，在四个人群（GoiEner 非住户、住户、HEEW、EWELD）上也是如此；按中位单位 MASE，在五个人群上排第五或第六，大多落后于零样本基础模型。
 - **峰值对简单参照。** 用在 GBT-T 轨迹上的同一读出在德拉门上明确更接近（−10.9%），上个月的实测峰值在 CINELDI 上明确更接近（−20.4%）；在 GoiEner 非住户和 EWELD 上，对上个月峰值的点估计为 −35.8% 和 −20.2%。
 - **区间对 Chronos-2。** 放在 ankyra-lite 周围的区间在 EWELD、GoiEner 非住户和 CINELDI 上明确差于 Chronos-2 的原生分位数（80% Winkler 分数）。
+- **一年上下文的基础模型。** 用 8,736 小时上下文的零样本 TimesFM 2.5 在 BDG2（−7.9%）和住户（−6.3%）上的逐时误差明确更低，用 8,192 小时的 Chronos-2 在住户上（−6.2%）也是如此（[细节](#一年上下文的基础模型)）。
 
 它自身设计上的弱点在出现的地方报告：配方在德拉门和第 2–7 个预测日上的损失（[配方历史](#配方历史r-是怎样选定的以及它的负面结果)），以及上下文中尖峰的影响（[稳健性](#对受损上下文的稳健性)）。
 
@@ -849,7 +950,7 @@ ankyra-lite 相对去掉某一部分的版本的逐时改进（`component_contri
 - **BDG2 与 TimesFM 2.5 预训练的重叠。** 七个 BDG2 站点（Bear、Bull、Cockatoo、Fox、Hog、Panther、Rat）列在 TimesFM 2.5 模型卡称为训练数据的 GIFT-Eval 预训练集合中。这可能使 TimesFM 和 TimesFM-X 在 BDG2 的比较中占优，程度没有测量。ankyra-lite 没有预训练权重（[docs/DATA.md](docs/DATA.md#bdg2-and-the-pretraining-collection-of-timesfm-25)）。
 - **短记录。** BDG2 2017 和两个 GoiEner 人群的训练记录最短，没有开发窗口，测试集只覆盖某一年的 5–8 个月。
 - **新近程度。** 载体的训练标签在 C′ 结束，训练型基线的在 C 结束，晚 186 天；这是让伪起报点保持样本外的代价。
-- **基线。** 发布版训练型基线的预算是 15 轮、patience 3，LSTM-T-KAN-M 是 30 轮和 8；这里没有在更大的预算下重新核对判定。线性上下文模型的协变量不起作用。GBT-T 在 EWELD 上过冲。LSTM-T-KAN-M 不是对其论文的严格复现（[十处偏离](#基线)）。
+- **基线。** 发布版训练型基线的预算是 15 轮、patience 3，LSTM-T-KAN-M 是 30 轮和 8。在一次放宽的预算（30 轮、patience 8）下，DLinear、iTransformer、LSTM 和 PatchTST 的 36 个逐时判定都不变，36 个电量判定中有两个改变（[训练预算](#稳健性训练型基线的训练预算)）；这只是一个替代预算，不是搜索，带协变量的训练型模型没有重新训练。有了一年的上下文，零样本 TimesFM 2.5 在 BDG2 和住户上的逐时误差明确更低（[一年上下文](#一年上下文的基础模型)）。线性上下文模型的协变量不起作用。GBT-T 在 EWELD 上过冲。LSTM-T-KAN-M 不是对其论文的严格复现（[十处偏离](#基线)）。
 - **区间**是描述性的；区间读出不是为这个载体设计或调整的。
 - **GPU 上的训练不能逐位重复。** 三个种子取平均并报告了它们的差异，但主要表格的区间只重抽单位和月份，不包含重新训练。
 - **多重比较。** 21 个基线 × 9 个人群 × 几种量，给出数百个区间；明确对比的个数是描述性的，不是经过多重比较校正的检验。
@@ -922,7 +1023,7 @@ r = forecast(history, carriers, group="Public", temp_sigma_std=sigma, dst_region
 不需要 `pytest`；测试用 `unittest`。在仓库根目录下运行：
 
 ```bash
-python -m unittest discover -s tests -t .      # 176 tests
+python -m unittest discover -s tests -t .      # 196 tests
 python -m unittest discover -s theory -t .     # 58 checks of the exact properties
 ```
 
@@ -933,12 +1034,13 @@ python -m unittest discover -s theory -t .     # 58 checks of the exact properti
 | `tests/test_carrier_unit.py` | 14 | 参数个数、形状、不读发布时刻及之后的数据、伪起报点规则、集成、端到端预测、状态规则 |
 | `tests/test_carrier_equivalence.py` | 7 | 特征、初始化和预测对研究代码与保存的预测的一致性（需要研究的数据） |
 | `tests/test_train.py` | 19 | 抽样器、划分、上限、训练池、归还的验证段，以及每个阶段的一步优化对研究训练循环的一致性（部分需要研究的数据） |
-| `tests/test_compare_baselines.py` | 33 | 比较脚本的保护机制、产物、检查点导出，以及结果文件：列、预测器集合、标记、标签、没有绝对路径（部分需要 ANKYRA 发布版文件、研究的数据或 `results/`） |
+| `tests/test_compare_baselines.py` | 40 | 比较脚本的保护机制、产物、检查点导出，以及结果文件：列、预测器集合、标记、标签、没有绝对路径；2026 年 10 月 19 日加入的文件和行（训练预算、交接各臂、按预测周、日内信任、加入的消融、组件和峰值行），以及字段缓存和交接重建的核对门（部分需要 ANKYRA 发布版文件、研究的数据或 `results/`） |
+| `tests/test_readouts_lite.py` | 13 | 预测的读出（区间、分块、投影前的轨迹、投影增加的电量、峰值）、纯历史配置、透传到锚定层的字段、端到端的起报点之后无信息、顶层名字和两个示例（人造数据、未训练的载体） |
 | `tests/test_evaluation.py` | 15 | 评分模块在人造数据上的表现 |
 | `tests/test_external_tables.py` | 12 | 外部检验表：列、预测器名称、没有绝对路径、从不读取封存的赫尔辛基测试集、与评分记录逐字段一致、不含评分器其他输出文件中的任何对比、docs/EXTERNAL_TESTS.md 的主读数表（部分需要研究的评分记录） |
 | `theory/test_operators.py`、`theory/test_carrier_properties.py` | 31、27 | P1–P20 和 C1–C10，含反例 |
 
-在作者的机器上，在有 ANKYRA 仓库副本和研究数据的条件下，并在重新生成的 `results/` 上（2026 年 10 月 19 日，CPU，单线程），176 个测试中 175 个通过、1 个跳过，58 项理论检验全部通过。跳过的那个测试把逐时数字与更早那次只看逐时误差的比较核对，而那次比较评分的是从零训练阶段，不是发布的产物。需要 ANKYRA 仓库副本或研究数据的测试，在缺少这些时会跳过并说明原因（CI 上就是这样）：研究文件夹不可用（ANKYRA 仓库副本和 `results/` 都在）时，同一天的运行在 176 个测试中有 147 个通过、29 个跳过，58 项理论检验中 58 项通过。环境变量：`ANKYRA_ORIGINAL_ROOT`（ANKYRA 仓库副本）、`ANKYRA_LITE_RESEARCH_ROOT`（研究文件夹）、`ANKYRA_LITE_RESULTS`（要核对的另一个结果目录）和 `ANKYRA_LITE_TEST_MIN_FREE_GB`（读数据的测试要等待的空闲内存）。
+在作者的机器上，在有 ANKYRA 仓库副本和研究数据的条件下，并在重新生成的 `results/` 上（2026 年 10 月 19 日，CPU，单线程），196 个测试中 195 个通过、1 个跳过，58 项理论检验全部通过。跳过的那个测试把逐时数字与更早那次只看逐时误差的比较核对，而那次比较评分的是从零训练阶段，不是发布的产物。需要 ANKYRA 仓库副本或研究数据的测试，在缺少这些时会跳过并说明原因（CI 上就是这样）：研究文件夹不可用（ANKYRA 仓库副本和 `results/` 都在）时，同一天的运行在 196 个测试中有 167 个通过、29 个跳过，58 项理论检验中 58 项通过。环境变量：`ANKYRA_ORIGINAL_ROOT`（ANKYRA 仓库副本）、`ANKYRA_LITE_RESEARCH_ROOT`（研究文件夹）、`ANKYRA_LITE_RESULTS`（要核对的另一个结果目录）和 `ANKYRA_LITE_TEST_MIN_FREE_GB`（读数据的测试要等待的空闲内存）。
 
 ## 理论：精确性质
 
@@ -970,6 +1072,7 @@ python -m unittest discover -s theory -t .     # 58 checks of the exact properti
 
 ## 版本历史
 
+- **0.1.1（2026 年 10 月 19 日）**：读出接口（`ankyra_lite.readouts`）、纯历史配置（`forecast(history, None)`）、自己单位的示例（`examples/own_unit.py`）、补充分析（交接、按预测周、日内信任、训练预算、通用组合、一年上下文）、图 0（优势汇总）和重新绘制的图 1。0.1.0 的预测、检查点和结果不变。
 - **0.1.0（2026 年 10 月 19 日）**：第一个版本。复制指针载体网络（61,613 个参数），配上逐字节相同的 ANKYRA 2.2.1 锚定层和季节性朴素状态规则；发布的训练配方 R（第 1 阶段从零训练，在 93 天验证段上早停；第 2 阶段归还验证段训练 8 轮；三个种子）；27 个检查点及其清单；CINELDI 用修正后的数据仓库，德拉门载体也用它重新训练；与 21 个基线（发布版的 20 个和 LSTM-T-KAN-M）在九个人群上的比较，用发布配方全量重新生成；载体的精确性质 C1–C10。
 - **0.1.0 之前的设计历史**（研究中的各个载体，都由同一个锚定层锚定；`ablation.csv` 和 `recipe_history.csv`）：一个更早的、没有复制指针、在按周窗口上训练的结构化网络；同一网络去掉复制指针、用从零配方训练；更早的几项继续训练研究（不加权和加权的损失，有和没有预热）；只有从零训练阶段的复制指针网络；以及继续训练方案 F、V 和 R，其中发布的是 R。
 
@@ -980,6 +1083,10 @@ python -m unittest discover -s theory -t .     # 58 checks of the exact properti
 - **测试窗口、发布版的 20 个基线和评分函数**都来自 ANKYRA 2.2.1 发布版。
 - **许可。** MIT（[LICENSE](LICENSE)），Copyright (c) 2026 Xinan Qin；锚定层使用同一许可。LSTM-T-KAN 的代码（MIT）不包含在内；只对它的预测评了分。
 - **数据。** 评估使用公开数据集：BDG2（Building Data Genome Project 2）、剑桥大学校产档案、HEEW（亚利桑那州立大学）、EWELD、GoiEner、COFACTOR-SBHUB Oslo 和 COFACTOR Drammen、CINELDI，以及苏州工业园区（只用作训练窗口），都使用 CC BY 4.0 许可；来源和整理见 [docs/DATA.md](docs/DATA.md)。这些数据都没有再分发；检查点包含在这些数据上拟合的权重，不包含数据本身。`results/` 中的示例窗口来自剑桥大学校产档案（CC BY 4.0）。
+- **外部检验的数据**（[docs/EXTERNAL_TESTS.md](docs/EXTERNAL_TESTS.md)）：Low Carbon London 智能电表住户（UK Power Networks，London Datastore，Creative Commons Attribution）；UNICON（La Trobe University；CC BY-NC-SA 4.0，仅限研究使用，所以数据和在其上训练的载体都不在本仓库中）；HKUST 智能电表数据库（Dryad，CC0）；GoiEner 住户的跨时段检验（GoiEner 档案，CC BY 4.0）。这些数据都没有再分发。HKUST 和 UNICON 的气温是 ERA5 再分析：Contains modified Copernicus Climate Change Service information [2026]；ERA5 hourly data（Hersbach et al., 2020, doi:10.1002/qj.3803；dataset doi:10.24381/cds.adbb2d47），经 Open-Meteo historical weather API 获取（Zippenfenig, doi:10.5281/zenodo.7970649, CC BY 4.0）。
+- **参考文献**（[一眼看懂](#一眼看懂)中两个对比与预测包含检验的区别）：
+  - Chong, Y. Y., Hendry, D. F. (1986). Econometric evaluation of linear macro-economic models. *Review of Economic Studies* 53(4), 671–690.
+  - Harvey, D. I., Leybourne, S. J., Newbold, P. (1998). Tests for forecast encompassing. *Journal of Business & Economic Statistics* 16(2), 254–259.
 - **引用。** [CITATION.cff](CITATION.cff)；也请引用 ANKYRA（列在其中的 references 下）。存档 DOI 尚未分配。
 
 问题和错误报告：[issue 跟踪页](https://github.com/XinanQ/Building_load_ANKYRA_lite/issues)。

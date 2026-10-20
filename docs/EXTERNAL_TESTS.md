@@ -146,10 +146,13 @@ reading of a test set.
 does ankyra-lite's hourly error compare with zero-shot TimesFM 2.5, the weekly seasonal naive and the carrier-free
 control?
 
-**Data.** Low Carbon London smart-meter households (UK Power Networks, published on the London Datastore under a
-Creative Commons Attribution licence); the study's prepared store of the first release's evaluation, with the time
-axis padded back to 1 January 2011 (load unobserved, temperature a constant 15 °C in the padding); England and Wales
-bank holidays as day type 7. The test windows are those of the first release with origin at or after C.
+**Data.** Low Carbon London smart-meter households (UK Power Networks, published on the London Datastore, dataset
+`smartmeter-energy-consumption-data-in-london-households`). Licence: "Creative Commons Attribution", version not
+given on the page (as checked on the provider's page on 5 October 2026 for the first release); the data are not
+redistributed, and this repository holds only scored statistics. The study's prepared store of the first release's
+evaluation, with the time axis padded back to 1 January 2011 (load unobserved, temperature a constant 15 °C in the
+padding); England and Wales bank holidays as day type 7. The test windows are those of the first release with origin
+at or after C.
 
 **Procedure.** As above; borrowed windows from Cambridge only. The anchoring layer's climatology fit uses every day
 before the origin, the padded days included, as in the first release.
@@ -241,8 +244,9 @@ narrow.
 
 ## UNICON (La Trobe University campuses)
 
-**Question.** On the building meters of five Australian university campuses, read before by earlier forecasters and by
-earlier versions of the small network on the same test windows, how does this candidate compare?
+**Question.** On the building meters of La Trobe University's campuses in Victoria, Australia (the prepared store's
+meters lie on three of the five campuses: Bundoora, Albury-Wodonga and Bendigo), read before by earlier forecasters
+and by earlier versions of the small network on the same test windows, how does this candidate compare?
 
 **Data.** UNICON (Moraliyage et al., HSI 2022; Kaggle `cdaclab/unicon`, version 1), licence CC BY-NC-SA 4.0: research
 use only; neither the data nor carriers trained on them are in this repository. Training read the study's prepared
@@ -250,7 +254,11 @@ store, blanked from C′ on; every arm was tested on each window's own series, i
 are filled by linear interpolation from data before that window's origin (the rule of the first release's UNICON test);
 targets are never filled, so 3,851 target hours in 375 of the 450 windows are missing and 114 flagged hours are left out
 of the hourly error (`score: windows.target_hours_missing`, `windows_with_missing_target_hours`, `target_hours_flagged`).
-Victorian public holidays as day type 7.
+Victorian public holidays as day type 7. Temperature: ERA5 2 m temperature through the Open-Meteo archive interface,
+one point per campus (the weather data shipped with the dataset are not used); the store's temperature equals the
+study's archive files hour for hour. Contains modified Copernicus Climate Change Service information [2026]; ERA5
+hourly data (Hersbach et al., 2020, doi:10.1002/qj.3803; dataset doi:10.24381/cds.adbb2d47) retrieved through the
+Open-Meteo historical weather API (Zippenfenig, doi:10.5281/zenodo.7970649, CC BY 4.0).
 
 **Procedure.** As above, with nine borrowed sources. The history-only forecasts that the carrier-free control places in
 the carrier's slot could not be issued at one or more pseudo-origins in every test window (at all six in 322 of 450;
@@ -358,7 +366,11 @@ how does this candidate compare?
 
 **Data.** HKUST smart-meter database (Li, Wang, Qu, Chui and Leung-Shea, *Scientific Data* 11, 1284, 2024; Dryad,
 CC0), the provider's cleaned files; hourly energy from cumulative readings, many quantised at 10 or 100 kWh; Hong Kong
-general holidays as day type 7, whose gazette dates could not be checked offline (no window listed).
+general holidays as day type 7, whose gazette dates could not be checked offline (no window listed). Temperature:
+ERA5 2 m temperature at the campus through the Open-Meteo archive interface, one series for every meter; the store's
+temperature equals the study's archive file hour for hour. Contains modified Copernicus Climate Change Service
+information [2026]; ERA5 hourly data (Hersbach et al., 2020, doi:10.1002/qj.3803; dataset doi:10.24381/cds.adbb2d47)
+retrieved through the Open-Meteo historical weather API (Zippenfenig, doi:10.5281/zenodo.7970649, CC BY 4.0).
 
 **Procedure.** As above. The test windows are the first release's strict-rule windows with origin at or after C. The
 three incomers that read zero throughout (7 windows) are state windows, on which ankyra-lite's hourly error is exactly

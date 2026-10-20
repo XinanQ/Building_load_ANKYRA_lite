@@ -36,6 +36,8 @@ jobs:
         run: python -m unittest discover -s theory -t . -v
       - name: Quickstart (the shipped Cambridge checkpoints on an artificial building)
         run: python examples/quickstart.py
+      - name: Own-unit example (a record that starts in the middle of a year, holidays, gaps, history-only call)
+        run: python examples/own_unit.py
       - name: Evaluation example
         run: python -m evaluation.run_example
       - name: Figures regenerate from results/

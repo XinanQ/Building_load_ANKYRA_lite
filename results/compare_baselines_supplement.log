@@ -1,0 +1,19 @@
+16:35:16 [supplement bdg2] memory available 6.90 GB
+16:36:03 supplement bdg2: 46.5 s; notes None
+16:36:03 [supplement cambridge] memory available 6.76 GB
+16:37:14 supplement cambridge: 71.2 s; notes None
+16:37:14 [supplement heew] memory available 6.56 GB
+16:37:53 supplement heew: 39.2 s; notes None
+16:37:54 [supplement eweld] memory available 6.55 GB
+16:38:28 supplement eweld: 35.0 s; notes None
+16:38:29 [supplement goiener_confirm] memory available 6.54 GB
+16:39:40 supplement goiener_confirm: 71.1 s; notes None
+16:39:40 [supplement households] memory available 6.41 GB
+16:40:43 supplement households: 63.4 s; notes None
+16:40:43 [supplement oslo] memory available 6.57 GB
+16:41:27 supplement oslo: 43.3 s; notes None
+16:41:27 [supplement drammen] memory available 6.56 GB
+16:42:21 supplement drammen: 54.1 s; notes None
+16:42:21 [supplement cineldi] memory available 6.49 GB
+16:42:59 supplement cineldi: 38.2 s; notes None
+16:42:59 supplement written: ['handover_granularity.csv', 'lead_weeks.csv', 'within_day_trust.csv', 'generic_combinations.csv', 'level_candidate_hit_rate.csv', 'energy_level_readout.csv', 'training_budget_sensitivity.csv', 'long_context_baselines.csv'] | rows inserted: {'ablation.csv': 72, 'component_contributions.csv': 36, 'peak_readout.csv': 9} | total 462.9 s

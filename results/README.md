@@ -34,6 +34,8 @@ Contents: [Words used in every file](#words-used-in-every-file) · [Forecasters]
 [Populations and splits](#populations-and-splits) · [The main comparison](#the-main-comparison) ·
 [Error by forecast day and energy](#error-by-forecast-day-and-energy) · [Readouts and intervals](#readouts-and-intervals) ·
 [Design choices](#design-choices) · [Contrast (ii) by block](#contrast-ii-by-block-and-a-carrier-free-control) ·
+[Handover, within-day trust and combinations](#handover-within-day-trust-and-combinations) ·
+[Training budget and long-context baselines](#training-budget-and-long-context-baselines) ·
 [Training curves](#training-curves) · [Recipe history](#recipe-history) · [Constants](#constants) ·
 [Robustness](#robustness) · [BDG2 near-zero meters](#bdg2-near-zero-meters) · [Cost](#cost) ·
 [Example window](#example-window) · [Reproduction and records](#reproduction-and-records) ·
@@ -175,8 +177,17 @@ of a window is 744 × the error of the window mean of the delivered trajectory (
 `set`, `tier`, `unit_set` (BDG2 also `without the three near-zero meters`), `windows`, `units`, `model`, `model_label`,
 `model_class`, `log_ratio`, `um_low`, `um_high`, `improvement_pct` (the unit-equal contrast on that error; zero on
 ankyra-lite's own row), `median_energy_ape_pct` (each forecaster's median-unit absolute percentage energy error),
-`flag`. The sensitivity with ankyra-lite's level readout in place of its trajectory mean is in `compare_baselines.json`
-(`energy_level_readout`) and `SUMMARY.md`.
+`flag`. The sensitivity with ankyra-lite's level readout in place of its trajectory mean is `energy_level_readout.csv`
+(below; also `energy_level_readout` in `compare_baselines.json`).
+
+**`energy_level_readout.csv`** — the energy contrasts of `energy_error.csv` (all units) with ankyra-lite's independent
+energy readout, 744 × its level read before the nonnegativity projection (P3), in place of the mean of its delivered
+trajectory; same estimator, random stream and model order. Descriptive (a sensitivity; `energy_error.csv` keeps the
+first release's definition). Columns: `set`, `tier`, `windows`, `units`, `model`, `model_label`, `log_ratio`, `um_low`,
+`um_high`, `improvement_pct`, `resolved`, `median_energy_ape_pct` (ankyra-lite's median-unit absolute percentage energy
+error with the level readout, repeated on the rows of a population), `windows_projection_binds` (windows on which the
+two readouts differ by more than 10⁻⁶ relative, i.e. where the projection binds), `flag`. Written from the saved record
+(`compare_baselines.json`), so it holds exactly the numbers of `SUMMARY.md`'s column "Energy (level readout)".
 
 **`block_shares.csv`** — where the hourly squared error sits, six test populations. Descriptive. One row per `set`,
 `model`, `quantity` and `block`, the number in `value`; also `windows`, `units`, `flag`.
@@ -199,7 +210,11 @@ ankyra-lite's readout and of the previous window's peak, repeated on the rows of
 - `trajectory maximum`: the maximum of ankyra-lite's own delivered trajectory;
 - `previous-window peak`: the maximum of the last 744 context hours (last month's observed peak);
 - `same readout on X`: the same operator applied to baseline X's trajectory (the first release's rule);
-- `trajectory maximum of X`: baseline X's own trajectory maximum.
+- `trajectory maximum of X`: baseline X's own trajectory maximum;
+- `same readout on the carrier alone`: the same operator applied to the carrier's three-seed forecast at the origin,
+  without the anchoring layer and without the state rule (added on 19 October 2026). It is the counterpart of the first
+  release's row against the fixed division: it shows whether the anchoring layer's gains in the daily means carry into
+  the peak (P16). It is not a baseline and is not counted with them (`SUMMARY.md`, Figure 5c).
 
 **`intervals_by_population.csv`** — the anchoring layer's interval placed around ankyra-lite's delivered trajectory
 (residual quantiles of the history-only forecaster at the unit's pseudo-origins; [EVALUATION.md](../docs/EVALUATION.md#intervals))
@@ -255,6 +270,23 @@ Versions re-run with the anchoring layer get the seasonal naive on their own sta
 hourly and energy rows against the 8-epoch continuation, and the hourly rows against the from-scratch stage alone,
 reproduce the per-population values of `recipe_history.csv`.
 
+Four rows were added on 19 October 2026, after each population's other rows, from the anchoring layer's own fields
+(the `fields` mode of `evaluation/lite_reanchor.py`; [below](#handover-within-day-trust-and-combinations)); seasonal
+naive on state windows in every one:
+
+- `fixed division (history level and daily path, no handover)`: the fixed-division daily means
+  (`fixed_division_daily_means_kw`: the historical level and daily path, without the carrier's level candidate) plus the
+  carrier's own within-day block, projected onto nonnegative load;
+- `fixed half handover weight`: ankyra-lite with the weekly handover weights replaced by ½ (arm `Ah` of
+  `handover_granularity.csv`);
+- `one whole-window combination weight of the history side and the carrier`: (1 − a) H + a C, projected, with H the
+  history side (fixed-division daily means plus the analog-day shape S0), C the carrier at the origin and a one
+  least-squares weight per window of C against H over the whole 744-hour trajectory at the unit's completed
+  pseudo-origins: the daily part from the handover pairs (24 × the daily sums, divided by their number), the within-day
+  part from the trust triples (divided by their number), clipped to [0, 1] and shrunk to ½ by n/(n + 2), n = handover
+  pairs (the first release's control B2);
+- `half-and-half average of the history side and the carrier`: H/2 + C/2, projected (the first release's B1).
+
 **`component_contributions.csv`** — what each part of ankyra-lite adds: direct contrasts taken from `ablation.csv`,
 hourly and energy. Columns: `set`, `component`, `improvement_pct`, `log_ratio`, `um_low`, `um_high`, `kind`, `error`,
 `resolved`, `flag`. Positive = the version with the component (ankyra-lite) better. Components: `the whole anchoring
@@ -262,9 +294,10 @@ layer (carrier alone -> ankyra-lite)`, `seasonal-naive state rule`, `within-day 
 per window`, `short-gap rule`, `micro-load rule`, `the carrier inside the anchoring layer (history only ->
 ankyra-lite)`, the two recipe steps (`span return (the validation span returned to the training set; both with 8
 continuation epochs)`: against the 8-epoch continuation; `continuation with the span return (from-scratch stage ->
-released recipe)`: against the from-scratch stage alone), and `three-seed ensemble (against one seed, mean over the
+released recipe)`: against the from-scratch stage alone), `three-seed ensemble (against one seed, mean over the
 three seeds)` (`kind` = `mean of three direct contrasts (point estimate)`, blank interval; all other rows `direct
-contrast`).
+contrast`), and, added on 19 October 2026, `block-wise weights instead of one whole-window weight` (against the
+whole-window combination weight of `ablation.csv`) and `block-wise weights against a half-and-half average`.
 
 **`seed_spread.csv`** — each seed alone against the three-seed ensemble, and each seed's and the ensemble's hourly
 contrast against TimesFM and Chronos-2-X, for the carrier alone and for the anchored forecast. Columns: `set`, `tier`,
@@ -345,6 +378,122 @@ corrected store. Values of `contrast`:
 The rows with `carrier` = `none` do not depend on ankyra-lite; on Oslo and BDG2 they equal the first release's
 committed rows. In the contrast against the control the carrier's forecast enters the level candidates, the handover
 of the daily means and the within-day mixture at once; the rows by block give a rough location only.
+
+## Handover, within-day trust and combinations
+
+Five files added on 19 October 2026, the counterparts of the first release's analyses of the handover, the within-day
+anchoring, the whole-window combination and the level candidates. They read the `fields` mode of
+`evaluation/lite_reanchor.py`: the product's three-seed ensemble re-anchored once more with the unchanged layer, keeping
+its own fields of every window (daily means, fixed-division daily means, within-day blocks, analog shape, weights) and
+the pseudo-origin quantities rebuilt from its public functions (the six handover pairs with
+`history.estimate_from_history`, the three trust triples with `analog.AnalogShapes`). Its gate, recorded under
+`extra` → `populations` → population → `fields_gate` in `compare_baselines.json`: the re-run reproduces the stored
+product bit for bit, and the rebuilt pairs, triples and level reproduce the call's `lead_week_weights`, `within_trust`,
+`level_weights` and `daily_means_kw` exactly on every non-state window. Descriptive, on the test windows of the nine
+populations; seasonal naive on state windows in every arm; estimator and intervals as in the main tables (hourly
+seed SEED + 9, energy SEED + 11, a fresh generator per contrast).
+
+**`handover_granularity.csv`** — what the week-by-week handover contributes. Four arms share the level with the
+carrier's level candidate, the delivered within-day block, the projection and the state rule, and differ only in the
+weight α on the carrier's daily means m^C against the history side's m^H (the level with the carrier candidate plus the
+daily path): `A0` none (α = 0), `Ah` a fixed half, `AM` one weight per window from the same handover pairs with the 31
+days pooled, `AW` the weekly weights (= ankyra-lite; the arm reproduces the delivered forecast bit for bit, checked).
+m^H is the anchoring layer's own (recomputed from its level and checked against the handover identity
+daily = (1 − α)m^H + α m^C, α ≤ 7/8). The columns of the first release's file: `set`, `tier`, `contrast` (first arm vs
+second; the first-named is the numerator), `log_ratio`, `um_low`, `um_high`, `improvement_pct`, `pooled_mse_ratio`, and
+`flag`. Values of `contrast`: `C1 AW vs Ah`, `C2 AW vs AM`, `C3 AM vs Ah`, `C4 Ah vs A0` (the first release's four
+numbered contrasts), `AW vs A0`, `AM vs A0`, each arm against `carrier alone`, `TimesFM` and `fixed division` (the
+ablation row of that name), and `C1` and `C2` by forecast week (`..., week 1` to `week 4`: days 1–7, 8–14, 15–21,
+22–31). Hourly error only.
+
+**`lead_weeks.csv`** — by forecast week, ankyra-lite and the fixed division against the carrier alone and against
+TimesFM, and the estimated handover. The counterpart of the first release's `lead_weeks_first_read.csv` (there on the
+three populations scored first after the handover was fixed; here on the nine). Columns: `set`, `tier`, `week` (1–4),
+`days`, `windows`, `units`, then `log_ratio`, `um_low`, `um_high` of `ankyra_lite_vs_carrier`, `ankyra_lite_vs_timesfm`,
+`fixed_division_vs_carrier` and `fixed_division_vs_timesfm` (the hourly error of that week's hours; negative favours the
+first-named), `mean_weight_on_carrier` (the mean over non-state windows of the week's handover weight α_w on the
+carrier's daily means; ½ without evidence), `flag`.
+
+*Caveat: BDG2 against TimesFM in weeks 1 and 2.* There ankyra-lite is resolved worse (log ratios 0.654 and 0.135,
+that is −92.4% and −14.4%; `flag` is empty and the values are as computed), but these two rows describe a few meters,
+not the population. In week 1 three meters, `Lamb_office_Vasiliki`, `Lamb_assembly_Bertie` and `Lamb_office_Velma`
+(one window each, origin 1 August 2017), read the same small non-zero value through the whole context and the first
+eight forecast days, and a varying load again from day 9. TimesFM repeats that value almost exactly, so its error on
+these three units is close to zero; ankyra-lite, which also reads the unit's longer history, forecasts a much higher
+load. Their unit log ratios are far larger than any other unit's and make up most of the week-1 unit mean. In week 2
+`Hog_lodging_Edgar` and `Eagle_office_Amie`, whose readings are also constant over the week, play the same role. These
+are not the three near-zero meters of [`bdg2_near_zero_sensitivity.csv`](#bdg2-near-zero-meters), and none of these
+windows is a state window (the readings are above the micro-load threshold). The meter-level facts come from a
+read-only check of the saved forecasts ([docs/EVALUATION.md](../docs/EVALUATION.md#numbers-that-are-not-in-results)).
+
+**`within_day_trust.csv`** — where the within-day anchoring acts. One row per population: `set`, `tier`, `windows`,
+`state_windows`, `anchored_windows` (the others), and over the anchored windows `mean_trust` and `median_trust` (the
+weight on the unit's analog-day shape, 0 to ½), `share_trust_positive`, `share_analog_kept` (the plausibility guard kept
+the analog shape), `mean_triples` (completed pseudo-origin triples behind the trust, at most 3) and
+`share_three_triples`, `flag`.
+
+**`generic_combinations.csv`** — is the history side a better combination partner for the carrier than a generic local
+forecast? The columns of the first release's file plus `flag`: `set`, `tier`, `subset` (`late`), `windows`, `units`,
+`contrast`, `best`, `candidates`, `error` (`hourly` or `energy`), `log_ratio`, `um_low`, `um_high`, `improvement_pct`,
+`resolved`, `availability_note` (empty: every candidate exists on every test window). `B2(H)` is the whole-window
+combination of `ablation.csv` (history side and carrier); `B2(X)` the same procedure with H replaced by X = `SN-week`,
+`WeekProf4` or `LYR-profile`, each computed from the load before every pseudo-origin (the panel's definitions; at the
+origin they equal the saved baselines, checked for the first two); `EW(X)` = max(½ carrier + ½ X, 0) for X = `SN-week`,
+`WeekProf4`, `LYR-profile`, `RIDGE-L`, `MSTL` (the saved baselines). Values of `contrast`: `B2(H) vs B2(SN-week)`,
+`B2(H) vs B2(WeekProf4)`, `B2(H) vs B2(LYR-profile)`, `B2(H) vs best B2(X)`, `B2(H) vs best equal-weight`,
+`ankyra-lite vs best generic`. "Best" was picked after scoring, per population and error (the candidate against which
+the first-named has the largest log ratio, i.e. the lowest error); `best` names it and `candidates` lists the pool. This
+choice favours the generic side.
+
+**`level_candidate_hit_rate.csv`** — how often the level candidate with the largest weight (the smallest pseudo-origin
+error) is the one whose window mean at the origin is closest to the realised window mean (P20). Each candidate's
+window mean at the origin is rebuilt from the layer's level hypotheses (checked: their weighted sum equals the level
+with the carrier candidate). Columns: `set` (also `all nine populations`), `tier`, `candidates` (`seven (six historical
+and the carrier)` or `six historical`), `windows` (anchored windows with a unique largest weight), `units`,
+`windows_tied_excluded` (windows whose largest weight is shared, e.g. without pseudo-origin evidence), `hit_rate`,
+`chance_rate` (the mean of 1 / the number of candidates available: the rate of any rule when the pseudo-origin errors
+carry no information about the target, P20), `hit_minus_chance` with its 95% interval `um_low`, `um_high` (2,000 bootstrap
+draws resampling units, seed 20261019), `share_carrier_selected` and `share_carrier_best` (seven candidates only), `flag`.
+Descriptive.
+
+## Training budget and long-context baselines
+
+Two robustness files of the comparison, added on 19 October 2026 (`evaluation/budget_tables.py`,
+`evaluation/long_context_tables.py`). They read saved forecasts of the study (nothing was trained or re-forecast for
+them) and score them on the test windows with the estimator and seeds of the main tables (hourly SEED + 9, energy
+SEED + 11). CINELDI: those forecasts were made on the original store; the corrected store's hour h + 1,416 is the
+original store's hour h and the models read no date, so windows are mapped by that shift, and the targets of the two
+stores were checked equal on every mapped window.
+
+**`training_budget_sensitivity.csv`** — were the four trained load-only baselines (`DLinear`, `iTransformer`, `LSTM`,
+`PatchTST`) held back by their training budget? The first release retrained each on each population with at most 30
+epochs and early-stopping patience 8 in place of 15 and 3 (cutoff, training pairs, selection set, learning-rate grid,
+seeds and scoring unchanged; protocol fixed before training); those forecasts are scored here against ankyra-lite. One
+row per population, model and `error` (72 rows). The columns of the first release's file, plus `error` (`hourly` or
+`energy`) and `flag`:
+
+- `original_log_ratio`, `original_um_low`, `original_um_high`, `original_improvement_pct`, `original_resolved`:
+  ankyra-lite against the baseline as trained for the main tables; the hourly rows reproduce `benchmark_pairwise.csv`
+  (checked when written);
+- `relaxed_*`: ankyra-lite against the baseline retrained with the relaxed budget. `*_resolved` is `ankyra-lite better`,
+  `baseline better`, `not resolved` or `identical forecasts`;
+- `relaxed_vs_original_*`: the relaxed baseline against its original on the same windows (negative `log_ratio` = the
+  relaxed model has the lower error); `relaxed_vs_original_resolved` is `relaxed better`, `original better`, `not
+  resolved` or `identical forecasts` (training is deterministic, so a relaxed run that selects the same learning rate and
+  epoch count repeats the original forecast);
+- `lr_original`, `epochs_original`, `lr_relaxed`, `epochs_relaxed`: the selected learning rate and epochs;
+  `selected_run_reached_30_epochs`: the selection run at the selected learning rate ran all 30 epochs;
+  `selected_epoch_is_30`: the selected epoch is the last one allowed.
+
+**`long_context_baselines.csv`** — zero-shot TimesFM 2.5 with an 8,736-hour (52-week) context (`TimesFM-8736`) and
+Chronos-2 with 8,192 hours, the limit of its configuration (`Chronos-2-8192`), the zero-shot rows of the first
+release's `long_context_carriers.csv` (its anchored rows are ANKYRA configurations and are not used). Where the record
+is shorter or a gap falls inside the span, the context is the longest completely observed run of hours ending at the
+origin. Outside the 22 forecasters of the main tables and their ranks. Columns: `set`, `tier`, `subset`, `windows`,
+`units`, `contrast` (`ankyra-lite vs TimesFM-8736`, `ankyra-lite vs Chronos-2-8192`, `TimesFM-8736 vs TimesFM`,
+`Chronos-2-8192 vs Chronos-2` (the same model with the 1,344-hour context of the main tables), `ankyra-lite vs TimesFM`
+and `ankyra-lite vs Chronos-2` (these two reproduce the main tables' point estimates)), `error`, `log_ratio`, `um_low`,
+`um_high`, `improvement_pct`, `resolved`, `median_context_hours` (of the long-context model of the row), `flag`.
 
 ## Training curves
 
@@ -501,6 +650,17 @@ and under `extra` the records of the files of the sections above), with the run'
 
 **`compare_baselines.log`** — the log of the run that wrote these files, with the same path scrubbing.
 
+**`compare_baselines_supplement.log`** — the log of `compare_baselines.py --supplement` (19 October 2026), which added
+the files of [Handover, within-day trust and combinations](#handover-within-day-trust-and-combinations), [Training
+budget and long-context baselines](#training-budget-and-long-context-baselines) and `energy_level_readout.csv`, and
+the added rows of `ablation.csv`, `component_contributions.csv` and `peak_readout.csv`, to the complete run of
+`compare_baselines.log`. No existing number was recomputed or changed: every other line of the three extended files is
+kept byte for byte (checked when written), and `compare_baselines.json` gained keys and list entries only, except
+`extra` → `absent_files`, replaced by the updated list (`supplement` records the
+files and rows written; the per-population records under `extra` → `populations` gained `budget`, `long_context`,
+`peak_carrier`, `fields_gate`, `handover`, `combination`, `within_trust` and `hit_rate`, and their `ablation` entries the
+four added rows). `SUMMARY.md` was rebuilt from that record (`--summary-only` gives the same file).
+
 **`SUMMARY.md`** — the readable summary of the run: overview per population, the contrasts against the main baselines,
 the pooled rank tests, the sections of the extra files, the scoring-code check and the file list.
 
@@ -546,8 +706,13 @@ by-day file.
 | First release file | Why there is none here |
 |---|---|
 | `conventional_metrics.csv` (all windows) | ankyra-lite forecasts exist on the test windows only; the earlier panel windows lie in or before its training period |
-| `constants_sensitivity.csv`, `handover_granularity.csv`, `lead_weeks_first_read.csv` | studies of the anchoring layer's own design, made for ANKYRA on design windows; the layer is an unchanged copy |
+| `constants_sensitivity.csv` | the first release ran it on design windows without any test window; ankyra-lite forecasts exist on the test windows only, and the anchoring layer's constants are fixed in its byte-identical copy; the recipe constants the study varied are in `recipe_history.csv` and the `sensitivity` column of `constants.csv` |
 | `contrast_ii_control_description.csv` | it describes the calls of the carrier-free control, which does not involve the carrier; the contrasts are in `contrast_ii_control.csv` |
-| `ankyra_2_vs_1x_by_day.csv`, `bdg2_micro_load_windows.csv`, `reevaluation_2_*.json`, `closeout_status.json`, the version folders | records of ANKYRA's own versions (ankyra-lite's own recipe history is `recipe_history.csv`) |
-| `carrier_swap*.csv`, `long_context_carriers.csv`, `generic_combinations.csv`, `trained_carriers*.csv`, `training_budget_sensitivity.csv` | studies of ANKYRA's carriers and baselines; the comparable ankyra-lite content is in `carriers_in_anchoring_layer.csv`, `ablation.csv`, `seed_spread.csv`, `contrast_ii_blocks.csv` and `contrast_ii_control.csv` |
+| `ankyra_2_vs_1x_by_day.csv`, `bdg2_micro_load_windows.csv`, `reevaluation_2_*.json`, `closeout_status.json`, the version folders | records of ANKYRA's own versions and design decisions (ankyra-lite's own recipe history is `recipe_history.csv`) |
+| `carrier_swap*.csv`, the anchored rows of `long_context_carriers.csv` | foundation models as ANKYRA's carrier are ANKYRA configurations; the two zero-shot long-context forecasts are scored in `long_context_baselines.csv`, and trained carriers inside this anchoring layer are in `carriers_in_anchoring_layer.csv` |
+| `trained_carriers_sensitivity.csv` | it measures what the earlier training cutoff of a trained carrier costs that carrier alone; ankyra-lite's carriers, and the other carriers of `carriers_in_anchoring_layer.csv`, are trained with that earlier cutoff already |
 | `lcl_*`, `hkust_*`, `helsinki_*`, `unicon_*` | the external tests of this version are reported differently: `external_tests.csv` ([above](#external-tests)) holds LCL, UNICON and HKUST (first read of this candidate on a previously read population) and a same-source out-of-time supplementary check (GoiEner households); Helsinki (retrospective) is trained and sealed, not yet scored; UCI370 was skipped |
+
+The first release's `handover_granularity.csv`, `generic_combinations.csv` and `training_budget_sensitivity.csv` have
+counterparts of the same name here, `lead_weeks_first_read.csv` has `lead_weeks.csv`, `trained_carriers.csv` has
+`carriers_in_anchoring_layer.csv`, and the zero-shot rows of `long_context_carriers.csv` have `long_context_baselines.csv`.

@@ -6,7 +6,10 @@ from-scratch stage), the p-value format, the re-anchoring modes, the corruptions
 blocks and the recipe history are tested directly; the result files are checked for the release's columns, the
 scoring-code check, the forecaster set (no ANKYRA version; 21 baselines including LSTM-T-KAN-M as the only LSTM-T-KAN
 model; 22 forecasters), the flags (CINELDI: LSTM-T-KAN-M from its corrected-store retrain), the TiDE label, the new files and the
-absence of absolute paths.  Nothing is recomputed (run the script first).
+absence of absolute paths.  The files and rows added on 19 October 2026 (``--supplement``: training budget, handover arms,
+lead weeks, within-day trust, the fixed division, the whole-window weight, the carrier-alone peak row) are checked for their
+columns, labels and flags, and for the gates of the fields cache and of the handover rebuild (class ``AddedFileTests``; each
+test skips while its file is absent).  Nothing is recomputed (run the script first).
 
 Skips.  Tests that need the first release's published files skip when neither ANKYRA_ORIGINAL_ROOT/results nor
 ``git show <release commit>`` can provide them; tests that need the study's research folder skip when it is absent;
@@ -586,6 +589,175 @@ class ResultFileTests(unittest.TestCase):
                      "component_contributions.csv", "intervals_winkler_contrasts.csv", "recipe_history.csv", "constants.csv",
                      "contrast_ii_blocks.csv", "contrast_ii_control.csv", "robustness.csv"):
             self.assertTrue((RESULTS / name).exists(), name)
+
+
+FORBIDDEN = re.compile(r"^ANKYRA|F1-off|^F0$|^F1$|ANKYRA 2|ANKYRA-")          # a comparison with ANKYRA or one of its versions
+BUDGET_FAMILIES = ("DLinear", "iTransformer", "LSTM", "PatchTST")
+HANDOVER_CONTRASTS = ("C1 AW vs Ah", "C2 AW vs AM", "C3 AM vs Ah", "C4 Ah vs A0", "AW vs A0", "AM vs A0")
+ADDED_ABLATIONS = ("fixed division (history level and daily path, no handover)", "fixed half handover weight",
+                   "one whole-window combination weight of the history side and the carrier",
+                   "half-and-half average of the history side and the carrier")
+ADDED_COMPONENTS = ("block-wise weights instead of one whole-window weight", "block-wise weights against a half-and-half average")
+CARRIER_PEAK = "same readout on the carrier alone"
+ADDED_FILES = ("training_budget_sensitivity.csv", "handover_granularity.csv", "lead_weeks.csv", "within_day_trust.csv",
+               "generic_combinations.csv", "level_candidate_hit_rate.csv", "long_context_baselines.csv", "energy_level_readout.csv")
+
+
+def added_record(face):
+    """The record of the files added on 19 October 2026 for one population (compare_baselines.json, extra.populations)."""
+    return ((record().get("extra") or {}).get("populations") or {}).get(face) or {}
+
+
+def face_of(name):
+    return {v: k for k, v in NAMES.items()}[name]
+
+
+@unittest.skipUnless(HAVE_RESULTS, "no complete run in the result directory (run evaluation/compare_baselines.py first)")
+class AddedFileTests(unittest.TestCase):
+    """The files and rows added on 19 October 2026 (``compare_baselines.py --supplement``): columns, labels, flags and the
+    gates of the fields cache and of the handover rebuild.  Each test skips while its file has not been written."""
+
+    def need(self, name):
+        if not (RESULTS / name).exists():
+            self.skipTest(f"no {name} in the result directory (run evaluation/compare_baselines.py --supplement)")
+
+    def test_labels_are_the_evaluation_codes(self):
+        import extra_tables as XT
+        self.assertEqual(XT.ADDED_ABLATIONS, ADDED_ABLATIONS)
+        self.assertEqual(tuple(XT.COMPONENT[k] for k in XT.ADDED_ABLATIONS if k in XT.COMPONENT), ADDED_COMPONENTS)
+        self.assertEqual(XT.CARRIER_PEAK, CARRIER_PEAK)
+        self.assertEqual(tuple(c for c, _, _ in XT.HANDOVER_CONTRASTS), HANDOVER_CONTRASTS)
+        for lab in ADDED_ABLATIONS + ADDED_COMPONENTS + (CARRIER_PEAK,) + HANDOVER_CONTRASTS:
+            self.assertIsNone(FORBIDDEN.search(lab), lab)
+
+    def test_training_budget_sensitivity(self):
+        self.need("training_budget_sensitivity.csv")
+        import budget_tables as BT
+        head = header("training_budget_sensitivity.csv")
+        self.assertEqual(head, BT.FIELDS)
+        self.assertEqual(head[-1], "flag")
+        if HAVE_RELEASE:                                                             # the first release's columns, plus error and flag
+            self.assertEqual([c for c in head if c not in ("error", "flag")], published("training_budget_sensitivity.csv")[0])
+        rs = rows("training_budget_sensitivity")
+        self.assertEqual(tuple(BT.FAMILIES), BUDGET_FAMILIES)
+        for s in sets_run():
+            got = sorted((r["model"], r["error"]) for r in rs if r["set"] == s)
+            self.assertEqual(got, sorted((m, e) for m in BUDGET_FAMILIES for e in ("hourly", "energy")), s)
+        lite = {"ankyra-lite better", "baseline better", "not resolved", "identical forecasts"}
+        for r in rs:
+            for k in ("original", "relaxed"):
+                self.assertIn(r[f"{k}_resolved"], lite, r)
+                lo, hi = float(r[f"{k}_um_low"]), float(r[f"{k}_um_high"])
+                want = "ankyra-lite better" if hi < 0 else ("baseline better" if lo > 0 else "not resolved")
+                if r[f"{k}_resolved"] != "identical forecasts":
+                    self.assertEqual(r[f"{k}_resolved"], want, (r["set"], r["model"], r["error"], k))
+            self.assertIn(r["relaxed_vs_original_resolved"], {"relaxed better", "original better", "not resolved", "identical forecasts"})
+            self.assertIn(r["subset"], {"late"})
+        bp = {(r["set"], r["model"]): r for r in rows("benchmark_pairwise")}
+        for r in [x for x in rs if x["error"] == "hourly"]:                          # the original budget is the main comparison
+            ref = bp[(r["set"], r["model"])]
+            for a, b in (("original_log_ratio", "log_ratio"), ("original_um_low", "um_low"), ("original_um_high", "um_high")):
+                self.assertAlmostEqual(float(r[a]), float(ref[b]), places=6, msg=(r["set"], r["model"], a))
+
+    def test_handover_granularity_and_the_gates(self):
+        self.need("handover_granularity.csv")
+        head = header("handover_granularity.csv")
+        self.assertEqual(head, ["set", "tier", "contrast", "log_ratio", "um_low", "um_high", "improvement_pct", "pooled_mse_ratio", "flag"])
+        if HAVE_RELEASE:
+            self.assertEqual(head, published("handover_granularity.csv")[0] + ["flag"])
+        rs = rows("handover_granularity")
+        others = [f"{a} vs {o}" for a in ("A0", "Ah", "AM", "AW") for o in ("carrier alone", "TimesFM", "fixed division")]
+        weekly = [f"{c}, week {w}" for c in HANDOVER_CONTRASTS[:2] for w in range(1, 5)]
+        for s in sets_run():
+            got = [r["contrast"] for r in rs if r["set"] == s]
+            self.assertEqual(sorted(got), sorted(list(HANDOVER_CONTRASTS) + others + weekly), s)
+        for r in rs:
+            lr = float(r["log_ratio"])
+            self.assertAlmostEqual(float(r["improvement_pct"]), 100 * (1 - np.exp(lr)), delta=2e-3, msg=(r["set"], r["contrast"]))
+            self.assertGreater(float(r["pooled_mse_ratio"]), 0.0)
+        for s in sets_run():                                                         # the gates of the population's record
+            x = added_record(face_of(s))
+            g = x.get("fields_gate") or {}
+            self.assertTrue(g.get("pass") and g.get("fields_pass"), (s, g))            # the product bit for bit, the rebuilt quantities
+            self.assertTrue(g.get("traj_equal") and g.get("level_equal") and g.get("state_flags_equal"), (s, g))
+            f = g.get("fields") or {}
+            self.assertEqual(f.get("rebuilt_mismatches"), 0, s)                       # AW from the rebuilt pairs == lead_week_weights, ...
+            self.assertTrue(f.get("fields_on_every_non_state_window"), s)
+            self.assertEqual(f.get("rebuilt_reproduce_the_call"), f.get("non_state_windows"), s)
+            h = (x.get("handover") or {}).get("gate") or {}
+            self.assertTrue(h.get("aw_equals_the_product") and h.get("daily_means_reproduced"), (s, h))
+            self.assertLess(h.get("m_h_identity_max_rel_diff", 1.0), 1e-9, s)
+
+    def test_lead_weeks(self):
+        self.need("lead_weeks.csv")
+        head = header("lead_weeks.csv")
+        pairs = [f"{a}_vs_{b}" for a in ("ankyra_lite", "fixed_division") for b in ("carrier", "timesfm")]
+        self.assertEqual(head, ["set", "tier", "week", "days", "windows", "units"] + [f"{p}_{k}" for p in pairs for k in ("log_ratio", "um_low", "um_high")]
+                         + ["mean_weight_on_carrier", "flag"])
+        rs = rows("lead_weeks")
+        for s in sets_run():
+            mine = [r for r in rs if r["set"] == s]
+            self.assertEqual([(r["week"], r["days"]) for r in mine], [("1", "1-7"), ("2", "8-14"), ("3", "15-21"), ("4", "22-31")], s)
+            alpha = (added_record(face_of(s)).get("handover") or {}).get("alpha_week_mean")
+            for r in mine:
+                a = float(r["mean_weight_on_carrier"])
+                self.assertTrue(0.125 <= a <= 0.875, (s, r["week"], a))              # (n lambda + 1) / (n + 2) with n <= 6 pairs, or 1/2
+                if alpha:
+                    self.assertAlmostEqual(a, alpha[int(r["week"]) - 1], places=4, msg=(s, r["week"]))
+                for p in pairs:
+                    self.assertTrue(np.isfinite(float(r[f"{p}_log_ratio"])), (s, r["week"], p))
+
+    def test_within_day_trust(self):
+        self.need("within_day_trust.csv")
+        self.assertEqual(header("within_day_trust.csv"), ["set", "tier", "windows", "state_windows", "anchored_windows", "mean_trust", "median_trust",
+                                                          "share_trust_positive", "share_analog_kept", "mean_triples", "share_three_triples", "flag"])
+        rs = {r["set"]: r for r in rows("within_day_trust")}
+        rec = record()
+        for s in sets_run():
+            r = rs[s]
+            p = rec["populations"][face_of(s)]
+            self.assertEqual(int(r["windows"]), int(p["windows"]), s)
+            self.assertEqual(int(r["windows"]), int(r["state_windows"]) + int(r["anchored_windows"]), s)
+            self.assertEqual(int(r["state_windows"]), int(p["product"]["state_windows_seasonal_naive"]), s)
+            self.assertTrue(0.0 <= float(r["median_trust"]) <= 0.5 and 0.0 <= float(r["mean_trust"]) <= 0.5, s)   # the trust is capped at one half
+            for k in ("share_trust_positive", "share_analog_kept", "share_three_triples"):
+                self.assertTrue(0.0 <= float(r[k]) <= 1.0, (s, k))
+            self.assertTrue(0.0 <= float(r["mean_triples"]) <= 3.0, s)
+
+    def test_added_ablation_component_and_peak_rows(self):
+        if not (RESULTS / "handover_granularity.csv").exists():
+            self.skipTest("the added rows are written with handover_granularity.csv (run evaluation/compare_baselines.py --supplement)")
+        ab = {(r["set"], r["ablation"], r["error"]) for r in rows("ablation")}
+        cc = {(r["set"], r["component"], r["error"]) for r in rows("component_contributions")}
+        pk = {(r["set"], r["comparator"]) for r in rows("peak_readout")}
+        for s in sets_run():
+            for err in ("hourly", "energy"):
+                for lab in ADDED_ABLATIONS:
+                    self.assertIn((s, lab, err), ab, (s, lab, err))
+                for lab in ADDED_COMPONENTS:
+                    self.assertIn((s, lab, err), cc, (s, lab, err))
+            self.assertIn((s, CARRIER_PEAK), pk, s)
+        for name, key in (("ablation", "ablation"), ("component_contributions", "component"), ("peak_readout", "comparator")):
+            seen = [(r["set"], r[key]) + ((r["error"],) if "error" in r else ()) for r in rows(name)]
+            self.assertEqual(len(seen), len(set(seen)), name)                        # each added row once
+
+    def test_no_forbidden_label_and_the_flags_in_the_added_files(self):
+        written = [n for n in ADDED_FILES if (RESULTS / n).exists()]
+        if not written:
+            self.skipTest("none of the added files has been written")
+        want = {p["name"]: (p["flag"] or "") for p in record()["populations"].values()}
+        labels = ("set", "model", "model_label", "comparator", "ablation", "carrier", "contrast", "arm", "component", "first_arm",
+                  "second_arm", "best", "candidates")
+        for name in written:
+            with open(RESULTS / name, encoding="utf-8") as fh:
+                for r in csv.DictReader(fh):
+                    for k in labels:
+                        self.assertIsNone(FORBIDDEN.search(r.get(k) or ""), (name, k, r.get(k)))
+                    self.assertEqual(r["flag"], want.get(r["set"], ""), (name, r["set"]))
+        for name in ("ablation", "component_contributions", "peak_readout"):
+            for r in rows(name):
+                if r.get("ablation") in ADDED_ABLATIONS or r.get("component") in ADDED_COMPONENTS or r.get("comparator") == CARRIER_PEAK:
+                    self.assertEqual(r["flag"], want.get(r["set"], ""), (name, r["set"]))
 
 
 if __name__ == "__main__":

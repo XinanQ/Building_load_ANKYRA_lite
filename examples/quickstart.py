@@ -11,9 +11,10 @@ default it loads the three released Cambridge carriers shipped in ``checkpoints/
 averaged as an ensemble).  They belong to the Cambridge population and its training cut, and the artificial building is
 almost exactly periodic, so the output shows the format, not typical values.  With ``--untrained``, or when the folder
 holds no ``seed*.pt``, the carrier is an untrained network of the published shape (``build_carrier()``, seed 0), and
-the output shows the data flow only.  The interval is the anchoring layer's readout (residual quantiles of the unit's
-own history-only pseudo-forecasts, added to the delivered trajectory); its coverage on the nine populations is
-described in the README (section Prediction intervals).
+the output shows the data flow only.  The interval is ``ankyra_lite.readouts.interval``, the anchoring layer's readout
+(residual quantiles of the unit's own history-only pseudo-forecasts, added to the delivered trajectory); its coverage
+on the nine populations is described in the README (section Prediction intervals).  ``examples/own_unit.py`` shows how
+to prepare a record of your own unit.
 """
 from __future__ import annotations
 
@@ -30,11 +31,10 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:                               # also runs from a checkout without ``pip install -e .``
     sys.path.insert(0, str(REPO))
 
-from ankyra_lite import build_carrier, carrier_forecasts, forecast, load_carrier     # noqa: E402
-from ankyra_lite.anchor import readouts                                              # noqa: E402
+from ankyra_lite import anchor, build_carrier, carrier_forecasts, forecast, load_carrier, readouts   # noqa: E402
 from ankyra_lite.anchor.synthetic import synthetic_history                           # noqa: E402
 from ankyra_lite.carrier import CARRIER_PARAMETERS                                   # noqa: E402
-CONTEXT, HORIZON = 1344, 744
+CONTEXT = 1344                                          # hours of load before the origin that the readouts use
 
 
 def carriers(population, checkpoints=None, untrained=False):
@@ -76,13 +76,11 @@ def main(argv=None):
     context = load[o - CONTEXT:o]
     ctx_types = types[o - CONTEXT + 12 + 24 * np.arange(56)]
     tgt_types = types[o + 12 + 24 * np.arange(31)]
-    peak = readouts.peak_readout(f.trajectory_kw, context[None], ctx_types[None], tgt_types[None])[0]
+    peak = anchor.readouts.peak_readout(f.trajectory_kw, context[None], ctx_types[None], tgt_types[None])[0]
 
     # interval readout: residual quantiles of the unit's own pseudo-origin forecasts, added to the point trajectory
-    Q, n_windows = readouts.residual_quantiles(load, history.temperature_c, types, history.start_timestamp, group, sigma, o)
-    hour_of_day = (o + np.arange(HORIZON)) % 24
-    workday = (types[o:o + HORIZON] < 5).astype(int)        # day types 0-4 are Monday to Friday; 5, 6 and 7 are weekend and holiday
-    bands = readouts.interval_bands(f.trajectory_kw, readouts.origin_scale(context), Q, hour_of_day, workday)   # rows: 5, 10, 50, 90, 95 %
+    # (anchor.readouts.residual_quantiles, origin_scale and interval_bands, by hour of day and workday)
+    bands, n_windows = readouts.interval(history, f, group=group, temp_sigma_std=sigma)   # rows: 5, 10, 50, 90, 95 %
 
     print(json.dumps({
         "carrier": description,

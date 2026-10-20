@@ -124,7 +124,9 @@ classes in [test_carrier_properties.py](test_carrier_properties.py).
 - **Evidence bound (P20).** The minimax rate of aggregation is a worst-case result: for seven level candidates and at
   most six pseudo-origin errors its order is a sizeable fraction of the error variance. It is the statistical
   background for shrinking the weights strongly; it is not a measurement on these data and does not by itself show
-  that the candidates cannot be told apart here ([PROOFS.md](PROOFS.md#evidence-bound)). The record statistics that
+  that the candidates cannot be told apart here ([PROOFS.md](PROOFS.md#evidence-bound)). On the test windows the
+  candidate with the largest weight is the best one at the origin more often than chance, but in only about one
+  window in five (`results/level_candidate_hit_rate.csv`). The record statistics that
   the anchoring layer reports (`anchoring_record`) are descriptive indicators; the forecaster does not claim to select
   the best candidate.
 - **The carrier (C1–C10).** The carrier hands the anchoring layer a nonnegative trajectory whose mean is its level
@@ -133,6 +135,24 @@ classes in [test_carrier_properties.py](test_carrier_properties.py).
   starts as the base network (C9). With the 186-day gap between the training cut and the test set, every pseudo-origin
   forecast that the anchoring layer scores against the unit's own history is out of sample for the carrier (C10),
   which is what the layer's per-unit weights assume.
+
+## Consequences measured in this repository
+
+The properties hold for any weights; where this repository's result files measure one of their consequences on the
+test windows, the file is listed here and named in the statement in [PROOFS.md](PROOFS.md). All of these readings are
+descriptive; the numbers and their reading are in [docs/EVALUATION.md](../docs/EVALUATION.md).
+
+| | What is measured | File |
+|---|---|---|
+| P1 | the share of each block in the hourly squared error of ankyra-lite and the baselines | [`results/block_shares.csv`](../results/block_shares.csv); Figure [14](../figures/fig14_block_attribution.png) |
+| P4 | the replacement of the carrier's blocks by the anchored ones: ankyra-lite against its carrier alone, block by block; the exact replacement on one window | [`results/contrast_ii_blocks.csv`](../results/contrast_ii_blocks.csv) (`anchored vs carrier alone`); Figure [7a](../figures/fig7_operators.png) |
+| P5, P10 | the handover against a fixed division and fixed weights (no weight, ½, one least-squares weight per window, the weekly weights) and the estimated weights by forecast week | [`results/handover_granularity.csv`](../results/handover_granularity.csv), [`results/lead_weeks.csv`](../results/lead_weeks.csv) |
+| P7 | ankyra-lite by the length of the record before the origin and by K_eff | [`results/history_length.csv`](../results/history_length.csv) |
+| P11, P12 | the windows where the projection binds, and the energy contrasts with the level readout | [`results/energy_level_readout.csv`](../results/energy_level_readout.csv) |
+| P15 | the peak readout against trajectory maxima, the previous window's peak and the same readout on the baselines | [`results/peak_readout.csv`](../results/peak_readout.csv) |
+| P16 | the same readout on the carrier alone: whether the anchored daily means carry into the peak | [`results/peak_readout.csv`](../results/peak_readout.csv) (`same readout on the carrier alone`) |
+| P19 | the unit-equal log ratio, the pooled MSE ratio, the mean per-unit rank and conventional metrics side by side | `results/benchmark_pairwise.csv`, `benchmark_mean_unit_rank.csv`, `conventional_metrics_late.csv` |
+| P20 | the hit rate of the level candidate with the largest weight against the chance rate; the anchoring record against the realised gain | [`results/level_candidate_hit_rate.csv`](../results/level_candidate_hit_rate.csv), [`results/anchoring_gain_deciles.csv`](../results/anchoring_gain_deciles.csv) |
 
 P1–P20 and their files are those of the ANKYRA 2.2.1 theory folder, with the imports changed from `ankyra` to
 `ankyra_lite.anchor`. The data evidence of that theory (from the method's earlier development and from the ANKYRA

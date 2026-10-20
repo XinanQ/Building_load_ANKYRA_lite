@@ -85,6 +85,13 @@ level. Replacements are scored from block losses, so they recover no peak and no
 The block shares $\pi_k$ differ between base forecasters and between units, so a replacement has to be checked for
 each base forecaster. This repository's block shares are in [`results/block_shares.csv`](../results/block_shares.csv).
 
+*Measured consequence (this repository).* ankyra-lite replaces the carrier's level, daily path and within-day block by
+anchored ones. The block RMS ratios of that replacement, as unit-equal contrasts of ankyra-lite against its carrier
+alone in each block (level, daily path, within-day; all test windows; descriptive), are the rows
+`anchored vs carrier alone` of [`results/contrast_ii_blocks.csv`](../results/contrast_ii_blocks.csv). Figure 7a
+([`figures/fig7_operators.png`](../figures/fig7_operators.png)) replaces the carrier's blocks by ankyra-lite's one at a
+time on one Cambridge test window, where each bar splits exactly into the three block losses.
+
 **P5. Two-source division.** Pooled block losses add. Taking each block from the source with the smaller pooled block
 loss therefore gives the pooled optimum among the eight block-wise divisions of two sources.
 
@@ -100,6 +107,13 @@ units whose historical daily means fail badly can outweigh a majority that gain.
 
 The anchoring layer's per-unit weights and weekly handover respond to this: each unit's own record decides how much
 of each source it uses.
+
+*Measured consequence (this repository).* [`results/handover_granularity.csv`](../results/handover_granularity.csv)
+scores ankyra-lite against fixed divisions of the same two sources on the test windows of the nine populations
+(descriptive). The fixed division (the history side's six-candidate level and daily path with the carrier's within-day
+block) is resolvably worse than ankyra-lite on all nine; the arm that gives the carrier's daily means no weight is
+resolvably worse than the carrier alone on four; a fixed half weight recovers between about half and almost all of
+the per-unit weights' gain ([EVALUATION.md](../docs/EVALUATION.md#what-the-handover-contributes)).
 
 **P6. Correction accounting (standard).** Let $e=y-\hat y$ be a reference error and $D$ a correction added to the
 forecast. (This $e$ is the truth minus the forecast, the opposite sign to $e=F-y$ in P1; the sign matters for the
@@ -184,6 +198,14 @@ The anchoring layer's weekly handover therefore uses the least-squares weight
 can share part of their error (for example, when both miss the same unforeseen event); the least-squares weight is
 then not pulled towards 1/2.
 
+*Measured consequence (this repository).* This repository does not compare the least-squares weight with an
+inverse-MSE weight. [`results/handover_granularity.csv`](../results/handover_granularity.csv) compares the estimated
+least-squares weights (four weekly weights, arm `AW`, which is ankyra-lite; one weight per window, arm `AM`) with a
+fixed weight of 1/2 (arm `Ah`), the value towards which shared errors pull inverse-MSE weights: `AW` is resolvably
+better than `Ah` on two of the nine populations and not separated on the others, and `AW` and `AM` are not separated
+on any. The mean estimated weight on the carrier's daily means lies between 0.49 and 0.73 in every forecast week
+([`results/lead_weeks.csv`](../results/lead_weeks.csv)).
+
 ## Nonnegativity and energy
 
 **P11. Clipping cannot increase any hour's error (standard).** If realised load is nonnegative, then
@@ -205,6 +227,13 @@ Two hours are enough to show it. Take the forecast $p=(-1,3)$, whose mean is 1, 
 - The best feasible point, $(0,2)$, has squared error 4. Clipping gives $(0,3)$, with error 1.
 
 The anchoring layer therefore reads energy from the level and projects only the delivered trajectory.
+
+*Measured consequence (this repository).* On the test windows the projection binds on 237 of 5,716 windows (BDG2 1,
+GoiEner non-household 142, households 29, Cambridge 9, EWELD 21, Drammen 2, CINELDI 33; none on HEEW and Oslo; column
+`windows_projection_binds` of [`results/energy_level_readout.csv`](../results/energy_level_readout.csv)). Only there do
+the level readout and the energy of the delivered trajectory differ, by the energy the clip adds (P11). The file gives
+the monthly energy contrasts with the level readout; their counts of resolved contrasts equal those with the
+delivered trajectory (`energy_error.csv`) on every population (descriptive).
 
 **P13. Day-level projection: a conditional guarantee.** This option projects the 31 daily means onto
 $\mathcal A=\lbrace x\ge0:\bar x=\max(\hat\ell,0)\rbrace$ before clipping, and keeps the within-day deviations.
@@ -256,6 +285,14 @@ and $\hat P_\kappa-M(y)=U-M(y)+(\kappa-1)(U-\bar F)$.
 
 The forecast's level and daily path enter the peak directly, so gains in the anchored level carry into it. The
 amplitude term has no universal sign, and the net error has to be measured.
+
+*Measured consequence (this repository).* The comparator `same readout on the carrier alone` of
+[`results/peak_readout.csv`](../results/peak_readout.csv) applies the readout to the carrier's own forecast at the
+origin. The excursions come from the context and are the same for both, so the two readouts differ only through the
+forecast daily means. ankyra-lite's readout is resolvably worse on Oslo and Drammen and not separated on the other
+seven populations; its daily path is resolvably worse than the carrier's on Drammen and the households
+([`results/contrast_ii_blocks.csv`](../results/contrast_ii_blocks.csv)). On these data the anchoring layer's level
+gains do not carry measurably into the peak (descriptive).
 
 **P17. Finite-support median property.** Assume:
 
@@ -336,7 +373,14 @@ i.e. the carrier, $T\le 6$). Two statements bound what any such rule can do.
   with a few months of evidence per candidate strongly shrunk weights are the reasonable choice, which is what the
   weights of P8 do. (The historical candidates use up to 12 pseudo-origins, the carrier candidate at most 6.)
 
-No hit rate of the candidate choice is measured in this repository. The unit's record of history against the carrier
+*Measured consequence (this repository).* [`results/level_candidate_hit_rate.csv`](../results/level_candidate_hit_rate.csv)
+measures the hit rate of the level block: how often the candidate with the largest weight (the smallest pseudo-origin
+errors) is the one whose window mean at the origin is closest to the realised window mean, read against the chance
+rate $1/K$ averaged over the windows. Pooled over the nine populations it is 0.209 for the seven candidates against
+0.144 (difference +0.065, 95% interval +0.054 to +0.076, resampling units) and 0.233 against 0.169 for the six
+historical candidates (descriptive). The pseudo errors therefore carry some information about the target's best
+candidate, far from enough to select it reliably, which is the situation in which the strongly shrunk weights of P8
+are the reasonable choice. The unit's record of history against the carrier
 (`anchoring_record`) is reported with every forecast, as in ANKYRA 2.2.1; its deciles on the test windows, against
 the realised gain, are in [`results/anchoring_gain_deciles.csv`](../results/anchoring_gain_deciles.csv) (descriptive).
 

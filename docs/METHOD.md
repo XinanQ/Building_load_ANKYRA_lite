@@ -1,6 +1,6 @@
 # Method
 
-This document describes ankyra-lite 0.1.0: a small carrier network, trained per population, whose forecasts at the
+This document describes ankyra-lite 0.1.1 (its forecasts, checkpoints and results are those of 0.1.0): a small carrier network, trained per population, whose forecasts at the
 origin and at six pseudo-origins go into an unchanged copy of the ANKYRA 2.2.1 anchoring layer. Every number below was
 checked against the code: `ankyra_lite/carrier/model.py`, `features.py`, `inference.py` and `train.py`,
 `ankyra_lite/forecast.py`, and the anchoring layer `ankyra_lite/anchor/` (a byte-identical copy;
@@ -13,9 +13,12 @@ Contents: [Information at the origin](#information-at-the-origin) · [The carrie
 [pooled training set](#pooled-training-set) · [sampler](#sampler) · [loss](#loss) · [optimisation](#optimisation) ·
 [early stopping](#stage-1-early-stopping) · [span return](#stage-2-the-validation-span-returned) ·
 [seeds](#seeds-and-ensemble) · [released weights](#released-weights) · [other recipes](#other-recipes-in-the-package)) ·
-[How the anchoring layer uses the carrier](#how-the-anchoring-layer-uses-the-carrier) ·
-[State windows](#state-windows-and-the-seasonal-naive-rule) · [Readouts](#readouts) · [Inference cost](#inference-cost) ·
-[Constants](#constants) · [What is not claimed](#what-is-not-claimed)
+[How the anchoring layer uses the carrier](#how-the-anchoring-layer-uses-the-carrier)
+([pseudo-origins](#pseudo-origins) · [three orthogonal blocks](#three-orthogonal-blocks) · [level](#level) ·
+[centred daily path](#centred-daily-path) · [within-day shape](#within-day-shape) ·
+[week-by-week handover](#week-by-week-handover) · [short-gap rule](#short-gap-rule)) ·
+[State windows](#state-windows-and-the-seasonal-naive-rule) · [Readouts](#readouts) · [Output fields](#output-fields) ·
+[Inference cost](#inference-cost) · [Constants](#constants) · [What is not claimed](#what-is-not-claimed)
 
 ## Information at the origin
 
@@ -25,7 +28,8 @@ A forecast at origin o is a function of the following, and nothing else:
   of 744 hours before them; the anchoring layer reads the whole pre-origin record);
 - the day types (weekday or public holiday) of the 31 forecast days, treated as known at the origin;
 - the unit's category: an input of the carrier, and the selector of the anchoring layer's fixed temperature-signature
-  prior;
+  prior. The prior was fitted once on BDG2 windows ending before July 2016 and is never refitted; the category
+  Commercial has none ([Level](#the-category-commercial-has-no-prior));
 - the population's fixed temperature-anomaly scale `temp_sigma_std`, fitted on the days before the training cut
   ([DATA.md](DATA.md#the-input-format)), and the daylight-saving rule of the unit's region (analog days only);
 - the carrier's weights, fitted on labels that end before the training cut, at least 186 days before the first test
@@ -35,7 +39,30 @@ A forecast at origin o is a function of the following, and nothing else:
 
 The carrier's weights are fitted once per population and are not changed by a forecast. The anchoring layer estimates
 its per-unit quantities (candidate weights, handover weights, within-day trust, temperature signature) at every origin
-from the unit's own pre-origin record and its completed pseudo-origins.
+from the unit's own pre-origin record and its completed pseudo-origins:
+
+- every pseudo-target ends by o;
+- each level pseudo-forecast at o − 744k uses only data before o − 744k, and the carrier's forecast at o − 744k is
+  built from data before that issue time (C4);
+- the weekly handover and the within-day trust use the realised values of these pseudo-targets.
+
+Two exceptions concern only the pre-origin record:
+
+- One daily-path candidate, `cur` (the path implied by the level construction; [Centred daily path](#centred-daily-path)),
+  reuses the weather weight estimated at the origin. Its pseudo-errors are therefore not strictly out of sample with
+  respect to that weight, although all of them precede the origin.
+- `temp_sigma_std` is fitted once per population, on the complete days before the training cut
+  ([DATA.md](DATA.md#the-input-format)). The historical estimator's pseudo-origins o − 744k with k = 7 … 12 (and those
+  of the interval readout) fall inside that fit period when the origin lies less than 744k hours after the cut, as on
+  the first months of every test set; they then use a scale that reflects temperature recorded after them. All of that
+  temperature precedes the origin. The carrier's pseudo-origins (k ≤ 6) lie at or after the cut, after the fit period.
+
+Two fixed components come from outside the unit's own record: the carrier's weights (fitted on labels that end before
+the population's training cut, borrowed windows included; [DATA.md](DATA.md#windows-borrowed-from-other-populations))
+and the anchoring layer's temperature-signature prior. Neither sees the unit's future. The prior was fitted on BDG2
+windows ending before July 2016. BDG2 is one of the nine populations here (a study population, not an outside source);
+its test windows start on 2017-08-01, after those windows end. The prior can still reflect data recorded later than
+the oldest test windows of other populations (Cambridge's test set starts in July 2013).
 
 Checks in the code: [`tests/test_carrier_unit.py`](../tests/test_carrier_unit.py) (no read at or after the origin, the
 pseudo-origin rule), the anchoring layer's own [`tests/anchor/test_no_future_information.py`](../tests/anchor/test_no_future_information.py)
@@ -330,7 +357,12 @@ are not the released recipe; their readings are in [EVALUATION.md](EVALUATION.md
 
 `ankyra_lite.anchor.forecast(history, foundation={k: forecast issued at o − 744k}, group=..., temp_sigma_std=...,
 dst_region=...)` is the ANKYRA 2.2.1 anchoring layer, unchanged; it takes the carrier's forecasts where ANKYRA takes a
-foundation model's. Its code and docstrings call this input the foundation model.
+foundation model's. Its code and docstrings call this input the foundation model, and two output names keep that word
+(`foundation_within_day_kw`, the key `fm` of `level_weights`); here both denote the carrier. The subsections below
+describe what the layer does with the carrier's forecasts. They follow the copied code: `ankyra_lite/anchor/core.py`
+(`forecast`, the carrier level candidate, the handover, the state rules, the short-gap rule), `analog.py` (the
+within-day shape), `blocks.py`, `readouts.py` and the frozen reference estimator `history/` (the historical level and
+daily path).
 
 ### Pseudo-origins
 
@@ -339,7 +371,9 @@ apart, wherever the 1,344-hour context before q is completely observed after the
 (`anchor.pseudo_origin_contexts`). The target month [q, q + 744) of a pseudo-origin is already observed at the origin, so
 the layer can score the carrier against the unit's own history on months that have happened.
 `carrier_forecasts(carriers, ..., origin=o, cut=C′)` computes exactly these forecasts, each from data before its own
-issue time, and drops any pseudo-origin before the cut.
+issue time, and drops any pseudo-origin before the cut. The carrier is given issue times, not contexts: it builds each
+forecast from the record before q as supplied, so an hour that the layer's short-gap rule interpolates in its own copy
+([below](#short-gap-rule)) is a missing hour for the carrier unless the caller filled it before the call.
 
 ### Why the test set starts 186 days after the cut
 
@@ -350,71 +384,458 @@ training label (property C10; in stage 2 the newest label ends 24 hours before t
 weights would be estimated on in-sample carrier errors and would trust the carrier too much. The price is a carrier that
 is at least half a year older than it would be in use.
 
-### What the layer estimates from the completed pseudo-forecasts
+### Three orthogonal blocks
 
-Per unit, from the carrier's forecasts at the pseudo-origins against the realised months (details in the first
-release's `docs/METHOD.md`; constants unchanged):
+At origin o a forecast F(d, h) covers D = 31 origin-aligned days of H = 24 hours, T = 744 hours in all. For any
+744-hour vector v define
 
-- **Level.** Six historical level candidates (the recent 7-day mean, the long-history mean over at most 8,760 hours, the
-  mean of the window one year earlier, each with and without weather adjustment; all with a day-type offset) and the
-  carrier's own window mean as a seventh candidate. Each candidate's window-mean error is computed at up to 12
-  pseudo-origins (up to 6 for the carrier); each candidate's error scale is the root mean square of those errors (frozen
-  configuration `level.scale = "rms"`), and the weights are inverse-square weights on that scale, shrunk towards equal
-  weights: w_j = (K_eff · w̃_j + 8 · w0_j) / (K_eff + 8), with K_eff the number of completed pseudo-origins (P7–P9).
-- **Daily path.** Seven historical candidate paths for the 31 daily means. A candidate's error at a pseudo-origin is the
-  root mean square over the 31 days of its normalised daily-path error; its error scale is the **median** of the absolute errors over
-  up to 12 pseudo-origins (frozen configuration `day.scale = "mad"`, the code's historical label for this median, not a
-  centred median absolute deviation), not the root mean square used for the level. The weights are inverse-square
-  weights on that scale, shrunk towards equal weights in the same form with shrinkage 2 (`history/_day.py`,
-  `weights_c`).
-- **Handover of the daily means.** For the weeks of days 1–7, 8–14, 15–21 and 22–31, the daily means are
-  m_d = (1 − α_w) m^H_d + α_w m^C_d, where m^H is the history side (the level with the carrier candidate, plus the daily
-  path) and m^C the carrier's daily means; α_w = (n λ̂_w + 1) / (n + 2), with λ̂_w the least-squares combination weight,
-  clipped to [0, 1], from the n ≤ 6 completed pseudo-origin pairs (P10). No pair gives α_w = ½.
-- **Within-day trust.** The carrier's day-demeaned shape w^C is mixed with the unit's analog-day shape S (up to eight
-  complete pre-origin days of the same day type, within ±14 days of the same day of year, in the same daylight-saving
-  state, closest in temperature to the day's climatology, rescaled to the variability before the origin):
-  w = w^C + ω (S − w^C), with one ω per window, ω = min(clip(λ̂, 0, 1) · n / (n + 2), ½), estimated from the n ≤ 3
-  completed pseudo-origins. A day with fewer than four analogs keeps the carrier's shape.
-- **Short-gap rule.** Gaps of at most 6 hours inside one 744-hour block are interpolated in the copy of the pre-origin
-  record that the estimator reads, and a pseudo-origin's target month qualifies with at least 90% observed hours.
+- the level ℓ(v) = T⁻¹ Σ_{d,h} v(d, h);
+- the centred daily path b_d(v) = H⁻¹ Σ_h v(d, h) − ℓ(v);
+- the within-day path w(d, h)(v) = v(d, h) − H⁻¹ Σ_r v(d, r).
 
-The forecast is F(d, h) = m_d + w(d, h), projected onto F ≥ 0. The layer also reports `anchoring_record`: the carrier's
-level weight and the log ratio of the best historical level candidate's pseudo-origin error to the carrier's
-(descriptive; not used by the forecast).
+These are orthogonal projections of ranks 1, 30 and 713, so for an error e = F − y
 
-**Arguments used in the evaluation.** `group`: the unit's category; `temp_sigma_std`: the population's value fitted on
-the days before the training cut; `dst_region`: the unit's region; `observed`: the finite load hours; every other
-argument at the 2.2.1 default (`gap_tolerance=True`, `single_trust=True`, `within_anchor=True`,
-`micro_load_rule=True`).
+  T⁻¹ Σ_{d,h} e(d, h)² = ℓ(e)² + D⁻¹ Σ_d b_d(e)² + T⁻¹ Σ_{d,h} w(d, h)(e)².
+
+Replacing one block of a forecast changes its mean squared error by exactly the change in that block's loss. The
+anchoring layer uses this identity to assemble the forecast block by block (the level and the daily path from the
+history side and the carrier, the within-day block from the carrier and the unit's analog days); the evaluation uses
+it to attribute the error ([`results/block_shares.csv`](../results/README.md), Figure
+[14](../figures/fig14_block_attribution.png)); the readouts are defined on it. The carrier's own trajectory splits the
+same way: its level, daily path and within-day shape are the blocks of its energy budget (C2). On the test windows,
+weighting the two sources separately by block was not shown to add accuracy over one whole-window weight per window
+([EVALUATION.md](EVALUATION.md#block-wise-weights-against-one-whole-window-weight)).
+
+- Because 7 and 31 are coprime, the 744-hour window has no separate weekly Fourier subspace.
+- Weekly effects therefore enter the daily-path and within-day blocks and are represented by day types (Monday = 0 …
+  Sunday = 6, holiday = 7), in the anchoring layer as in the carrier's tokens.
+
+The four-block refinement behind the Fourier statement, and the replacement calculus built on the identity, are P1–P6
+in [theory/PROOFS.md](../theory/PROOFS.md). Code: `ankyra_lite/anchor/blocks.py` (`level`, `daily_path`, `within_day`,
+`block_losses`); for a forecast, `ankyra_lite.readouts.blocks`; the properties as operators: `theory/operators.py`.
+
+### Level
+
+Load is normalised by the mean l0 and the standard deviation s0 of the 744 hours before the origin, with s0 floored at
+max(0.01 |l0|, 10⁻³) kW. A record whose whole context stays within the 10⁻³ kW floor of zero is not normalised by its
+own scale; the [micro-load rule](#state-windows-and-the-seasonal-naive-rule) hands it to the state rule.
+
+**Six historical candidates.** Each of three means comes with and without weather adjustment:
+
+- the recent 7-day mean;
+- the long-history mean over at most 8,760 hours;
+- the mean of the 744-hour window one year earlier (the window that starts 8,760 hours before the origin).
+
+Every candidate adds a day-type offset estimated from the last eight weeks (the offsets of the target days).
+Weather-adjusted candidates in addition replace the temperature response of their own window by the expected response
+over the target days: the expectation over a normal temperature anomaly of standard deviation `temp_sigma_std` around
+the pre-origin climatology of each target day (an annual harmonic fitted on the temperature before the origin). No
+observed future weather is used.
+
+**Temperature signature.** The response is the unit's *temperature signature*: a convex piecewise-linear function of
+the daily-mean temperature, with hinges every 5 °C from −10 °C to 40 °C (temperature standardised as
+(T − 15 °C) / 10 °C). It is fitted on the unit's last 365 days before the origin and shrunk towards the fixed prior
+curve of the unit's category. The fit uses the days whose 24 hours are all observed, removes the mean of each day type
+from the daily means first, and is a ridge regression towards the prior curve (strength 3) with nonnegative hinge
+slopes, which is what makes the curve convex. With fewer than 60 such days the prior curve is used as it is.
+
+**Carrier candidate.** One further candidate is the carrier's own window mean at the origin, origin-normalised with the
+calendar offset removed. The level is therefore a weighted combination of seven candidates: six historical ones and
+the carrier's.
+
+**Weights.** Each candidate's window-mean error is computed at up to K = 12 earlier pseudo-origins o − 744k (k ≤ 6 for
+the carrier candidate, from the carrier's forecasts issued at those pseudo-origins). With s_j the root mean square of at
+least two such errors of candidate j,
+
+  w̃_j = [I_j / max(s_j, 10⁻⁶)²] / Σ_r [I_r / max(s_r, 10⁻⁶)²],   w_j = (K_eff · w̃_j + K0 · w0_j) / (K_eff + K0),   K0 = 8,
+
+where I_j = 1 if candidate j has at least two pseudo-origin errors and 0 otherwise, w0 is uniform over the supported
+candidates (I_j = 1), and K_eff counts the pseudo-origins (at most 12) at which both the unadjusted recent and the
+unadjusted long-history candidate have an error. Candidates with fewer errors (the annual ones, and the carrier
+candidate with at most six) are shrunk with the same K_eff. A candidate that cannot be formed at the origin (for
+example the annual window of a record shorter than a year) gets weight 0 and the others are renormalised.
+
+- With complete records K_eff(m) = min{12, ⌊(m − 1,344) / 744⌋}₊ for a history of m hours (P7).
+- When no candidate has two errors, the weights are equal.
+- The annual candidates need 10,248 hours (about 14 months) before they can be weighted: a year of record supplies an
+  annual prediction, but its two pseudo-origin errors need 8,760 + 2 × 744 hours.
+- In the historical estimator, with matched support and no candidate deleted at the origin, the shrinkage keeps the
+  total weather weight within [(1 − ρ)/2, (1 + ρ)/2], ρ = K_eff / (K_eff + 8). With the carrier candidate the prior
+  weather mass is 3/7 once all seven candidates are supported, and the general bound of P8 applies.
+
+The weights are reported as `level_weights` ([Output fields](#output-fields)); these support and shrinkage properties
+are P7–P9 in [theory/PROOFS.md](../theory/PROOFS.md). How many complete pseudo-origins the test windows had is in
+[EVALUATION.md](EVALUATION.md#history-length-and-the-anchoring-record) (`K_eff` 9–12 on every test window).
+
+Code: `ankyra_lite/anchor/history/` (frozen reference estimator), `ankyra_lite/anchor/core.py`
+(`level_with_model_candidate`).
+
+**The temperature-anomaly scale `temp_sigma_std`.** One positive number per population, in units of 10 °C (0.25 means
+2.5 °C), supplied by the caller; the package checks only that it is a finite positive number and cannot check when or
+how it was fitted. How the study computed it for ankyra-lite (the first release's arithmetic on the complete days
+before the training cut) is in [DATA.md](DATA.md#the-input-format).
+
+#### The category Commercial has no prior
+
+The frozen configuration holds a prior signature curve for Industrial, Office, Public and Residential. It holds none
+that the code reads for Commercial: the fifth curve of `ankyra_lite/anchor/history/frozen_config.json` is stored under
+the key `group_4`, and the estimator looks curves up by category name. A unit labelled Commercial therefore gets a
+temperature signature of zero:
+
+- its three weather-adjusted level candidates equal the unadjusted ones, and its weather-response daily path is zero;
+  the rest of the forecaster, the carrier included, is unaffected;
+- this is the behaviour that was evaluated: 13 BDG2 units of the study carry the category Commercial
+  ([DATA.md](DATA.md#1-bdg2-2017-building-meters-usa--europe));
+- the copied layer is not edited, so it is kept. For a new Commercial unit the choice is between this behaviour and
+  one of the four categories that have a prior (the category is also an input of the carrier).
+
+### Centred daily path
+
+Seven candidate paths for the 31 daily means, with their keys in `diagnostics["day_weights"]`
+([Output fields](#output-fields)):
+
+- `cur`, the path implied by the level construction (the 8-week day-type offsets plus the weather-response path times
+  the level's total weather weight);
+- `c_w8`, `c_w4`, `c_w2`, the day-type offsets from the last 8, 4 and 2 weeks;
+- `c_ann_type`, the day-type offsets of the annual window;
+- `p_ann_cal`, that window's daily means in date order;
+- `g_w`, the weather-response path.
+
+They are combined with inverse-square weights shrunk towards equal weights, as for the level, with K0 = 2 and up to
+12 pseudo-origins. The rule differs from the level's in three places (`ankyra_lite/anchor/history/_day.py`,
+`weights_c`):
+
+- a candidate's error at one pseudo-origin is the root mean square, over the 31 days, of its centred-path error, and
+  its score s_j is the **median** of these values over the pseudo-origins (at least two), not their root mean square
+  (the configuration calls it `"mad"`, a historical label, not a centred median absolute deviation);
+- K_eff counts the pseudo-origins at which `cur` has an error;
+- when no candidate has two errors, all weight goes to `cur`, not to equal weights.
+
+The annual candidates get weight zero at an origin whose own annual window is incomplete, and the rest are
+renormalised. The result sums to zero, so it redistributes energy between days without changing the level.
+
+### Within-day shape
+
+**Carrier shape.** w^C is the day-demeaned carrier forecast at the origin (`foundation_within_day_kw`).
+
+**Analog-day shape.** For each forecast day d, the unit's own *analog days* are the complete pre-origin days with the
+same day type, within ±14 days of the same day of year, in the same daylight-saving state (`dst_region`), and preceded
+by a complete 744-hour window. Up to eight are kept: those closest in daily-mean temperature to the climatology of day
+d (ties: the more recent). Candidates come from the whole pre-origin record, not only from the 1,344-hour context. With
+A_d the kept analog days, x̄_j the mean of day j, s_j the standard deviation of the 744 hours before day j and s_o that
+of the 744 hours before the origin (each floored at max(0.01 |mean|, 10⁻³) kW),
+
+  S(d, h) = (s_o / |A_d|) · Σ_{j ∈ A_d} (x_j(h) − x̄_j) / s_j .
+
+Each analog day's shape is thus rescaled from the variability before it to the variability before the origin. A day
+with fewer than four analogs keeps w^C for that day. If max |S| exceeds three times the largest absolute value of the
+1,344-hour context, the whole window keeps w^C (a guard against scale floors on near-constant records;
+`analog_kept` = False).
+
+**Anchoring.** One weight ω is estimated for the whole window:
+
+  w(d, h) = w^C(d, h) + ω · (S(d, h) − w^C(d, h)),   ω = min( clip(λ̂, 0, 1) · n / (n + 2), ½ ),
+
+  λ̂ = Σ_q ⟨S_q − w^C_q, y_q − w^C_q⟩ / Σ_q ‖S_q − w^C_q‖²,
+
+with the inner products and norms taken over all 744 hours of each window, estimated over the unit's n ≤ 3 completed
+pseudo-origin windows q = o − 744k′, k′ = 1, 2, 3 (complete context and complete target month, and a carrier forecast
+at q). S_q is the analog shape built from data before q, w^C_q the carrier's within-day block issued at q and y_q the
+realised within-day block. The weight is a least-squares weight on the disagreement between the two shapes, shrunk
+towards the carrier (zero) and capped at one half. No completed pseudo-origin, or no disagreement, gives ω = 0 and the
+carrier's within-day block. `within_trust` reports ω and `within_pseudo_pairs` reports n.
+
+The switch `single_trust=False` estimates one weight per lead block (days 1–7, 8–14, 15–21, 22–31) instead, with the
+sums of λ̂ restricted to the hours of that block; `within_anchor=False` leaves the carrier's within-day block unchanged.
+The evaluation's ablation rows use both ([EVALUATION.md](EVALUATION.md#what-the-parts-add)).
+
+- Both w^C and S have zero daily means, so the pre-projection daily means are unchanged by the anchoring, and with
+  them the level, the daily path and the energy readout (744 × level). The delivered trajectory max(F, 0) can differ
+  where the projection binds, and so can a readout computed from it, such as the peak readout.
+- The three pseudo-origin forecasts are among the six that the layer already reads for the handover: no further
+  carrier forecast is needed.
+- The analog shape needs a previous year at the same dates. Records shorter than about 13 months give no analogs and
+  the block stays the carrier's.
+
+How large the trust is on the test windows, and on how many of them it acts, is in
+[EVALUATION.md](EVALUATION.md#within-day-anchoring-where-it-acts) (`results/within_day_trust.csv`).
+
+Code: `ankyra_lite/anchor/analog.py` (`AnalogShapes`, `within_trust`, `anchored_within_day`),
+`ankyra_lite/anchor/core.py` (`forecast`).
+
+**History-only configuration.** `ankyra_lite.anchor.forecast(..., foundation=None)`, which
+`ankyra_lite.forecast(history, None, ...)` calls, returns the history side alone: the six-candidate level and the daily
+path, with the same-day-type within-day default (the eight most recent context days of each type), no carrier candidate,
+no handover and no analog-day shape. The off-state and micro-load rules return the carrier's forecast, so they do not
+apply in this configuration, and no state rule is applied to it. It is a reduced configuration for ablation and for use
+without a carrier, and it is the comparator of contrast (ii), ankyra-lite against the history-only configuration
+([EVALUATION.md](EVALUATION.md#what-the-parts-add)). Contrast (ii) measures the incremental performance of the
+carrier-enabled configuration. It does not isolate the information in the carrier's forecast, because the history-only
+configuration uses the day-type default rather than the analog-day shape and omits the state rules. The evaluation
+therefore also uses a *carrier-free control*: the unchanged layer called with this configuration's own forecasts, at the
+origin and at the six pseudo-origins, in the carrier's place (as the `foundation` mapping), so that the control runs
+the same procedure as the carrier-enabled configuration. It is a control of the evaluation, not a mode of the package
+([EVALUATION.md](EVALUATION.md#contrast-ii-by-block-and-the-carrier-free-control)).
+
+### Week-by-week handover
+
+At the origin, let m^H_d be the history-side daily means (the seven-candidate level, which includes the carrier
+candidate, plus the daily path) and m^C_d the carrier's daily means. For the weeks w = days 1–7, 8–14, 15–21 and 22–31,
+
+  m_d = (1 − α_w) · m^H_d + α_w · m^C_d,   α_w = (n · λ̂_w + K0/2) / (n + K0),   K0 = 2,
+
+so α_w = (n λ̂_w + 1) / (n + 2). λ̂_w is the least-squares combination weight, clipped to [0, 1]:
+
+  λ̂_w = clip( Σ_k ⟨y_k − m^H0_k, m^C_k − m^H0_k⟩_w / Σ_k ‖m^C_k − m^H0_k‖²_w , 0, 1 ),
+
+with the sums over the days of week w. It is estimated from the n ≤ 6 completed pseudo-origin pairs of the unit,
+where:
+
+- y_k is the realised daily means of the pseudo-target (a day of a partly observed pseudo-target counts only with at
+  least 12 observed hours; [Short-gap rule](#short-gap-rule));
+- m^C_k is the carrier's daily means issued at pseudo-origin k;
+- m^H0_k is the **fixed division**'s daily means at that pseudo-origin: the six-candidate level plus the daily path,
+  *without* the carrier candidate and without the handover, estimated from the data before it.
+
+The weight is a least-squares weight rather than an inverse-MSE weight. Errors shared by the two sources pull
+inverse-MSE weights towards ½, whereas the least-squares weight depends only on where the sources differ (P10 in
+[theory/PROOFS.md](../theory/PROOFS.md)).
+
+The weights are estimated on the fixed division and applied to m^H, which includes the carrier candidate. Using the
+fixed division at the pseudo-origins avoids nested pseudo-origins. If no pair is available, α_w = ½; if the two sources
+do not differ on a week of the pairs, λ̂_w = ½ for that week. The weights are reported as `lead_week_weights`, the
+number of pairs as `pseudo_pairs`, and the fixed division at the origin as `fixed_division_daily_means_kw`.
+
+On the test windows, the handover ablation does not separate the four weekly weights from one weight per window on
+any of the nine populations (the point estimates favour the single weight by 0.1–0.5%); mixing at a fixed half weight
+gives most of the gain, and the per-unit weights add to it on two populations resolvably
+([EVALUATION.md](EVALUATION.md#what-the-handover-contributes), `results/handover_granularity.csv`). The weekly form is
+kept as the copied layer computes it.
+
+The forecast is F(d, h) = m_d + w(d, h), projected onto F ≥ 0. It reads seven carrier forecasts per window (one at the
+origin, six at pseudo-origins), each the average of the three seeds.
+
+Code: `ankyra_lite/anchor/core.py` (`lead_week_weights`, `lead_week_transition`, `forecast`).
+
+### Short-gap rule
+
+Every quantity above that is estimated from completed pseudo-origins (the level weights, the handover weights, the
+within-day trust) needs, at each pseudo-origin o − 744k, a complete 1,344-hour context and a complete 744-hour target
+month. Real meter records have short gaps, and a single missing hour inside those 2,088 hours would remove the whole
+pseudo-origin. With `gap_tolerance=True` (the default) the layer tolerates two things, both confined to the pre-origin
+record:
+
+1. **Short gaps are interpolated.** A gap of at most 6 missing hours is replaced by the straight line between its two
+   observed neighbours, provided the gap and both neighbours lie inside one 744-hour block counted back from the
+   origin. A pseudo-origin is a block boundary, so no interpolated hour before a pseudo-origin uses a value at or after
+   it. Gaps that touch the origin, the start of the record or a block boundary, and longer gaps, stay missing.
+2. **A pseudo-origin's target month may be partly observed.** It qualifies when at least 90% of its 744 hours are
+   observed; its window mean is the mean over the observed hours, and in the handover sums a day counts only with at
+   least 12 observed hours. This applies to the seven-candidate level and to the handover pairs only.
+
+**What the rule reaches.** Rule 1 is not confined to the pseudo-origins. After the off-state and micro-load checks the
+whole pre-origin record that the layer reads is replaced by the interpolated copy, and every later step reads that
+copy:
+
+- the contexts and targets of the pseudo-origins;
+- the origin's own historical candidates (for example the long-history mean and the annual window) and the fit of
+  the temperature signature;
+- the pool of analog days.
+
+Rule 2 is narrower than rule 1. The weights of the daily path, the six-candidate level of the fixed division and the
+within-day triples still require a completely observed target month, counted on the interpolated copy. The interval
+readout (`ankyra_lite.anchor.readouts.residual_quantiles`, and `ankyra_lite.readouts.interval` built on it) is a
+separate call on the record the caller passes and applies neither rule.
+
+The context at the origin is never filled by the package: it must be complete, and a gap in it raises an input error
+(`anchor.InputError`). The off-state and micro-load rules read the raw context. `anchor.pseudo_origin_contexts`
+returns the interpolated pseudo-origin contexts; `carrier_forecasts` uses it only to choose the pseudo-origins and
+builds each carrier forecast from the record as supplied ([Pseudo-origins](#pseudo-origins)).
+`ankyra_lite.fill_short_gaps` (= `anchor.fill_short_gaps`) applies rule 1 to a user's own record before the call
+([DATA.md](DATA.md#how-much-history)); the frozen reference estimator is unchanged and receives a partially observed
+target with its missing hours set to the observed mean. `gap_tolerance=False` switches both parts off; a record
+without gaps gives the same forecast either way.
+
+One detail of `gap_tolerance=False` with a callable `foundation` (a function from contexts to forecasts, which
+`ankyra_lite.forecast` does not use; it passes a mapping): the callable is still given the interpolated pseudo-origin
+contexts (`anchor.forecast` calls `pseudo_origin_contexts` with its default). On a record with short gaps it can
+therefore be asked for a few pseudo-origins that the layer then does not read; the result is unchanged and the only
+cost is the extra calls. With a mapping of precomputed forecasts nothing extra is computed.
+
+Code: `ankyra_lite/anchor/core.py` (`fill_short_gaps`, `GAP_MAX_H = 6`, `TARGET_MIN_OBS = 0.9`,
+`pseudo_origin_contexts`, `forecast`) and `ankyra_lite/anchor/history/api.py` (the partially observed pseudo-targets).
+
+### Arguments used in the evaluation
+
+`group`: the unit's category; `temp_sigma_std`: the population's value fitted on the days before the training cut;
+`dst_region`: the unit's region; `observed`: the finite load hours; every other argument at its default
+(`gap_tolerance=True`, `single_trust=True`, `within_anchor=True`, `micro_load_rule=True`).
 
 ## State windows and the seasonal-naive rule
 
 The anchoring layer has two state rules, both on load before the origin:
 
-- **off-state:** the observed load of the last 168 hours is at most 10⁻⁶ kW;
-- **micro-load:** all 1,344 context hours are within 10⁻³ kW of zero.
+- **off-state:** the observed load of the last 168 hours is at most 10⁻⁶ kW. The test is on the largest observed value
+  of those hours: unobserved hours are ignored, and the value itself is compared, not its absolute value;
+- **micro-load:** all 1,344 context hours are within 10⁻³ kW of zero (max |load| ≤ 10⁻³ kW, compared in double
+  precision). The threshold reuses the floor of the normalisation scale s0 ([Level](#level)); the context must be
+  completely observed. A return under the micro-load rule alone runs the estimator's history, category and
+  temperature-scale checks; a return under the off-state rule does not. `micro_load_rule=False` switches the rule off.
 
-On such a window the layer returns the carrier's forecast unchanged. That return rests on the premise that the carrier
-forecasts a switched-off or near-zero meter well, which held for foundation models and is not guaranteed for a trained
-carrier. ankyra-lite therefore applies its own rule on these windows (`ankyra_lite.forecast`, default
-`state_rule="seasonal_naive"`): the delivered forecast is the last observed week repeated over the 744 hours (missing
-hours as 0), its level readout is that forecast's mean, and its peak readout is read from it. `state_rule=None` keeps the
-layer's own return. The rule was written after an earlier scoring of the test windows
-([EVALUATION.md](EVALUATION.md#identity-of-the-evidence)).
+Both thresholds are absolute values in kW, like the scale floor: loads must be supplied in kW, and rescaling a record
+across a threshold changes which branch is taken. The micro-load rule is a sufficient condition, not a derived
+boundary: a record slightly above the threshold is not covered, although its scale may also be at the floor, and the
+rule cannot foresee a restart within the forecast month. Neither rule is a certificate that the inputs were validated.
+
+On such a window the layer returns the carrier's forecast unchanged (without the projection onto nonnegative load), and
+the weights, counts, the fixed division and the analog fields keep their empty defaults because the estimator is not
+run. That return rests on the premise that the carrier forecasts a switched-off or near-zero meter well, which held for
+foundation models and is not guaranteed for a trained carrier. ankyra-lite therefore applies its own rule on these
+windows (`ankyra_lite.forecast`, default `state_rule="seasonal_naive"`): the delivered forecast is the last observed
+week repeated over the 744 hours (missing hours as 0), its level readout is that forecast's mean, and its peak readout
+is read from it. `state_rule=None` keeps the layer's own return. The rule was written after an earlier scoring of the
+test windows ([EVALUATION.md](EVALUATION.md#identity-of-the-evidence)); the state windows of each population are counted
+in [EVALUATION.md](EVALUATION.md#state-windows-and-the-three-near-zero-bdg2-meters).
 
 ## Readouts
 
-- **Energy.** 744 × the level, read before the nonnegativity projection (`ForecastResult.energy_kwh`). The evaluation
-  scores the energy of the delivered trajectory (744 × its mean), as the first release did; the two differ only where
-  the projection binds.
-- **Peak.** `anchor.readouts.peak_readout` on the delivered trajectory: U = max over days d of (L̂_d + A_τd), with L̂_d
-  the forecast mean of day d and A_t the largest excursion above its own daily mean among the four most recent context
-  days of day type t (κ = 1; P15–P17).
-- **Interval.** Not part of the forecaster. The evaluation centres the anchoring layer's residual-quantile interval on
-  the delivered trajectory as a description ([EVALUATION.md](EVALUATION.md#intervals)).
+**Energy.** `ForecastResult.energy_kwh` = 744 × `level_kw` kWh for loads in kW. Outside state windows `level_kw` is the
+anchoring layer's level, the mean of the 31 daily means after the handover, read before the projection; on a state
+window with the seasonal-naive rule it is the mean of the delivered seasonal naive, which needs no projection.
 
-The fields of `ForecastResult` are listed in the [README](../README.md).
+- The projection max(F, 0) cannot increase any hour's absolute error when the truth is nonnegative (P11).
+- It raises the delivered energy by Σ max(−F, 0), which is known at the origin
+  (`ankyra_lite.readouts.projection_energy_increase(r)`; on the raw trajectory,
+  `anchor.readouts.projection_energy_increase_kwh`).
+- No map can simultaneously keep the energy readout, return nonnegative load and guarantee no increase in error (P12).
+
+The evaluation scores the energy of the delivered trajectory (744 × its mean), the first release's definition, applied
+to every forecaster; the level readout is a sensitivity. The two differ only on the windows where the projection binds
+([EVALUATION.md](EVALUATION.md#overview)).
+
+**Peak.** Let L̂_d be the forecast mean of day d, τ_d its day type and F̄ the forecast window mean. Let
+a_j = max_h x_j(h) − x̄_j be the excursion of context day j above its own mean (x_j(h) is the load of hour h of that
+day), and A_t the largest excursion among the four most recent context days of type t. If the context has no day of
+type t, A_t is the largest excursion of all its days; if it has no holiday, the holiday entry takes the Sunday value.
+Then
+
+  U = max_d (L̂_d + A_{τ_d}),   P̂_κ = F̄ + κ (U − F̄)   (κ = 1).
+
+`ForecastResult.peak_kw` is this readout of the delivered trajectory (`ankyra_lite.forecast.peak`, which calls
+`anchor.readouts.peak_readout`; the type of each origin-aligned day is read at its 12th hour). On a state window it is
+read from the seasonal naive. The operator has four properties:
+
+1. **Motivation.** For exact conditional means, max_{d,h} E[y(d, h)] ≤ E[max_{d,h} y(d, h)]. Fitted forecasters are
+   median-type summaries, so this motivates the operator rather than guaranteeing it (P14).
+2. **Scalar form.** Because maxima commute, U equals the hour-wise envelope max_{d,h} (L̂_d + max_j a_j(h)). Also
+   U ≥ max_d L̂_d ≥ F̄ (P15).
+3. **Median property.** Suppose daily levels are constant within type, excursions are drawn independently from each
+   selected sample, and a type attaining the envelope has m samples and n future days with ((m − 1)/m)ⁿ < ½. Then the
+   median of the future maximum equals U exactly. Four samples and three repetitions suffice (P17).
+4. **Error decomposition.** With M the realised peak of the window and d* the day on which it occurs,
+   U − M = ℓ(e) + [b_{d*}(F) − b_{d*}(y)] + [A_{τ_{d*}} − a_{d*}(y)] + Δ_sel with Δ_sel ≥ 0. Level and daily-path gains
+   therefore carry into the peak (P16). Whether they do on the test windows is measured against the same readout on
+   the carrier alone ([EVALUATION.md](EVALUATION.md#overview), `results/peak_readout.csv`).
+
+**Interval.** Not part of the forecaster and not a field of `ForecastResult`. `ankyra_lite.readouts.interval(history,
+r, group=..., temp_sigma_std=...)` returns quantile trajectories at the levels 0.05, 0.1, 0.5, 0.9 and 0.95 (rows 1
+and 3 bound the 80% interval) and the number of pseudo-windows used; it makes the three calls of
+`anchor.readouts` (`residual_quantiles`, `origin_scale`, `interval_bands`). The residuals come from the history-only
+forecaster (historical level and daily path with the same-day-type within-day default, no carrier), not from
+ankyra-lite's own forecasts. Its hourly residuals at up to 12 completed pseudo-origins are normalised by each
+pseudo-window's origin scale and pooled by hour of day and workday status (day types 0–4 against 5–7). Their empirical
+quantiles are multiplied by the origin's scale and added to the forecast. Three details of the implementation:
+
+- a class and hour with fewer than five residuals takes the quantiles of the other class at that hour (NaN when
+  neither has five, always the case with no complete pseudo-window);
+- the quantile trajectories are clipped at zero and made non-crossing across levels;
+- the band is not centred on the point forecast, because the residual quantiles of the history-only forecaster need
+  not straddle zero (a bound can lie on the same side of the point forecast as the median).
+
+A pseudo-window counts only when its context and target month are completely observed in the record passed (the
+short-gap rule does not apply). In the evaluation the interval is placed around ankyra-lite's delivered trajectory as
+a description; it was designed for the first release's forecaster and not re-tuned for this carrier
+([EVALUATION.md](EVALUATION.md#intervals)).
+
+Proofs, counterexamples and an optional day-level projection are P11–P18 in [theory/PROOFS.md](../theory/PROOFS.md).
+Code: `ankyra_lite/readouts.py`, `ankyra_lite/forecast.py` (`peak`), `ankyra_lite/anchor/readouts.py`; the
+properties as operators: `theory/operators.py`.
+
+## Output fields
+
+`ankyra_lite.forecast` returns a `ForecastResult`. All loads are in kW. Its own fields:
+
+| Field | Meaning |
+|---|---|
+| `trajectory_kw` | the 744 delivered hourly values: the anchoring layer's trajectory (nonnegative), or the seasonal naive on a state window with the default state rule |
+| `level_kw` | the delivered level readout: the anchoring layer's level (the mean of `daily_means_kw`, before the projection onto nonnegative load), or the mean of the seasonal naive on a state window. It is not the seven-candidate level of the [Level](#level) section, which is the history side's input to the handover |
+| `energy_kwh` | the energy readout, 744 × `level_kw` |
+| `peak_kw` | the peak readout of `trajectory_kw` ([Readouts](#readouts)) |
+| `state_window` | the anchoring layer reported `off_state` or `micro_load` (always False for the history-only configuration) |
+| `state_rule` | `"seasonal_naive"` when that rule replaced the layer's return, else None |
+| `carrier` | {k: (744,)}: the carrier forecasts passed to the layer, issued at o − 744k ({} for the history-only configuration) |
+| `anchored` | the anchoring layer's own `AnkyraForecast` |
+
+Every other attribute is read from `anchored` (`ForecastResult.__getattr__`):
+
+| Field | Meaning |
+|---|---|
+| `daily_means_kw` | the 31 daily means after the week-by-week handover |
+| `within_day_kw` | the final within-day block (zero mean on each day), with the analog-day anchoring where it acts |
+| `foundation_within_day_kw` | the carrier's own within-day block at the origin, unmodified (`anchor.blocks.within_day` of `carrier[0]`). On state windows `within_day_kw` equals it |
+| `analog_shape_kw` | the unit's analog-day shape S (a day with fewer than four analogs carries the carrier's shape); None when it was not built |
+| `within_trust` | the weight ω on the analog-day shape, listed for days 1–7, 8–14, 15–21, 22–31 (four equal values; four separate weights with `single_trust=False`) |
+| `within_pseudo_pairs` | the number of completed pseudo-origin windows behind `within_trust` (at most 3) |
+| `analog_kept` | False when the whole-window guard rejected the analog shape (or none was built) and the window keeps the carrier's shape |
+| `lead_week_weights` | the four handover weights α_w on the carrier's daily means |
+| `pseudo_pairs` | the number of completed pseudo-origin pairs behind `lead_week_weights` (at most 6) |
+| `level_weights` | the weight of each level candidate (keys below) |
+| `fixed_division_daily_means_kw` | the daily means of the fixed division: the six-candidate level plus the daily path, without the carrier candidate and without the handover |
+| `off_state`, `micro_load` | which of the layer's two state rules fired, if any |
+| `anchoring_record` | `carrier_level_weight` (= `level_weights["fm"]`), `history_vs_carrier_log_ratio` and `pseudo_origins`: the unit's own pseudo-forecast record on the level, read before the forecast and not used by it. The log ratio is the smallest pseudo-origin RMS error among the six historical level candidates over that of the carrier's window mean (NaN with fewer than two such pseudo-origins); negative means the unit's history beat the carrier at its earlier origins. Its deciles against the realised gain are in [EVALUATION.md](EVALUATION.md#history-length-and-the-anchoring-record) |
+
+`r.anchored.trajectory_kw`, `r.anchored.level_kw` and `r.anchored.energy_kwh` are the layer's own values; they differ
+from the delivered ones only on state windows with the seasonal-naive rule.
+
+**State windows.** On an off-state or micro-load window the fields read from `anchored` describe the layer's return,
+not the delivered seasonal naive: `daily_means_kw`, `within_day_kw` and `foundation_within_day_kw` are the carrier
+forecast's, and the weights, counts, `fixed_division_daily_means_kw`, the analog fields and `anchoring_record` keep their
+empty defaults (`lead_week_weights` (), `level_weights` {}, `pseudo_pairs` 0, `within_trust` four zeros,
+`within_pseudo_pairs` 0, `analog_kept` False, `analog_shape_kw` and `fixed_division_daily_means_kw` None,
+`anchoring_record` {}), because the estimator is not run. The history-only configuration likewise has no carrier
+fields: `level_weights`, `lead_week_weights` and `anchoring_record` are empty, `foundation_within_day_kw` and
+`analog_shape_kw` are None, and `fixed_division_daily_means_kw` equals `daily_means_kw`.
+
+**Keys of `level_weights`.** The first letter is the window of the mean, the second says whether it is
+weather-adjusted (`u` unadjusted, `w` weather-adjusted).
+
+| Key | Level candidate |
+|---|---|
+| `s_u`, `s_w` | the recent 7-day mean (short window) |
+| `l_u`, `l_w` | the long-history mean over at most 8,760 hours |
+| `a_u`, `a_w` | the mean of the 744-hour window one year earlier (annual) |
+| `fm` | the carrier's own window mean |
+
+The weights sum to one. A candidate with fewer than two pseudo-origin errors has weight zero, unless no candidate has
+two; then the weights are equal.
+
+**Keys of the daily-path weights.** The seven [daily-path candidates](#centred-daily-path) are weighted inside the
+historical estimator. `ForecastResult` does not carry their weights;
+`ankyra_lite.anchor.history.estimate_from_history(history, group=..., temp_sigma_std=...).diagnostics["day_weights"]`
+does, with `diagnostics["level_weights"]` for the six historical level candidates before the carrier candidate is
+added (call it on the record with `ankyra_lite.fill_short_gaps` applied to reproduce what the layer reads under the
+short-gap rule).
+
+| Key | Daily-path candidate |
+|---|---|
+| `cur` | the path implied by the level construction: the 8-week day-type offsets plus the weather-response path times the level's total weather weight |
+| `c_w8`, `c_w4`, `c_w2` | day-type offsets from the last 8, 4 and 2 weeks |
+| `c_ann_type` | day-type offsets of the annual window |
+| `p_ann_cal` | the annual window's daily means in date order |
+| `g_w` | the weather-response path |
+
+Code: `ankyra_lite/forecast.py` (`ForecastResult`), `ankyra_lite/anchor/core.py` (`AnkyraForecast`),
+`ankyra_lite/anchor/history/api.py` (`Estimate`).
 
 ## Inference cost
 
@@ -443,10 +864,42 @@ to floating-point differences between the two devices. On the timed windows the 
 
 ## Constants
 
-The anchoring layer's constants are those of ANKYRA 2.2.1, unchanged (1,344-hour context, 744-hour horizon, 12 / 6
-pseudo-origins, shrinkage 8 / 2 / 2, within-day trust over 3 pseudo-origins capped at ½, analog days ±14 days, 8 kept, 4
-required, off-state 10⁻⁶ kW, micro-load 10⁻³ kW, short gaps of at most 6 hours, 90% observed pseudo-target, peak
-envelope over 4 same-type days with κ = 1). The carrier's constants:
+The anchoring layer's constants are those of the copied layer, unchanged; none was set or tuned for ankyra-lite. "Where
+it was fixed" refers to the development of the anchoring layer in the first release (provenance only):
+
+| Constant | Value | Code | Where it was fixed |
+|---|---|---|---|
+| context / horizon | 1,344 h / 744 h | `blocks.CONTEXT`, `HORIZON` | before any evaluation |
+| pseudo-origins (historical candidates / carrier candidate and handover) | 12 / 6, spaced 744 h | `frozen_config.json` (`level.K`), `core.K_FM`, `STEP` | development data: household aggregates / the Spanish development store |
+| K0 of the level, daily-path and handover weights | 8, 2, 2 (towards equal weights, equal weights, ½) | `frozen_config.json`, `core.K0_WEEK` | development data; never changed afterwards |
+| handover weeks | days 1–7, 8–14, 15–21, 22–31 | `core.WEEKS` | development data |
+| within-day trust: pseudo-origins, shrinkage, cap | 3, n/(n + 2) towards 0, ω ≤ ½ | `analog.K_WITHIN`, `K0_WITHIN`, `W_CAP` | in a candidate family written down before the within-day rule was chosen; selected on development populations and pre-cutoff windows |
+| analog days: window, kept, required, guard | ±14 days of year, 8, 4, 3 × max \|context\| | `analog.WIN`, `KMAX`, `KMIN`, `SANITY` | with the first version of the analog-day shape; never changed |
+| scale floor | max(0.01 \|mean\|, 10⁻³) kW | `history/_eo.origin_scale`, `analog.floor_of` | the historical estimator |
+| off-state threshold | last 168 h at most 10⁻⁶ kW | `core.ZERO_KW` | the pre-existing zero-load threshold |
+| micro-load threshold | 10⁻³ kW on the magnitude of the load, over the 1,344-hour context | `core.MICRO_KW` | the pre-existing scale floor; the rule was written after a BDG2 result of the first release had been seen (post hoc) |
+| short-gap rule: longest interpolated gap; observed share of a pseudo-origin's target month | 6 h; 0.9 | `core.GAP_MAX_H`, `TARGET_MIN_OBS` | a specification written before implementation, after the first release's UNICON test had shown few completed pseudo-origins |
+| peak envelope | 4 most recent same-type days, κ = 1 | `readouts.historical_excursions(k=4)`, `peak_from_daily_levels(kappa=1.0)` | the earlier peak readout of the method (P18) |
+| temperature standardisation; signature hinges | (T − 15 °C) / 10 °C; every 5 °C from −10 °C to 40 °C | `frozen_config.json` | in the frozen configuration, with the signature prior |
+| climatology prior: amplitude, strength | 10 °C, 60 | `history/_climate.py` | the historical estimator |
+
+Constants in the code that [`results/constants.csv`](../results/README.md#constants) does not list:
+
+- a day of a partly observed pseudo-target enters the handover sums with at least 12 observed hours (`core.forecast`);
+- the interval readout searches 12 pseudo-origins (`readouts.K_INTERVAL`), needs at least 5 residuals in an hour-of-day
+  and workday cell, and returns the levels 0.05, 0.1, 0.5, 0.9 and 0.95 (`readouts.LEVELS`);
+- the same-day-type within-day default of the history-only configuration and the interval uses the 8 most recent days
+  of each type (`K_RECENT` in `history/_eo.py`);
+- the temperature signature needs 60 observed days in the last 365 and has shrinkage strength 3 (`signature_lambda`),
+  and a weight needs two pseudo-origin errors (`min_pseudo_errors`); both are in `history/frozen_config.json`;
+- the error scale of a level candidate is floored at 10⁻⁶ in the inverse-square weights (`core._weights`).
+
+The climatology strength 60 is the ridge coefficient on the amplitude of the annual harmonic (`CLIM_PRIOR_STRENGTH`),
+not a number of days; the data term it is weighed against is the sum of the squared cosine over the pre-origin days,
+about half the number of days, so the prior counts as much as about 120 days of daily temperatures. The constants
+cannot be varied without patching the copied files, so no sensitivity to them is measured in this repository.
+
+The carrier's constants:
 
 | Constant | Value | Code |
 |---|---|---|

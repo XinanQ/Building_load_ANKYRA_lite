@@ -352,6 +352,10 @@ ankyra-lite against versions of itself, hourly error, improvement of ankyra-lite
 | earlier continuation study: unweighted loss (anchored) | +1.0 | +1.6 | +0.6 * | +0.4 | +0.9 | +0.9 | +0.4 | -0.9 | - |
 | earlier continuation study: weighted loss (anchored) | -0.1 | +0.9 | +0.0 | -0.3 | -0.4 | +1.7 | +1.2 | -0.6 | - |
 | earlier continuation study: weighted loss and warm-up (anchored) | +0.1 | +1.2 | +0.1 | +0.2 | -1.3 (-) | +1.9 | +2.0 | -0.6 | - |
+| fixed division (history level and daily path, no handover) | +2.8 * | +5.1 * | +2.5 * | +8.3 * | +7.9 * | +9.5 * | +9.2 * | +7.0 * | +2.9 * |
+| fixed half handover weight | +0.9 * | -0.2 | +0.4 | +1.3 | +1.1 * | +1.4 | +0.2 | +0.4 | +0.0 |
+| one whole-window combination weight of the history side and the carrier | -0.4 | -0.8 | +1.4 * | +0.5 | +0.0 | +0.7 | +0.5 | -0.3 | -0.3 |
+| half-and-half average of the history side and the carrier | +0.7 * | +1.6 | +3.8 * | +3.8 * | +3.1 * | +3.5 * | +2.4 * | +0.6 | +0.1 |
 
 The rows of switched-off parts of the anchoring layer need re-anchoring (`evaluation/lite_reanchor.py`); the single
 seeds are the stored single-seed products; the history-only configuration, the recipe arms and the earlier carriers are
@@ -496,15 +500,156 @@ Largest deviation from exact scale equivariance: 0.00e+00. State rules fired: mi
 23 carrier rows (training recipe, span return, network; read from the package defaults) and 20 anchoring-layer rows (group, constant, value and where_fixed as in the first release; the layer
 is a byte-identical copy). The `sensitivity` column holds the study's recipe readouts where a recipe constant was varied.
 
+## What the handover contributes (`handover_granularity.csv`, `lead_weeks.csv`)
+
+Four arms share the level with the carrier candidate, the delivered within-day block, the projection and the state rule; they
+differ only in the weight on the carrier's daily means: none (A0), a fixed half (Ah), one weight per window from the handover
+pairs (AM), the weekly weights (AW = ankyra-lite). Hourly improvement of the first-named arm in % (`*` resolved better, `(-)` resolved
+worse); `share` = the part of AW's gain over A0 that the fixed half weight already gives (log-ratio share).
+
+| Population | AW vs Ah | AW vs AM | Ah vs A0 | AW vs A0 | share (Ah) | ankyra-lite vs fixed division | mean weight on the carrier, weeks 1-4 |
+|---|---|---|---|---|---|---|---|
+| BDG2 2017 | +0.9 * | -0.2 | +0.7 | +1.6 * | 46% | +2.8 * | 0.54 / 0.49 / 0.54 / 0.51 |
+| GoiEner non-household | -0.2 | -0.1 | +1.3 | +1.1 | 114% | +5.1 * | 0.57 / 0.56 / 0.58 / 0.59 |
+| GoiEner households | +0.4 | -0.1 | +1.6 * | +1.9 * | 81% | +2.5 * | 0.57 / 0.53 / 0.54 / 0.55 |
+| Cambridge | +1.3 | -0.1 | +4.7 * | +5.9 * | 78% | +8.3 * | 0.70 / 0.62 / 0.61 / 0.63 |
+| HEEW Arizona | +1.1 * | -0.5 | +3.6 * | +4.7 * | 77% | +7.9 * | 0.68 / 0.62 / 0.60 / 0.62 |
+| EWELD | +1.4 | -0.3 | +5.8 * | +7.2 * | 80% | +9.5 * | 0.61 / 0.58 / 0.54 / 0.53 |
+| Oslo | +0.2 | -0.1 | +5.5 * | +5.7 * | 96% | +9.2 * | 0.63 / 0.69 / 0.67 / 0.68 |
+| Drammen | +0.4 | -0.3 | +4.6 * | +5.0 * | 91% | +7.0 * | 0.68 / 0.73 / 0.70 / 0.68 |
+| CINELDI | +0.0 | -0.1 | +1.0 | +1.1 | 97% | +2.9 * | 0.52 / 0.51 / 0.51 / 0.53 |
+
+By forecast week (`lead_weeks.csv`), hourly improvement of ankyra-lite and of the fixed division over the carrier alone:
+
+| Population | ankyra-lite vs carrier, weeks 1-4 | fixed division vs carrier, weeks 1-4 |
+|---|---|---|
+| BDG2 2017 | +2.5 +3.6 * +3.1 * +2.7 * | -3.5 +0.9 -1.2 +0.2 |
+| GoiEner non-household | +3.5 +4.1 +3.8 +4.1 | -2.1 -1.5 -2.1 -1.8 |
+| GoiEner households | -1.0 -1.9 (-) -3.2 (-) -1.6 | -7.4 (-) -7.5 (-) -8.3 (-) -5.1 (-) |
+| Cambridge | -0.3 +1.1 +0.4 +0.4 | -13.7 (-) -7.7 (-) -7.9 (-) -8.3 (-) |
+| HEEW Arizona | +0.7 +1.2 +2.1 +1.8 | -15.9 (-) -7.7 (-) -4.9 -4.8 (-) |
+| EWELD | +0.3 -2.9 -0.4 +1.4 | -12.8 (-) -17.5 (-) -12.2 (-) -8.6 |
+| Oslo | -1.2 +0.2 -0.3 +0.9 | -11.4 (-) -11.5 (-) -13.2 (-) -8.4 (-) |
+| Drammen | -0.8 -0.1 +1.1 +1.1 | -7.2 (-) -9.8 (-) -6.3 -6.3 |
+| CINELDI | +2.2 * +2.9 * +2.9 * +2.5 * | -0.7 -0.9 -0.4 -0.3 |
+
+The arms are rebuilt from the anchoring layer's own fields (lite_reanchor.py, mode `fields`); AW reproduces the delivered
+forecast bit for bit, and the history-side daily means before the handover are those of the layer's own level.
+
+## Within-day anchoring: where it acts (`within_day_trust.csv`)
+
+| Population | Anchored windows | Mean trust on the analog shape | Windows with trust > 0 | Analog shape kept |
+|---|---:|---:|---:|---:|
+| BDG2 2017 | 441 | 0.219 | 87% | 98% |
+| GoiEner non-household | 877 | 0.171 | 76% | 98% |
+| GoiEner households | 661 | 0.055 | 43% | 99% |
+| Cambridge | 730 | 0.172 | 85% | 100% |
+| HEEW Arizona | 658 | 0.185 | 86% | 100% |
+| EWELD | 278 | 0.144 | 78% | 94% |
+| Oslo | 581 | 0.145 | 80% | 100% |
+| Drammen | 689 | 0.223 | 89% | 100% |
+| CINELDI | 475 | 0.211 | 90% | 100% |
+
+## Block-wise weights against one whole-window weight (`ablation.csv`, `component_contributions.csv`, `generic_combinations.csv`)
+
+ankyra-lite against one whole-window combination weight of the same two forecasts (the history side: fixed-division daily
+means plus the analog-day shape; the carrier at the origin; one least-squares weight per window from the unit's pseudo-origins,
+shrunk to 1/2) and against their half-and-half average; improvement of ankyra-lite in %:
+
+| Population | vs whole-window weight (hourly / energy) | vs half-and-half (hourly / energy) | mean weight on the carrier |
+|---|---|---|---:|
+| BDG2 2017 | -0.4 / -2.7 | +0.7 * / +4.8 | 0.55 |
+| GoiEner non-household | -0.8 / -0.3 | +1.6 / +2.3 | 0.61 |
+| GoiEner households | +1.4 * / +2.4 | +3.8 * / +5.5 | 0.64 |
+| Cambridge | +0.5 / +1.4 | +3.8 * / +6.4 | 0.68 |
+| HEEW Arizona | +0.0 / +1.5 | +3.1 * / +7.0 | 0.68 |
+| EWELD | +0.7 / -0.2 | +3.5 * / +8.2 | 0.62 |
+| Oslo | +0.5 / +2.0 | +2.4 * / +4.0 | 0.71 |
+| Drammen | -0.3 / -0.3 | +0.6 / +0.4 | 0.69 |
+| CINELDI | -0.3 / -1.6 | +0.1 / -0.9 | 0.58 |
+
+Generic partners (`generic_combinations.csv`), populations (of 9) first-named resolved better / not resolved / resolved worse:
+
+| Contrast | Hourly | Energy |
+|---|---|---|
+| B2(H) vs B2(SN-week) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(H) vs B2(WeekProf4) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(H) vs B2(LYR-profile) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(H) vs best B2(X) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(H) vs best equal-weight | 1 / 8 / 0 | 0 / 8 / 1 |
+| ankyra-lite vs best generic | 0 / 9 / 0 | 0 / 8 / 1 |
+
+B2(H) is the whole-window weight with the history side, B2(X) the same with a generic forecaster X in its place (X computed
+from the load at every pseudo-origin), EW(X) the equal-weight average of the carrier and X; `best` was picked after scoring.
+
+## Level candidates: hit rate of the pseudo-selected candidate (`level_candidate_hit_rate.csv`)
+
+| Population | Seven candidates: hit rate / chance | Six historical: hit rate / chance |
+|---|---|---|
+| BDG2 2017 | 0.191 / 0.145 | 0.251 / 0.170 |
+| GoiEner non-household | 0.205 / 0.143 | 0.225 / 0.167 |
+| GoiEner households | 0.203 / 0.143 | 0.232 / 0.167 |
+| Cambridge | 0.207 / 0.146 | 0.229 / 0.172 |
+| HEEW Arizona | 0.228 / 0.147 | 0.280 / 0.173 |
+| EWELD | 0.180 / 0.144 | 0.236 / 0.169 |
+| Oslo | 0.248 / 0.143 | 0.217 / 0.167 |
+| Drammen | 0.221 / 0.143 | 0.231 / 0.167 |
+| CINELDI | 0.173 / 0.143 | 0.194 / 0.167 |
+| all nine populations (seven (six historical and the carrier)) | 0.209 / 0.144 (difference +0.065, 95% unit bootstrap +0.054 to +0.076) | |
+| all nine populations (six historical) | 0.233 / 0.169 (difference +0.064, 95% unit bootstrap +0.053 to +0.075) | |
+
+Descriptive (P20): the candidate with the largest weight (smallest pseudo-origin error) against the candidate whose window
+mean at the origin is closest to the realised mean; windows with tied weights (no evidence) are left out.
+
+Peak readout of ankyra-lite against the same readout on the carrier alone (`peak_readout.csv`, comparator `same readout on the carrier alone`): BDG2 2017 -3.0; GoiEner non-household +4.5; GoiEner households +2.1; Cambridge -1.5; HEEW Arizona -1.7; EWELD +11.3; Oslo -3.1 (-); Drammen -3.1 (-); CINELDI +2.3.
+
+## Training budget of the trained baselines (`training_budget_sensitivity.csv`)
+
+ankyra-lite against DLinear, iTransformer, LSTM and PatchTST as trained for the main tables (at most 15 epochs, patience 3)
+and retrained with at most 30 epochs and patience 8 (the first release's sensitivity run; cutoff, pairs, selection set,
+learning-rate grid and seeds unchanged). Improvement of ankyra-lite in % (`*` resolved better, `(-)` resolved worse):
+
+| Population | DLinear original -> relaxed | iTransformer original -> relaxed | LSTM original -> relaxed | PatchTST original -> relaxed |
+|---|---|---|---|---|
+| BDG2 2017 | +6.9 * -> +6.9 * | +8.2 -> +8.2 | +14.6 * -> +13.9 * | +8.9 * -> +8.9 * |
+| Cambridge | +21.7 * -> +19.6 * | +12.8 * -> +12.8 * | +35.3 * -> +33.0 * | +13.3 * -> +12.4 * |
+| HEEW Arizona | +17.5 * -> +17.5 * | +7.0 -> +5.1 | +31.0 * -> +25.3 * | +4.9 -> +5.3 |
+| EWELD | +11.4 * -> +12.5 * | +4.5 -> +6.2 | +21.2 * -> +18.1 * | +5.0 -> +5.0 |
+| GoiEner non-household | +10.8 * -> +10.8 * | +0.2 -> +0.2 | +15.1 * -> +10.6 * | +8.7 * -> +8.7 * |
+| GoiEner households | +8.8 * -> +9.1 * | +6.1 * -> +4.2 * | +7.7 * -> +6.2 * | +4.8 * -> +4.9 * |
+| Oslo | +27.3 * -> +27.9 * | +16.3 * -> +16.3 * | +42.6 * -> +42.6 * | +16.1 * -> +16.1 * |
+| Drammen | +11.8 * -> +12.3 * | +9.5 * -> +9.5 * | +28.1 * -> +20.7 * | +10.8 * -> +9.6 * |
+| CINELDI | +8.7 * -> +8.3 * | +5.8 * -> +6.6 * | +24.7 * -> +14.6 * | +6.1 * -> +6.1 * |
+
+Hourly: 36 of 36 verdicts unchanged, 0 point estimates change sign; energy: 34 of 36 unchanged, 2 sign changes. Relaxed against original (hourly): 8 better, 11 not resolved, 3 worse, 14 identical forecasts. Selected run at the 30-epoch cap: 6; selected epoch = 30: 2. ankyra-lite's rank among the 22 forecasters with the four relaxed versions substituted is unchanged on every population.
+
+## Foundation models with a year of context (`long_context_baselines.csv`)
+
+Zero-shot TimesFM 2.5 with an 8,736-hour context and Chronos-2 with an 8,192-hour context, scored as two further baselines
+outside the main ranks. Improvement in % (`*` resolved better for the first-named, `(-)` resolved worse):
+
+| Population | ankyra-lite vs TimesFM-8736 (hourly / energy) | ankyra-lite vs Chronos-2-8192 | TimesFM-8736 vs TimesFM | Chronos-2-8192 vs Chronos-2 |
+|---|---|---|---|---|
+| BDG2 2017 | -7.9 (-) / -7.2 | +5.2 / +15.8 | -35.0 / -17.6 | -56.3 (-) / -58.2 |
+| Cambridge | +11.1 * / +19.1 * | +15.4 * / +28.0 * | +3.5 * / +5.0 | +0.3 / +1.8 |
+| HEEW Arizona | -3.7 / -9.5 | +3.4 / +2.9 | +4.6 / +7.2 | +0.6 / +1.9 |
+| EWELD | -1.0 / -11.2 | -0.1 / +0.5 | +0.5 / +3.4 | -373.0 (-) / -397.6 (-) |
+| GoiEner non-household | -1.7 / +13.0 | -2.9 / +15.0 | +4.6 * / +8.0 | +2.8 / +2.3 |
+| GoiEner households | -6.3 (-) / +32.6 * | -6.2 (-) / +35.5 * | +3.4 / +9.0 * | +4.4 * / +5.2 |
+| Oslo | +22.9 * / +35.5 * | +25.2 * / +38.1 * | +0.6 / -0.1 | -1.7 / -0.9 |
+| Drammen | +13.2 * / +15.6 | +14.3 * / +17.5 | +6.6 * / +12.0 * | +1.8 / +7.9 |
+| CINELDI | +6.9 * / +16.3 * | +8.3 * / +19.3 * | +3.1 * / +5.8 | -0.5 / -0.9 |
+
 ## Files of the first release without a counterpart here
 
 | File | Why there is none |
 |---|---|
 | `conventional_metrics.csv` | the release's file covers all windows; ankyra-lite forecasts exist on the test windows only (the earlier windows lie in or before its training period); `conventional_metrics_late.csv` holds the test windows |
-| `handover_granularity.csv` | needs other handover rules inside the anchoring layer, which must stay byte-identical to ANKYRA 2.2.1 |
-| `constants_sensitivity.csv` | the release ran it on design windows without any test window; ankyra-lite forecasts exist on the test windows only; the recipe constants the study varied are in `recipe_history.csv` and the `sensitivity` column of `constants.csv` |
+| `constants_sensitivity.csv` | the release ran it on design windows without any test window; ankyra-lite forecasts exist on the test windows only, and the anchoring layer's constants are fixed in its byte-identical copy; the recipe constants the study varied are in `recipe_history.csv` and the `sensitivity` column of `constants.csv` |
 | `contrast_ii_control_description.csv` | describes the calls of the carrier-free control, which does not involve the carrier (the same control as in the first release; `contrast_ii_control.csv` holds the contrasts) |
-| `lead_weeks_first_read.csv, ankyra_2_vs_1x_by_day.csv, bdg2_micro_load_windows.csv, carrier_swap*.csv, long_context_carriers.csv, generic_combinations.csv, trained_carriers_sensitivity.csv, training_budget_sensitivity.csv` | records of ANKYRA's own versions, carriers or baselines; the comparable ankyra-lite content is in `ablation.csv`, `carriers_in_anchoring_layer.csv`, `seed_spread.csv` and `recipe_history.csv` |
+| `ankyra_2_vs_1x_by_day.csv, bdg2_micro_load_windows.csv, reevaluation_2_*.json, closeout_status.json` | records of ANKYRA's own versions and design decisions; ankyra-lite's own recipe history is `recipe_history.csv` |
+| `carrier_swap*.csv, long_context_carriers.csv (the anchored rows)` | foundation models as ANKYRA's carrier are ANKYRA configurations; the two zero-shot long-context forecasts of `long_context_carriers.csv` are scored against ankyra-lite in `long_context_baselines.csv`, and trained carriers inside this anchoring layer are in `carriers_in_anchoring_layer.csv` |
+| `trained_carriers_sensitivity.csv` | it measures what the earlier training cutoff of a trained carrier costs that carrier alone; ankyra-lite's carriers, and the other carriers of `carriers_in_anchoring_layer.csv`, are trained with that earlier cutoff already |
 | `lcl_*, hkust_*, helsinki_*, unicon_*` | the external tests of this version are reported differently: carriers trained with the released recipe for each test set, LCL, UNICON and HKUST scored once (first read of this candidate on a previously read population) and a same-source out-of-time supplementary check (GoiEner households), all in `external_tests.csv` and docs/EXTERNAL_TESTS.md; Helsinki (retrospective) is trained and sealed, not yet scored; UCI370 was skipped |
 | `ankyra_1x/, ankyra_2_0_0/, ankyra_2_0_1/, ankyra_2_1/ (version archives)` | ankyra-lite's version history is `recipe_history.csv` (the from-scratch stage and the recipe arms of the study) |
 
@@ -572,6 +717,14 @@ trailing `flag` column; the other files are described with their columns in `res
 | `training_curves.csv` | both training stages per population and seed: validation criterion (and training loss) by epoch, best epoch |
 | `example_window_cambridge.json` | the building, period, day types and source of the example window |
 | `intervals_households.json` | the interval on GoiEner households: four arms and contrasts |
+| `handover_granularity.csv` | the handover arms (none, a fixed half weight, one weight per window, the weekly weights) against each other, the carrier alone, TimesFM and the fixed division |
+| `lead_weeks.csv` | ankyra-lite and the fixed division against the carrier alone and TimesFM by forecast week, and the mean handover weight on the carrier |
+| `within_day_trust.csv` | where the within-day anchoring acts: trust on the analog-day shape, windows with a positive trust, analog shape kept |
+| `generic_combinations.csv` | one whole-window combination weight of the carrier with the history side against the same with generic forecasters, and equal-weight averages |
+| `level_candidate_hit_rate.csv` | how often the level candidate with the smallest pseudo-origin error is the best one at the origin, against chance |
+| `energy_level_readout.csv` | the energy contrasts with ankyra-lite's level readout (744 x level) in place of its delivered trajectory's mean |
+| `training_budget_sensitivity.csv` | ankyra-lite against DLinear, iTransformer, LSTM and PatchTST trained with the original budget (15 epochs, patience 3) and with the relaxed budget (30 epochs, patience 8), hourly and energy, and each relaxed model against its original |
+| `long_context_baselines.csv` | ankyra-lite against TimesFM 2.5 with an 8,736-hour and Chronos-2 with an 8,192-hour context (zero-shot), and each against itself with the 1,344-hour context; outside the main ranks |
 | `REPRODUCTION_CHECK.json` | the scoring-code check: every table's comparison with the published release files |
 | `compare_baselines.json` | all numbers behind this summary, per population, with the product checks |
 | `compare_baselines.log` | the log of the run that wrote these files |

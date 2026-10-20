@@ -49,6 +49,17 @@ Usage (from the repository root, CPU only):
   python -B evaluation/compare_baselines.py --recipe p3s --out <dir>           the from-scratch stage instead of the release
   python -B evaluation/compare_baselines.py --summary-only       rebuild SUMMARY.md from the JSON record
   python -B evaluation/compare_baselines.py --check-products     list the products and whether their files exist
+  python -B evaluation/compare_baselines.py --budget             training_budget_sensitivity.csv alone (budget_tables.py),
+                                                                 merged into an existing results directory
+  python -B evaluation/compare_baselines.py --supplement         only the files added on 19 October 2026 (budget, handover,
+                                                                 lead weeks, within-day trust, whole-window weight, generic
+                                                                 partners, hit rate, long-context baselines, level-readout
+                                                                 energy, the carrier-alone peak row), merged into an existing
+                                                                 results directory: new files written, the added rows of
+                                                                 ablation.csv, component_contributions.csv and peak_readout.csv
+                                                                 inserted after each population's rows (every other row kept
+                                                                 byte for byte), the record and SUMMARY.md extended; needs the
+                                                                 fields cache (lite_reanchor.py --modes fields)
 """
 from __future__ import annotations
 
@@ -1148,7 +1159,9 @@ def step_b(T, faces, proceed, prods, extra=True):
             fr["peak"] = {"vs": {k: {"log_ratio": v["log_ratio"], "UM": v["UM"]} for k, v in vs.items()}, "median_peak_ape_pct": ape}
         if xt is not None:
             wait_for_memory(f"extra {face}")
-            fr["extra"] = xt.face(face, entry, P, prod, baselines, flag)
+            fr["extra"] = xt.face(face, entry, P, prod, baselines, flag, hourly_ref=fr["hourly"]["vs"])
+            if "peak_readout" in proceed:                                  # the same readout on the carrier alone (extra_tables)
+                out["peak_readout"] += xt.rows.pop("peak_readout_added", [])
         fr["seconds"] = round(time.time() - t0, 1)
         rec["populations"][face] = fr
         log(f"tables {face}: rank {fr['hourly']['rank']}/{fr['hourly']['of']} ({fr['hourly']['mean_unit_rank']:.3f}); product {prod['info']}; {fr['seconds']} s")
@@ -1461,6 +1474,122 @@ def summary_md(checks, rec, written):
     return "\n".join(L)
 
 
+# ----------------------------------------------------------------------------- files added to an existing run
+ADDED_ROW_FILES = {"ablation.csv": "ablation", "component_contributions.csv": "component", "peak_readout.csv": "comparator"}
+
+
+def merge_rows(name, new_rows, key_field, labels):
+    """Insert ``new_rows`` into an existing result file after the last row of each row's population (``set``), after
+    removing earlier insertions (rows whose ``key_field`` is in ``labels``).  Every other line is kept byte for byte
+    (checked).  Returns the number of rows inserted."""
+    path = RESULTS / name
+    text = path.read_text(encoding="utf-8")
+    old_lines = text.split("\n")
+    rd = list(csv.DictReader(io.StringIO(text)))
+    fields = next(csv.reader(io.StringIO(text)))
+    keep = [r for r in rd if r[key_field] not in labels]
+    by_set = {}
+    for r in new_rows:
+        by_set.setdefault(r["set"], []).append(r)
+    out, done = [], set()
+    for i, r in enumerate(keep):
+        out.append(r)
+        nxt = keep[i + 1]["set"] if i + 1 < len(keep) else None
+        if nxt != r["set"] and r["set"] in by_set and r["set"] not in done:
+            out += by_set[r["set"]]
+            done.add(r["set"])
+    out += [r for s_, rows in by_set.items() if s_ not in done for r in rows]
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=fields, lineterminator="\n")
+    w.writeheader()
+    w.writerows({k: r_.get(k, "") for k in fields} for r_ in out)
+    new_text = buf.getvalue()
+    kept_old = [ln for ln, r in zip(old_lines[1:], rd) if r[key_field] not in labels]
+    new_lines = new_text.split("\n")
+    inserted = {i + 1 for i, r in enumerate(out) if r[key_field] in labels}
+    if [ln for i, ln in enumerate(new_lines[1:], 1) if i not in inserted and ln != ""] != [ln for ln in kept_old if ln != ""] or new_lines[0] != old_lines[0]:
+        raise SystemExit(f"{name}: merging would change existing rows; not written")
+    tmp = path.with_name(path.name + ".part")
+    tmp.write_bytes(new_text.encode("utf-8"))
+    os.replace(tmp, path)
+    return len(new_rows)
+
+
+def step_supplement(T, faces, prods, parts=None):
+    """The files added on 19 October 2026 for an existing complete run in RESULTS (its compare_baselines.json and
+    REPRODUCTION_CHECK.json are read and extended; no existing number is recomputed or changed).  For each population the
+    panel, the product and the carrier are loaded as in step B and checked against the saved record (windows, units,
+    state windows); ``parts=("budget",)`` writes training_budget_sensitivity.csv alone."""
+    import extra_tables as XT
+    rec = json.loads((RESULTS / "compare_baselines.json").read_text(encoding="utf-8"))
+    chk = json.loads((RESULTS / "REPRODUCTION_CHECK.json").read_text(encoding="utf-8"))
+    if rec.get("product_label") != prods["label"]:
+        raise SystemExit("the results directory holds another product than the products mapping")
+    xt = XT.Collector(T, prods)
+    t0 = time.time()
+    for face in [f for f in rec["faces_run"] if f in faces]:
+        entry = prods["faces"][face]
+        wait_for_memory(f"supplement {face}")
+        t1 = time.time()
+        corrected = on_corrected_cineldi(face, entry)
+        P = load_panel(T, face, panel=SB_PANEL if corrected else P22, audit=SB_AUDIT if corrected else None)
+        baselines = {k: v for k, v in P["late"].items() if k not in A_FAMILY}
+        kan, _ = kan_baselines(face, P, entry)
+        baselines |= kan
+        if len(baselines) != N_BASELINES:
+            raise SystemExit(f"{face}: {len(baselines)} baselines")
+        P["late"] = None
+        gc.collect()
+        prod = product(T, face, P, entry)
+        if not prod["info"]["months_equal_panel_months"]:
+            P["mL"] = prod["month"]
+        saved = rec["populations"][face]
+        if (saved["windows"], saved["units"], saved["product"]["state_windows_seasonal_naive"]) != (int(len(P["yL"])), int(len(np.unique(P["uL"]))), prod["info"]["state_windows_seasonal_naive"]):
+            raise SystemExit(f"{face}: the product reading differs from the saved run")
+        flag = face_flag(face, entry)
+        FLAG_BY_NAME[T.names[face]] = flag
+        xt.added(face, entry, P, prod, baselines, flag, hourly_ref=saved["hourly"]["vs"], parts=parts)
+        log(f"supplement {face}: {round(time.time() - t1, 1)} s; notes {xt.notes.get(face)}")
+        del P, baselines, prod
+        gc.collect()
+    written, files, x = xt.write_added(RESULTS, rec, parts=parts)
+    inserted = {}
+    if parts is None:
+        for name, key in ADDED_ROW_FILES.items():
+            rows = xt.rows.get("peak_readout_added" if name == "peak_readout.csv" else ("ablation" if key == "ablation" else "component_contributions"), [])
+            labels = {XT.CARRIER_PEAK} if name == "peak_readout.csv" else (set(XT.ADDED_ABLATIONS) if key == "ablation" else {XT.COMPONENT[k] for k in XT.ADDED_ABLATIONS if k in XT.COMPONENT})
+            if name == "peak_readout.csv":
+                for r_ in rows:
+                    r_["flag"] = FLAG_BY_NAME.get(r_["set"], r_.get("flag", ""))
+            if rows:
+                inserted[name] = merge_rows(name, rows, key, labels)
+    ex = rec["extra"]
+    for face, r in xt.rec.items():
+        tgt = ex["populations"].setdefault(face, {})
+        for k, v in r.items():
+            if k == "ablation" or not v:
+                continue
+            tgt[k] = v
+        for part in ("handover", "combination"):
+            if (r.get(part) or {}).get("ablation"):
+                tgt.setdefault("ablation", {}).update(r[part]["ablation"])
+    for k, v in x.items():
+        if v:
+            ex[k] = v
+    ex["absent_files"] = XT.ABSENT
+    for face, ns in xt.notes.items():
+        old = ex.setdefault("notes", {}).setdefault(face, [])
+        old += [n for n in ns if n not in old]
+    rec.setdefault("extra_files", {}).update(files)
+    rec["extra_written"] = list(dict.fromkeys(rec.get("extra_written", []) + written))
+    rec["supplement"] = {"utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "parts": list(parts) if parts else "all",
+                         "what": "files added on 19 October 2026 to the complete run of this record; no existing number was recomputed or changed",
+                         "files_written": written, "rows_inserted": inserted, "faces": sorted(xt.rec), "seconds": round(time.time() - t0, 1)}
+    dump_json(RESULTS / "compare_baselines.json", rec)
+    (RESULTS / "SUMMARY.md").write_bytes(scrub(summary_md(chk["tables"], rec, rec["tables_written"])).encode("utf-8"))
+    log("supplement written:", written, "| rows inserted:", inserted, "| total", round(time.time() - t0, 1), "s")
+
+
 # ----------------------------------------------------------------------------- main
 def main():
     global RESULTS
@@ -1481,6 +1610,8 @@ def main():
     ap.add_argument("--robustness-windows", type=int, default=None, help="windows of robustness.csv (default 64)")
     ap.add_argument("--only-check", action="store_true", help="only the scoring-code check")
     ap.add_argument("--summary-only", action="store_true", help="rebuild SUMMARY.md from the saved JSON records (no data read)")
+    ap.add_argument("--budget", action="store_true", help="only training_budget_sensitivity.csv, merged into the existing results directory")
+    ap.add_argument("--supplement", action="store_true", help="only the files added on 19 October 2026, merged into the existing results directory")
     ap.add_argument("--check-products", action="store_true")
     a = ap.parse_args()
     if a.out:
@@ -1500,6 +1631,11 @@ def main():
         rec = json.loads((RESULTS / "compare_baselines.json").read_text(encoding="utf-8"))
         (RESULTS / "SUMMARY.md").write_bytes(scrub(summary_md(chk["tables"], rec, rec["tables_written"])).encode("utf-8"))
         print("SUMMARY.md rebuilt from the saved records")
+        return
+    if a.budget or a.supplement:
+        faces = [f for f in a.faces.split(",") if f in NINE]
+        log.open(RESULTS / ("compare_baselines_supplement.log" if a.supplement else "compare_baselines_budget.log"))
+        step_supplement(Tools(), faces, prods, parts=("budget",) if a.budget and not a.supplement else None)
         return
     log.open(RESULTS / "compare_baselines.log")
     faces = [f for f in a.faces.split(",") if f]

@@ -17,6 +17,20 @@ module produces the tables in [`results/`](../results/). It is not imported by t
 | `recipe_tables.py` | Called by `compare_baselines.py`: `recipe_history.csv` (the study's readings of the recipe arms, copied unrounded from its scoring record) and `constants.csv` (the carrier's constants read from the package, and the anchoring layer's rows of the first release's file). Reads no data store. |
 | `external_tables.py` | `results/external_tests.csv`: the external tests of the released candidate ([docs/EXTERNAL_TESTS.md](../docs/EXTERNAL_TESTS.md)), read from the study's one-time scoring records (`ANKYRA_LITE_RESEARCH_ROOT`, sibling `HKAD_V3` by default) with paths scrubbed; `--check` compares the file with a fresh build. Reads no data store. |
 | `robustness.py` | Called by `compare_baselines.py`, or alone: `robustness.csv`, ankyra-lite and the carrier alone re-forecast on the CPU (one thread) from corrupted contexts with the released weights, the first release's eight corruptions and random stream. Default: 64 Drammen test windows. Needs the study's local data. |
+| `budget_tables.py` | Called by `compare_baselines.py` (alone with `--budget`): `training_budget_sensitivity.csv`, ankyra-lite against DLinear, iTransformer, LSTM and PatchTST trained with the original budget (15 epochs, patience 3) and retrained with 30 epochs and patience 8 (the first release's sensitivity run; its saved forecasts are read, nothing is trained). |
+| `long_context_tables.py` | Called by `compare_baselines.py`: `long_context_baselines.csv`, ankyra-lite against zero-shot TimesFM 2.5 with an 8,736-hour and Chronos-2 with an 8,192-hour context (saved study forecasts), outside the main ranks. |
+
+The files added on 19 October 2026 (handover arms, lead weeks, within-day trust, one whole-window weight, generic
+partners, level-candidate hit rate) read the `fields` mode of `lite_reanchor.py`: the product's three-seed ensemble
+re-anchored once more, keeping the anchoring layer's own fields of every window and the pseudo-origin quantities
+rebuilt from its public functions (the handover pairs with `history.estimate_from_history`, the trust triples with
+`analog.AnalogShapes`) and two private helpers of the copy (`_masked`, `_level_parts`), read only. Its gate: the
+trajectory, level and state flags equal the stored product bit for bit, and the rebuilt quantities reproduce the call's
+`lead_week_weights`, `within_trust`, `level_weights` and `daily_means_kw` exactly. `compare_baselines.py --supplement`
+computes these files, the budget and long-context files, `energy_level_readout.csv` and the carrier-alone peak row for an
+existing complete run and merges them into it (new files; the added rows of `ablation.csv`, `component_contributions.csv`
+and `peak_readout.csv` inserted after each population's rows, every other line kept byte for byte; the record and
+`SUMMARY.md` extended).
 
 ```bash
 python -m evaluation.run_example --untrained              # untrained stand-in carrier: shows the data flow only
@@ -44,6 +58,9 @@ python -B evaluation/compare_baselines.py --check-products                # list
 python -B evaluation/compare_baselines.py --summary-only                  # rebuild SUMMARY.md from the JSON record
 python -B evaluation/robustness.py --face oslo --windows 64 --out <dir>   # robustness.csv alone
 python -B evaluation/lite_reanchor.py --faces oslo --modes s0 --limit 8   # the single-seed gate alone
+python -B evaluation/lite_reanchor.py --faces bdg2,oslo --modes fields   # the fields cache of the handover and combination tables
+python -B evaluation/compare_baselines.py --supplement                    # the files added on 19 October 2026, merged into results/
+python -B evaluation/compare_baselines.py --budget                        # training_budget_sensitivity.csv alone
 python -B tools/export_checkpoints.py --out <dir>                         # the 27 checkpoints and MANIFEST.json
 ```
 
@@ -111,10 +128,10 @@ populations, largest difference 0.0 percentage points).
 The module's own tests are in [`tests/test_evaluation.py`](../tests/test_evaluation.py) (15 tests). They run on
 artificial data, together with the forecaster's tests: `python -m unittest discover -s tests -t .`. The comparison
 script, the checkpoint export and the result files are checked by
-[`tests/test_compare_baselines.py`](../tests/test_compare_baselines.py) (33 tests; those that need the first release's
+[`tests/test_compare_baselines.py`](../tests/test_compare_baselines.py) (40 tests; those that need the first release's
 files, the study's research folder or a complete run in `results/` skip without them), and the external-test table by
 [`tests/test_external_tables.py`](../tests/test_external_tables.py) (12 tests). On 19 October 2026 the whole suite
-ran 176 tests on the author's machine: 175 passed, 1 skipped
+ran 196 tests on the author's machine: 195 passed, 1 skipped
 ([EVALUATION.md](../docs/EVALUATION.md#scoring-code-check-and-reproduction)).
 
 The terms used by the module (unit-equal log RMS ratio, unit-and-month bootstrap interval, late windows, mean

@@ -17,7 +17,7 @@ authors:
   - family-names: Qin
     given-names: Xinan
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # add if available
-version: "0.1.0"
+version: "0.1.1"
 date-released: "2026-10-19"
 license: MIT
 repository-code: "https://github.com/XinanQ/Building_load_ANKYRA_lite"

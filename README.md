@@ -21,7 +21,7 @@ month's energy and a monthly peak readout. A forecast runs on one CPU thread in 
 (nine populations × three seeds), the training recipe, the scoring code, the scored comparison with 21 external
 baselines on nine populations, the figures, and the exact properties of both parts.
 
-> **Status (version 0.1.0, 19 October 2026).**
+> **Status (version 0.1.1, 19 October 2026).**
 >
 > - **Evidence identity: a re-evaluation on test windows read before.** The test windows had been read before the
 >   released configuration was fixed, and parts of the design (the direction of the copy pointer, the seasonal-naive
@@ -52,7 +52,24 @@ forecasters in all) on the test windows of nine populations: 5,716 windows of 1,
 | Monthly energy | resolved better than 4–20 of the 21 per population (105 of 189); resolved worse in none | nine populations | `energy_error.csv` |
 | Rank tests | mean rank 5.496 against 7.438 for the next forecaster (per-unit ridge); Nemenyi critical difference 0.786 | six test populations pooled, 1,762 units | `rank_tests.csv` |
 | Peak readout | 18.1–67.9% lower peak error than the maximum of its own trajectory; resolved on eight populations (all but Oslo) | nine populations | `peak_readout.csv` |
+| Contrast (i): the anchoring layer against the carrier alone | populations resolved better / not resolved / resolved worse: **2 / 7 / 0** in hourly error, **1 / 8 / 0** in monthly energy | nine populations | `carriers_in_anchoring_layer.csv` |
+| Contrast (ii): with the carrier against the history-only configuration | **9 / 0 / 0** hourly (+5.4% to +20.5%), **4 / 5 / 0** monthly energy | nine populations | `carriers_in_anchoring_layer.csv` |
+| Against the carrier-free control (the same procedure with history-only forecasts in the carrier's place) | **9 / 0 / 0** hourly (+3.0% to +15.8%) | nine populations | `contrast_ii_control.csv` |
+| 80% prediction interval | covers 0.758–0.851 of the hours (90%: 0.850–0.921), against 0.345–0.606 for TimesFM's native quantiles and 0.629–0.804 for Chronos-2's | nine populations | `intervals_by_population.csv` |
 | Cost | 0.584 s per forecast (carrier at 7 issue times × 3 seeds, anchoring layer, peak readout) | one CPU thread, 6 Oslo windows | `cost_per_window.csv` |
+
+- **Readouts.** Energy is read from the level (744 × the level, before the nonnegativity projection), the monthly peak
+  from the excursion envelope (each day's forecast mean plus the largest recent excursion of the same day type), and the
+  prediction interval from the residuals of the unit's own history-only pseudo-forecasts ([Readouts](#readouts)).
+- **Diagnostic record.** Every forecast splits exactly into its level, daily-path and within-day blocks (P1), the
+  weights of each block are returned with it (level weights, weekly handover weights, within-day trust), and
+  `anchoring_record` reports how the carrier did against the unit's history on its own past months
+  ([What comes out](#what-comes-out)).
+- **Contrasts, not encompassing tests.** Contrasts (i) and (ii) measure the incremental accuracy of one configuration
+  over another on these windows. They are not formal forecast-encompassing tests (Chong and Hendry 1986; Harvey,
+  Leybourne and Newbold 1998): a contrast that is not resolved does not show that one forecast encompasses the other,
+  and the anchoring layer's shrunk weights are estimates for forecasting, not test statistics
+  ([references](#provenance-licence-and-citation)).
 
 **Where it stops.**
 
@@ -74,9 +91,15 @@ forecasters in all) on the test windows of nine populations: 5,716 windows of 1,
 
 ![ankyra-lite architecture](figures/fig1_architecture.png)
 
-*Figure 1. Architecture: the inputs known at the origin, the carrier network, its forecasts at the origin and six
-pseudo-origins, the anchoring layer (level weights, handover weights, within-day trust, state windows) and the
-outputs. The time per forecast is that of `results/cost_per_window.csv`.*
+*Figure 1. Architecture, unrolled in time. a, The carrier network is issued at the origin o and at up to six
+pseudo-origins o − 744k (Δ = 744 h), each time from the data before that issue time only; each pseudo-origin forecast
+covers a month that is already observed at o and is scored on it (e_k). b, The carrier network: daily, monthly and
+future-day tokens, the dilated causal encoder, the attention read-out (31 day queries and a learned global query), the
+copy pointer over the unit's last 56 complete days and the energy-budget decoder F(d, h) = 744 · ℓ · p_d · q_d(h).
+c, The anchoring layer (a copy of ANKYRA 2.2.1; nothing in it is trained) weights the carrier's level, daily means and
+within-day shape against the unit's own history, with weights set from the scores e_k, and returns the trajectory,
+the energy and the peak. The series and every curve, bar and weight in the figure are synthetic and schematic, not
+results. The time per forecast is that of `results/cost_per_window.csv`.*
 
 **How it works, in brief.** The terms are defined under [Terms used on this page](#terms-used-on-this-page).
 
@@ -100,7 +123,7 @@ outputs. The time per forecast is that of `results/cost_per_window.csv`.*
 ## Contents
 
 - **Use it:** [Repository layout](#repository-layout) · [Install and run](#install-and-run) · [Quickstart](#quickstart) ·
-  [Inputs and outputs](#inputs-and-outputs) ([inputs](#the-inputs) · [what comes out](#what-comes-out) ·
+  [Inputs and outputs](#inputs-and-outputs) ([inputs](#the-inputs) · [what comes out](#what-comes-out) · [readouts](#readouts) ·
   [how much history](#how-much-history) · [when not to use it](#when-not-to-use-it)) · [Checkpoints](#checkpoints)
 - **How it works:** [Model card](#model-card) ·
   [How the anchoring layer uses the carrier](#how-the-anchoring-layer-uses-the-carrier) ·
@@ -114,6 +137,8 @@ outputs. The time per forecast is that of `results/cost_per_window.csv`.*
   [what the parts add](#what-the-parts-add) · [seeds](#seeds) ·
   [carriers in the anchoring layer](#other-carriers-in-the-same-anchoring-layer) ·
   [history length](#history-length-and-the-anchoring-record) · [robustness](#robustness-to-corrupted-contexts) ·
+  [training budget](#robustness-training-budget-of-the-trained-baselines) ·
+  [a year of context](#foundation-models-with-a-year-of-context) ·
   [cost](#cost-per-window) · [recipe history](#recipe-history-how-r-was-chosen-and-its-negatives)) ·
   [Where ankyra-lite is weak](#where-ankyra-lite-is-weak) · [Limitations](#limitations) · [External tests](#external-tests)
 - **Check it:** [Tests](#tests) · [Theory](#theory-exact-properties) · [Reproducibility](#reproducibility) ·
@@ -123,7 +148,9 @@ outputs. The time per forecast is that of `results/cost_per_window.csv`.*
 
 ```
 ankyra_lite/                 the forecaster (import ankyra_lite)
-  forecast.py                forecast(): carrier forecasts -> anchoring layer -> state rule -> peak readout; ForecastResult
+  forecast.py                forecast(): carrier forecasts -> anchoring layer -> state rule -> peak readout; ForecastResult;
+                             forecast(history, None) is the history-only configuration
+  readouts.py                readouts of a forecast: interval, blocks, raw_trajectory, projection_energy_increase, peak
   carrier/                   the carrier network
     model.py                 CopyPointerNetwork, build_carrier, load_carrier, forecast_loss, param_groups (61,613 parameters)
     features.py              the carrier's inputs at one issue time, from data before it only
@@ -132,17 +159,21 @@ ankyra_lite/                 the forecaster (import ankyra_lite)
   anchor/                    byte-identical copy of the ANKYRA 2.2.1 anchoring layer (17 files; PROVENANCE.md lists their hashes)
 checkpoints/                 the 27 released carriers (9 populations x 3 seeds) and MANIFEST.json (hashes, cuts, source runs)
 examples/quickstart.py       end to end on an artificial building with the shipped checkpoints
-tests/                       176 tests: the anchoring layer's own tests, equivalence with the original package and the
+examples/own_unit.py         your own unit's record, on an artificial meter: a record that starts in the middle of a year,
+                             holidays, gaps, the history-only call, the interval and the anchoring record
+tests/                       196 tests: the anchoring layer's own tests, equivalence with the original package and the
                              research code, the carrier, the training recipe, the evaluation module, the comparison script
                              and the external-test table
 theory/                      the exact properties: P1-P20 (anchoring layer) and C1-C10 (carrier), proofs, operators, 58 checks
 evaluation/                  the scoring module, a runnable example, and the scripts that wrote results/ (need the study's data)
 results/                     every scored statistic (CSV / JSON), SUMMARY.md, the reproduction record; README.md lists the columns
-figures/                     make_figures.py and the figures (PDF and PNG), drawn from results/ (Figure 7 also from theory/)
+figures/                     make_figures.py, architecture.py (the drawing of Figure 1) and the figures (PDF and PNG), drawn
+                             from results/ (Figure 7 also from theory/)
 docs/                        METHOD.md (network, recipe, anchoring, constants), EVALUATION.md (protocol, baselines, full tables),
                              DATA.md (sources, preparation, splits, borrowed windows), EXTERNAL_TESTS.md (the external tests)
 tools/export_checkpoints.py  the export of the 27 checkpoints with their verification (needs the study's data)
-.github/workflows/tests.yml  CI: tests, theory checks, quickstart, evaluation example, figures (Python 3.10-3.13, CPU)
+.github/workflows/tests.yml  CI (Python 3.10-3.13, CPU): tests, theory checks, quickstart, own-unit example, evaluation
+                             example; the figures regenerated from results/ on Python 3.11
 pyproject.toml, LICENSE (MIT), CITATION.cff, README.zh-CN.md
 ```
 
@@ -175,9 +206,9 @@ python -B examples/quickstart.py
 
 - `pyproject.toml` gives lower bounds only: Python ≥ 3.10, NumPy ≥ 1.26, SciPy ≥ 1.11, PyTorch ≥ 2.4; optionally
   Matplotlib ≥ 3.8 for the figures.
-- CI (`.github/workflows/tests.yml`) runs both test suites, the quickstart and the evaluation example on Python 3.10,
-  3.11, 3.12 and 3.13 (Ubuntu, CPU-only PyTorch) and regenerates the figures on Python 3.11. The tests that need the
-  study's local data or the ANKYRA checkout skip there.
+- CI (`.github/workflows/tests.yml`) runs both test suites, the quickstart, the own-unit example and the evaluation
+  example on Python 3.10, 3.11, 3.12 and 3.13 (Ubuntu, CPU-only PyTorch) and regenerates the figures on Python 3.11.
+  The tests that need the study's local data or the ANKYRA checkout skip there.
 - The published figures were rendered with Python 3.11, Matplotlib 3.11.0 and NumPy 2.4.4
   ([figures/README.md](figures/README.md)). The quickstart and the code on this page were run on 19 October 2026 with
   Python 3.11, NumPy 2.4.4 and PyTorch 2.11 on the CPU, one thread.
@@ -261,11 +292,20 @@ The record, `ankyra_lite.anchor.History` (the anchoring layer's input record, un
 | `start_timestamp` | 1 January 00:00 of the first year with a `+00:00` offset, e.g. `"2019-01-01T00:00:00+00:00"` (a fixed-offset grid) | the annual phase of every token and the record's absolute time | the phase of the annual temperature harmonic and the daylight-saving state of analog days |
 | `observed` (optional) | Boolean mask of the load | masked hours are treated as missing | `False` hours are ignored |
 
+**A record that starts in the middle of a year.** Pad the load back to 1 January 00:00 of the first year with NaN, give
+a finite temperature for the padded hours too (archive temperature where it exists), write the day types of the padded
+days, and pass that 1 January 00:00 as `start_timestamp`. [`examples/own_unit.py`](examples/own_unit.py) does this end
+to end for an artificial meter that starts on 18 March 2019, with public holidays and three gaps, and runs the forecast
+with the shipped checkpoints (`cut=None`), the history-only configuration, the interval readout and the anchoring
+record (`python -B examples/own_unit.py`; details in [docs/DATA.md](docs/DATA.md#how-much-history)).
+
 The other arguments of `forecast(history, carriers, *, group, temp_sigma_std, dst_region="none", cut=None,
 state_rule="seasonal_naive", device="cpu", **anchor_kwargs)`:
 
 - `carriers`: one carrier network, a list of them (an ensemble, averaged), or a precomputed mapping
-  `{k: (744,) carrier forecast issued at origin − 744k}`.
+  `{k: (744,) carrier forecast issued at origin − 744k}`; `None` gives the **history-only configuration** (the
+  anchoring layer without a carrier: the historical level and daily path with the same-day-type within-day default; no
+  state rule; `carrier` is `{}`), the reduced configuration of contrast (ii).
 - `group`: `"Industrial"`, `"Office"`, `"Public"`, `"Residential"` or `"Commercial"`. It is both the carrier's category
   input and the anchoring layer's selector of a fixed temperature-signature prior. `"Commercial"` has no prior curve in
   the anchoring layer (a zero temperature signature), as in ANKYRA 2.2.1.
@@ -308,7 +348,18 @@ Attributes read through to the anchoring layer, as the quickstart prints them:
 | `analog_shape_kept` | `analog_kept` | `False` when the analog shape was implausibly large and the carrier's shape was used for the whole window |
 | — | `off_state`, `micro_load` | which state rule of the anchoring layer fired |
 | — | `anchoring_record` | two statistics of the unit's pseudo-forecast record on the level, not used by the forecast: `carrier_level_weight` and `history_vs_carrier_log_ratio` ([table](#history-length-and-the-anchoring-record)) |
-| `interval_80pct_first_hour_kw`, `interval_pseudo_windows` | `anchor.readouts.interval_bands`, `residual_quantiles` | an 80% interval from residual quantiles of the unit's history-only pseudo-forecasts, added to the trajectory; a separate call, not part of the forecaster; its coverage with this carrier is described under [Prediction intervals](#prediction-intervals) |
+| — | `daily_means_kw` | (31,) the daily means after the handover, before the nonnegativity projection; `level_kw` is their mean |
+| — | `fixed_division_daily_means_kw` | (31,) the **fixed division**: the historical level and daily path, without the carrier's level candidate and without the handover |
+| — | `within_day_kw` | (744,) the delivered within-day block: the carrier's within-day block mixed with the analog-day shape by the trust |
+| — | `foundation_within_day_kw` | (744,) the carrier's own within-day block (the field keeps the anchoring layer's name) |
+| — | `analog_shape_kw` | (744,) the unit's analog-day shape (the carrier's block where the plausibility guard fell back) |
+| `interval_80pct_first_hour_kw`, `interval_pseudo_windows` | `ankyra_lite.interval(history, r, group=..., temp_sigma_std=...)` | the 80% and 90% intervals (rows 1 and 3, 0 and 4 of the (5, 744) bands) from residual quantiles of the unit's history-only pseudo-forecasts, added to the trajectory; a separate readout, not part of the forecaster ([Readouts](#readouts)) |
+
+On a state window these fields describe the anchoring layer's return (the carrier's forecast, with the weights, the
+fixed division and the analog fields at their defaults), not the seasonal naive delivered by the default state rule.
+`np.repeat(r.daily_means_kw, 24) + r.within_day_kw` is the forecast before the projection
+(`ankyra_lite.readouts.raw_trajectory`), and `ankyra_lite.readouts.blocks` splits any trajectory into its three blocks.
+Every field is listed in [docs/METHOD.md](docs/METHOD.md#output-fields).
 
 **State windows.** When the last 168 hours are at or below 10⁻⁶ kW (off-state) or the whole 1,344-hour context stays
 within 10⁻³ kW of zero (micro-load), the anchoring layer hands back the carrier's forecast unchanged. With the default
@@ -316,12 +367,39 @@ within 10⁻³ kW of zero (micro-load), the anchoring layer hands back the carri
 the evaluated configuration. `state_rule=None` keeps the anchoring layer's return
 ([docs/METHOD.md](docs/METHOD.md#state-windows-and-the-seasonal-naive-rule)).
 
+### Readouts
+
+Three readouts come with a forecast, each from information available at the origin
+([docs/METHOD.md](docs/METHOD.md#readouts)):
+
+- **Energy** (`r.energy_kwh`): 744 × the level, read before the nonnegativity projection (P3). Where the projection
+  binds, the delivered trajectory holds more energy; `ankyra_lite.readouts.projection_energy_increase(r)` gives the
+  difference, which is known at the origin (P11–P12). The evaluation scores the delivered trajectory's mean for every
+  forecaster (the ANKYRA 2.2.1 release's definition) and the level readout as a sensitivity
+  ([Monthly energy](#monthly-energy-and-energy-through-the-month)).
+- **Peak** (`r.peak_kw`): U = max over days d of (L̂_d + A_τd), each forecast day's mean plus the largest excursion
+  (daily maximum minus daily mean) among the four most recent context days of the same day type. A day type absent
+  from the 56 context days takes the largest excursion of all of them, and an absent holiday type takes Sunday's.
+  Because maxima commute, U is an hour-wise envelope; U ≥ max_d L̂_d ≥ the level, and its error splits into level,
+  daily-path, amplitude and selection terms, so gains in the level carry into the peak (P15–P17).
+  `ankyra_lite.readouts.peak` applies the same readout to any trajectory ([results](#peak-readout)).
+- **Interval** (`ankyra_lite.interval(history, r, group=..., temp_sigma_std=...)`, a separate call): the hourly
+  residuals of the unit's own history-only pseudo-forecasts at up to 12 completed pseudo-origins, each divided by its
+  window's origin scale and pooled by hour of day and workday, give quantiles that are scaled by the origin scale and
+  added to the trajectory (clipped at zero, monotone across levels). The residuals do not involve the carrier
+  ([results](#prediction-intervals)).
+
 ### How much history
 
 - **The anchoring layer** needs the 1,344 hours before the origin completely observed. Its weights leave their priors
-  as completed pseudo-origins accrue (one 744-hour step each), and the candidates that use the window one year earlier
-  need 10,248 hours. Every test window of the evaluation had at least 9 complete 744-hour pseudo-origin windows
-  (`results/history_length.csv`: `K_eff` 9–11 on 451 windows, 12 on 5,265).
+  as completed pseudo-origins accrue (one 744-hour step each): with 2,088 complete hours the handover weights leave ½
+  (one completed pseudo-origin), with 2,832 the level weights leave equal weights (two), and the candidates that use
+  the window one year earlier need 10,248 hours ([the full list](docs/DATA.md#how-much-history)). Every test window
+  of the evaluation had at least 9 complete 744-hour pseudo-origin windows (`results/history_length.csv`: `K_eff`
+  9–11 on 451 windows, 12 on 5,265).
+- **Gaps.** Gaps of at most 6 hours inside one 744-hour block of the earlier record are interpolated in the copy the
+  anchoring layer's estimator reads (the short-gap rule); `ankyra_lite.fill_short_gaps(load_kw)` returns that copy for
+  a record of your own. The 1,344-hour context at the origin is never filled.
 - **The carrier** reads at most the last 366 days (daily tokens) and the 24 blocks of 744 hours before them; missing
   days and blocks are masked, so it runs on shorter records.
 - **With a checkpoint**, use origins at least 186 days after its training cut: then every pseudo-origin forecast the
@@ -385,7 +463,7 @@ ANKYRA 2.2.1, unchanged; it takes the carrier's forecasts where its code and doc
   [q, q + 744) of a pseudo-origin is already observed at o, so the layer can score the carrier against the unit's own
   history on months that have happened. `carrier_forecasts(..., origin=o, cut=C′)` computes exactly these forecasts,
   each from data before its own issue time, and drops any pseudo-origin before the cut.
-- **What it estimates per unit** ([docs/METHOD.md](docs/METHOD.md#what-the-layer-estimates-from-the-completed-pseudo-forecasts)):
+- **What it estimates per unit** ([docs/METHOD.md](docs/METHOD.md#how-the-anchoring-layer-uses-the-carrier)):
   - the **level weights**: the carrier's window mean as a seventh candidate beside six historical level candidates
     (recent, long-history and one-year-earlier means, with and without weather adjustment), inverse-error weights
     shrunk towards equal weights;
@@ -398,6 +476,35 @@ ANKYRA 2.2.1, unchanged; it takes the carrier's forecasts where its code and doc
   training label. With test origins at least 6 × 744 hours = 186 days after C′, q = o − 744k ≥ C′ for every k ≤ 6
   (property C10). Without the gap the per-unit weights would be estimated on in-sample carrier errors and would trust
   the carrier too much. The price is a carrier at least half a year older than it would be in use.
+- **How the handover works on these populations** (`handover_granularity.csv`, `lead_weeks.csv`, Figure 4d–f;
+  descriptive, on test windows read before). The weekly weights are estimated on the unit's completed pseudo-origins
+  from the **fixed division** (the history side's level and daily path) against the carrier, and are then applied to
+  the history side's daily means that include the carrier's level candidate
+  ([details](docs/METHOD.md#week-by-week-handover)).
+  - Here the carrier alone is better than the fixed division in nearly every forecast week: resolvably in at least one
+    week on six populations (Cambridge, HEEW, EWELD, the GoiEner households, Oslo, Drammen; −4.8% to −17.5% by week), not
+    resolved on BDG2, GoiEner non-household and CINELDI. The layer accordingly puts more than half of the daily means on
+    the carrier: the mean weekly weight is 0.49–0.54 on BDG2 and CINELDI and 0.53–0.73 elsewhere (½ without evidence).
+  - ankyra-lite improves on the fixed division on all nine populations in hourly error (+2.5% to +9.5%, each resolved)
+    and on four in monthly energy (Cambridge +18.7%, HEEW +15.0%, EWELD +23.2%, Oslo +21.4%). The fixed division also
+    lacks the carrier's level candidate and the within-day anchoring, so the gain is not the handover's alone.
+  - **Which part matters.** Mixing in the carrier's daily means at a fixed weight of one half already gives most of the
+    gain of the weekly weights over no handover: on the seven populations where that gain is resolved (+1.6% to +7.2%)
+    the fixed half weight gives 46% (BDG2) to 96% (Oslo) of it in log terms. Estimating the weights per unit from its
+    own pseudo-forecasts adds −0.2% to +1.4% over the fixed half (resolved on BDG2, +0.9%, and HEEW, +1.1%; never
+    resolvably worse), and separate weights for each week add nothing over one weight per window (−0.5% to −0.1%, none
+    resolved). What carries the gain is mixing the carrier's daily means into the history side, weighted by the unit's
+    own errors; the weekly weights describe how the balance shifts with lead time.
+  - **By forecast week** against the carrier alone, ankyra-lite is resolvably better in weeks 2–4 on BDG2 and in all
+    four weeks on CINELDI, resolvably worse in weeks 2 and 3 on the GoiEner households (−1.9% and −3.2%), and within
+    −2.9% to +4.1% without resolution elsewhere.
+  - **By forecast week against TimesFM** (same file), ankyra-lite is resolvably worse in week 1 on BDG2, HEEW, GoiEner
+    non-household and the households (on BDG2 also in week 2, on the households in every week) and resolvably better in
+    later weeks on Cambridge, Oslo, Drammen and CINELDI. The two BDG2 losses (−92.4% and −14.4%) describe a few meters,
+    not the population: in week 1 three meters (Lamb_office_Vasiliki, Lamb_assembly_Bertie, Lamb_office_Velma) read the
+    same small non-zero value over the whole week, which TimesFM repeats almost exactly, so their error ratios dominate
+    the unit mean; in week 2 two other meters with a constant reading play the same role
+    ([details](results/README.md#handover-within-day-trust-and-combinations)).
 
 ![One Cambridge test window](figures/fig6_example_window.png)
 
@@ -571,6 +678,10 @@ forecast inputs always use the load up to the origin.
   windows whose target month had no same-season training labels before the span return and has them after it.
 - **History-only configuration**: the anchoring layer without a carrier (`foundation=None`). **Carrier-free control**:
   the unchanged anchoring layer called with the history-only configuration's own forecasts in the carrier's place.
+- **Fixed division**: the history side alone for the level and the daily path (the historical estimator's level and
+  daily path, without the carrier's level candidate and without the handover) and the carrier's within-day block,
+  projected onto nonnegative load. The handover weights are estimated on it at the pseudo-origins
+  (`fixed_division_daily_means_kw`).
 - **Contrast (i)**: anchored against the carrier alone (does the unit's history help the carrier?). **Contrast (ii)**:
   anchored against the history-only configuration (is the carrier-enabled configuration better than history only?).
 - **Resolved**: the 95% interval of a contrast excludes zero. **Not resolved** does not mean equally good.
@@ -656,10 +767,30 @@ controls ([Limitations](#limitations)).
 ## Evaluation
 
 Every number in this section is a row of a file in [`results/`](results/README.md), written by the full regeneration
-of 19 October 2026 with the released recipe; each block names its file, and
+of 19 October 2026 with the released recipe and by its supplement of the same day (`compare_baselines.py
+--supplement`: the training budget, the handover arms, the whole-window weight, the generic partners, the level
+candidates, a year of context; no number of the full regeneration changed); each block names its file, and
 [`results/SUMMARY.md`](results/SUMMARY.md) is the readable summary of the same run. The figures are drawn from the same
 files by [`figures/make_figures.py`](figures/README.md). The complete tables and the protocol are in
 [docs/EVALUATION.md](docs/EVALUATION.md).
+
+![ankyra-lite against the four zero-shot foundation models on hourly error, monthly energy and the monthly peak](figures/fig0_advantage.png)
+
+*Figure 0. ankyra-lite against the four zero-shot foundation-model variants (TimesFM, TimesFM-X, Chronos-2,
+Chronos-2-X) on the test windows of every population, by the release's primary estimators: hourly error (a), monthly
+energy error (b) and the monthly peak against the same readout on each variant's trajectory (c). Improvement with 95%
+unit-and-month intervals; filled = resolved better, open = not resolved, red = resolved worse.*
+
+On monthly energy and on the monthly peak, no contrast with the four variants (36 per readout) is resolved against
+ankyra-lite: energy is resolved better in 16 (+17.2% to +39.2%; all four variants on Cambridge, the GoiEner households
+and Oslo, and four more on GoiEner non-household, Drammen and CINELDI) and the peak in 7 (+10.9% to +17.5%; all four
+on the households, three on Oslo), and the point estimates favour ankyra-lite in 30 and 32 of the 36. Hourly error is
+resolved better against all four variants on Cambridge (+8.7% to +15.6%) and Oslo (+15.0% to +25.4%) and against three
+on Drammen (+14.5% to +18.9%) and CINELDI (+7.8% to +9.8%; Chronos-2-X +5.0% and +6.0%, not resolved), not resolved
+either way on BDG2, HEEW, EWELD and GoiEner non-household (−5.8% to +4.0%), and resolved worse on the GoiEner
+households against TimesFM (−5.6%) and Chronos-2-X (−3.8%; TimesFM-X −1.9% and Chronos-2 −3.8% not resolved). How the
+hourly error moves from day to day, and why the per-day panels read differently, is under
+[By forecast day](#by-forecast-day).
 
 ### Read this first
 
@@ -719,8 +850,9 @@ Resolved better / resolved worse, out of the 21 baselines (`benchmark_pairwise.c
   resolved better (PatchTST and iTransformer-X are not), and the mean unit rank is 5.367 on the 139 units, first of 22
   (`bdg2_near_zero_sensitivity.csv`).
 - **Energy** is not resolved worse than any baseline on any population. Replacing the delivered trajectory's mean by
-  ankyra-lite's level readout gives the same counts; the two differ only where the nonnegativity projection binds
-  (BDG2 1, GoiEner non-household 142, households 29, Cambridge 9, EWELD 21, Drammen 2, CINELDI 33 windows).
+  ankyra-lite's level readout gives the same counts (`energy_level_readout.csv`); the two differ only where the
+  nonnegativity projection binds (BDG2 1, GoiEner non-household 142, households 29, Cambridge 9, EWELD 21, Drammen 2,
+  CINELDI 33 windows).
 - Counts of resolved contrasts are descriptive summaries over hundreds of intervals, not a multiplicity-adjusted test.
 
 ![Test-set ranks and head-to-head](figures/fig2_test_ranks.png)
@@ -826,6 +958,16 @@ over a fixed set of units; computed after scoring, descriptive):
 - **After the first week** its hourly loss is the lowest on 23 of the 24 days from day 8 on Cambridge, on 6 on HEEW,
   4 on BDG2 and 1 on EWELD, and on none on either GoiEner population, where zero-shot Chronos-2-X or Chronos-2 is
   lowest.
+- **What the per-day loss measures.** The table and Figures 9 and 10 use the release's per-day CV(RMSE) geometric
+  mean: each unit's RMS error over one day's 24 hours across its windows (on the households, one window per unit), in %
+  of its mean load, averaged over a fixed set of units on the log scale. It behaves more like an absolute-error measure
+  and favours lower, median-type forecasts, while the primary estimator, the hourly RMS over all 744 hours of each
+  unit's windows, weights days with large errors more. By the unit-mean RMSE in kW of the same file, ankyra-lite is the
+  lowest of the 22 on 21 of the 31 days on the GoiEner households (20 strictly; on day 17 it ties Chronos-2 at the
+  file's four decimals), 28 on Cambridge, 10 on BDG2, 7 on GoiEner non-household, 5 on HEEW and 2 on EWELD; by the
+  unit-mean MAE in kW it is the lowest on none of the 31 days on either GoiEner population. On the households the four
+  zero-shot variants forecast below the observed load (median-unit NMBE, observed minus forecast: +17.7% to +22.4%,
+  against +2.8% for ankyra-lite; `conventional_metrics_late.csv`).
 
 ![Loss by forecast day](figures/fig9_loss_by_day.png)
 
@@ -880,6 +1022,11 @@ U = max over days d of (L̂_d + A_τd), the day's forecast mean plus the largest
 - **Against last month's observed peak** (the maximum of the last 744 context hours): resolved better on Oslo (+27.4%)
   and resolved worse on CINELDI (−20.4%); elsewhere not resolved, from −35.8% (GoiEner non-household) to +15.4%
   (Drammen).
+- **Against the same readout on the carrier alone** (the three-seed carrier forecast at the origin, comparator `same
+  readout on the carrier alone`): not resolved on seven populations (−3.0% on BDG2 to +11.3% on EWELD) and resolved
+  worse on Oslo (−3.1%) and Drammen (−3.1%). The readout carries the daily means' gains into the peak (P16), but the
+  anchoring layer's gain over the carrier in the level is small here (monthly energy resolved on one population,
+  contrast (i)), and it does not show in the peak.
 
 ![Peak readout](figures/fig5_peak_operator.png)
 
@@ -965,6 +1112,10 @@ forecast bit for bit before any of them is used.
 | three-seed ensemble (against one seed; mean of three contrasts) | +0.8 | +0.8 | +0.3 | +1.5 | +1.9 | +0.6 | +1.8 | +1.4 | +0.8 |
 | released recipe (against the from-scratch stage alone) | +1.2 | +2.7 | +1.4 * | +1.7 * | +0.9 * | +1.1 | +2.2 * | −2.3 | +0.8 |
 | span return (against the same continuation without it) | +0.5 | +2.2 | +0.7 | +0.5 | −0.2 | −0.3 | +0.1 | −2.9 (−) | +0.3 |
+| the carrier's level candidate, the handover and the within-day anchoring (against the fixed division) | +2.8 * | +5.1 * | +2.5 * | +8.3 * | +7.9 * | +9.5 * | +9.2 * | +7.0 * | +2.9 * |
+| weekly handover weights (against a fixed half weight) | +0.9 * | −0.2 | +0.4 | +1.3 | +1.1 * | +1.4 | +0.2 | +0.4 | +0.0 |
+| block-wise weights (against one whole-window weight of the same two forecasts) | −0.4 | −0.8 | +1.4 * | +0.5 | +0.0 | +0.7 | +0.5 | −0.3 | −0.3 |
+| block-wise weights (against a half-and-half average of the same two forecasts) | +0.7 * | +1.6 | +3.8 * | +3.8 * | +3.1 * | +3.5 * | +2.4 * | +0.6 | +0.1 |
 
 - **Contrast (i)**, the whole anchoring layer against the carrier alone, is resolved on two populations in hourly error
   and on one in monthly energy (CINELDI +7.8%); on the households it is −1.0% (not resolved). **Contrast (ii)**, against
@@ -979,12 +1130,60 @@ forecast bit for bit before any of them is used.
   without the pointer, trained on weekly windows, by +1.1% to +10.4% (resolved on six).
 - The intervals of these rows resample units and months only; the recipe rows with the seed layer are under
   [Recipe history](#recipe-history-how-r-was-chosen-and-its-negatives).
+- **Where the within-day anchoring acts** (`within_day_trust.csv`). On the eight non-household populations the trust on
+  the unit's analog-day shape averages 0.14–0.22 (cap ½) and is positive on 76–90% of the anchored windows; on the
+  GoiEner households it averages 0.06 (median 0, positive on 43%), so there the carrier's within-day shape is mostly
+  kept, consistent with the −0.1% of that row. The plausibility guard keeps the analog shape on 94–100% of the windows.
+- The four rows added last are rebuilt from the anchoring layer's own fields of every window (`evaluation/lite_reanchor.py`,
+  mode `fields`; the rebuilt weekly weights, trust, level weights and daily means equal the layer's own exactly, and the
+  arm with the weekly weights reproduces the delivered forecast bit for bit). The handover rows are discussed under
+  [How the anchoring layer uses the carrier](#how-the-anchoring-layer-uses-the-carrier).
+
+**Block-wise weighting against one whole-window weight.** This control takes up one alternative explanation of the
+gain: that it comes from weighting the level, daily path and within-day blocks separately. It combines the same two
+forecasts as the anchoring layer, the history side (the fixed-division daily means plus the analog-day shape) and the
+carrier, with **one** least-squares weight per window for the whole 744 hours, set from the unit's own completed
+pseudo-forecasts (the handover pairs and the trust triples) and shrunk towards ½; the ANKYRA 2.2.1 release calls it B2, and the
+half-and-half average B1. The mean weight on the carrier is 0.55–0.71.
+
+- In hourly error the one whole-window weight is within ±1.4% of ankyra-lite: ankyra-lite is resolvably better only on
+  the GoiEner households (+1.4%), and the other eight populations are not separated (−0.8% to +0.7%). In monthly energy
+  no population is separated (−2.7% to +2.4%).
+- The half-and-half average is weaker: ankyra-lite is resolvably better than it on six populations in hourly error
+  (+0.7% to +3.8%) and on none in monthly energy.
+- Read: block-wise weighting is not a necessary explanation of the gain on these populations. What the comparison
+  leaves standing is the history-side forecast and the weighting by the unit's own pseudo-forecast errors; the block
+  decomposition remains the exact identity used for interpretation, the readouts and diagnosis (P1). The control tests
+  the layer's own block-wise weighting against its own whole-window special case; it says nothing about other ways of
+  weighting by block.
+
+**Generic combination partners** (`generic_combinations.csv`). Does the history side supply more than a generic local
+forecast would? B2(X) is the same whole-window combination with the history side replaced by X: the weekly seasonal
+naive, the four-week profile or the last-year profile, each computed from the load before every pseudo-origin; EW(X)
+is the equal-weight average of the carrier and X (X also the per-unit ridge or MSTL). Populations, of nine, first-named
+resolved better / not resolved / resolved worse:
+
+| Contrast | Hourly | Monthly energy |
+|---|---|---|
+| B2(history side) vs B2(seasonal naive, week) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(history side) vs B2(four-week profile) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(history side) vs B2(last-year profile) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(history side) vs the best B2(X) | 0 / 9 / 0 | 0 / 9 / 0 |
+| B2(history side) vs the best equal-weight average | 1 / 8 / 0 | 0 / 8 / 1 |
+| ankyra-lite vs the best of all of them | 0 / 9 / 0 | 0 / 8 / 1 |
+
+"Best" was picked after scoring, per population and error, which favours the generic side. Against each of the three
+generic forecasters in the same combination the history side is resolvably better (four contrasts) or not separated;
+against the best of them it is not separated on any population. The one resolved loss is monthly energy on Drammen,
+against the equal-weight average of the carrier and the per-unit ridge (−16.6%; ankyra-lite −16.9%).
 
 ![Ablation](figures/fig4_ablation.png)
 
 *Figure 4. ankyra-lite against reduced and alternative versions of itself (hourly error): parts of the anchoring layer
 and the state rule switched off, the carrier alone and the history-only configuration (a); one seed instead of three
-(b); earlier carriers and the other recipe arms inside the same anchoring layer (c).*
+(b); earlier carriers and the other recipe arms inside the same anchoring layer (c); the handover arms and one
+whole-window weight (d); ankyra-lite and the fixed division against the carrier alone by forecast week (e); the mean
+handover weight on the carrier by week (f).*
 
 ### Seeds
 
@@ -1070,6 +1269,15 @@ unit's history beat the carrier at earlier pseudo-origins (+9.5%, +8.0%; the hou
 +2.5%). Neither statistic orders the gain monotonically, and the carrier weight is the layer's own weight, so its
 association with the gain is partly mechanical.
 
+**How often the pseudo-forecasts pick the best level candidate** (`level_candidate_hit_rate.csv`, P20; descriptive).
+The level candidate with the largest weight, i.e. the smallest error at the unit's completed pseudo-origins, is the
+candidate whose window mean is closest to the realised one on 20.9% of the windows pooled over the nine populations,
+against 14.4% by chance among the seven candidates (difference +6.5 points, 95% unit bootstrap +5.4 to +7.6); 17.3% to
+24.8% per population, with the difference resolved on seven (not on EWELD and CINELDI). Among the six historical
+candidates alone it is 23.3% against 16.9%. The carrier's window mean has the largest weight on 38–71% of the windows
+and is the closest candidate on 17–28%. The pseudo-origin errors thus carry some information about which candidate
+will be best, little in absolute terms, which is what the strong shrinkage of the level weights assumes.
+
 ### Robustness to corrupted contexts
 
 `robustness.csv`: 64 Drammen test windows (43 units) re-forecast on the CPU with the released checkpoints from a
@@ -1091,6 +1299,54 @@ Change of the hourly RMS error against the clean context (positive = worse):
   no record crosses a state threshold (the thresholds are absolute values in kW).
 - The spike moves the peak readout by a median of +998%: the readout takes the largest recent excursion.
 - No state rule fired on any corrupted context.
+
+### Robustness: training budget of the trained baselines
+
+One explanation of the comparisons with trained models would be that they were held back by a small training budget.
+The ANKYRA 2.2.1 release retrained DLinear, iTransformer, LSTM and PatchTST on each population with at most 30 epochs and
+early-stopping patience 8 in place of 15 and 3 (one relaxation, fixed before training; cutoff, training pairs,
+selection set, learning-rate grid and seeds unchanged). `results/training_budget_sensitivity.csv` scores those saved
+forecasts against ankyra-lite on the same test windows (nothing was retrained here):
+
+- **Hourly error:** all 36 verdicts (nine populations × four models) are unchanged, 30 resolved in favour of
+  ankyra-lite and 6 not resolved as before; no point estimate changes sign, and with the four relaxed models in place
+  of the originals ankyra-lite is still first by mean unit rank on every population.
+- **Monthly energy:** 34 of 36 verdicts unchanged. On CINELDI the contrast with iTransformer becomes resolved (+13.9% →
+  +14.4%) and the one with LSTM is no longer resolved (+27.0% → +10.1%); two point estimates change sign without being
+  resolved (EWELD, iTransformer −0.4% → +4.8%; Drammen, PatchTST +4.5% → −0.3%).
+- **The models themselves:** the LSTM improves resolvably on seven populations (+2.0% to +11.9% against its original),
+  and on Cambridge and GoiEner non-household its selected epoch is the 30th, so the larger budget may still be too small
+  for it. 14 of the 36 relaxed models select the same learning rate and epoch and repeat the original forecast, and three
+  are resolvably worse than their originals on the test windows (DLinear on EWELD and the households, iTransformer on
+  EWELD).
+
+The verdicts held under this one relaxation. It is one alternative budget, not a search over budgets; the
+covariate-informed trained models were not retrained, and LSTM-T-KAN-M was trained with 30 epochs and patience 8
+already ([details](docs/EVALUATION.md)).
+
+### Foundation models with a year of context
+
+Zero-shot TimesFM 2.5 with an 8,736-hour (52-week) context and Chronos-2 with 8,192 hours, the limit of its
+configuration, scored as two further baselines outside the 22 forecasters and their ranks
+(`results/long_context_baselines.csv`; saved forecasts of the ANKYRA 2.2.1 release; where the record is shorter the longest
+completely observed run of hours ending at the origin, at least 5,809 hours on these windows). Populations, of nine,
+ankyra-lite resolved better / not resolved / resolved worse:
+
+| Against | Hourly | Monthly energy |
+|---|---|---|
+| TimesFM-8736 | 4 / 3 / 2 | 4 / 5 / 0 |
+| Chronos-2-8192 | 4 / 4 / 1 | 4 / 5 / 0 |
+| TimesFM (1,344 hours, main tables) | 4 / 4 / 1 | 6 / 3 / 0 |
+| Chronos-2 (1,344 hours, main tables) | 4 / 5 / 0 | 3 / 6 / 0 |
+
+- With a year of context TimesFM has resolvably lower hourly error than ankyra-lite on BDG2 (−7.9%) and the GoiEner
+  households (−6.3%), and Chronos-2 on the households (−6.2%); ankyra-lite is resolvably better than both on Cambridge,
+  Oslo, Drammen and CINELDI (+6.9% to +25.2%).
+- The longer context helps TimesFM resolvably on four populations (Cambridge, GoiEner non-household, Drammen, CINELDI:
+  +3.1% to +6.6% hourly) and Chronos-2 on the households (+4.4%); Chronos-2 with 8,192 hours is resolvably worse than
+  with 1,344 on BDG2 and EWELD.
+- On BDG2 ankyra-lite's contrasts leave out the three near-zero meters, on which its error is exactly zero, as in the
+  main tables; the contrasts of the two TimesFM contexts keep them.
 
 ### Cost per window
 
@@ -1188,6 +1444,9 @@ Against the external baselines, on these test windows:
   estimates against last month's peak are −35.8% and −20.2%.
 - **Intervals against Chronos-2.** The interval placed around ankyra-lite is resolvably worse than Chronos-2's native
   quantiles on EWELD, GoiEner non-household and CINELDI (80% Winkler score).
+- **A year of context for the foundation models.** Zero-shot TimesFM 2.5 with an 8,736-hour context has resolvably
+  lower hourly error on BDG2 (−7.9%) and the households (−6.3%), Chronos-2 with 8,192 hours on the households (−6.2%)
+  ([details](#foundation-models-with-a-year-of-context)).
 
 Weaknesses of its own design are reported where they arise: the recipe's losses on Drammen and on forecast days 2–7
 ([Recipe history](#recipe-history-how-r-was-chosen-and-its-negatives)) and the effect of a spike in the context
@@ -1221,8 +1480,12 @@ Weaknesses of its own design are reported where they arise: the recipe's losses 
   and test sets of 5–8 months of one year.
 - **Recency.** The carrier's training labels end at C′, the trained baselines' at C, 186 days later; this is the price
   of out-of-sample pseudo-origins.
-- **Baselines.** The release's trained baselines have a budget of 15 epochs with patience 3, LSTM-T-KAN-M 30 and 8; the
-  verdicts were not re-checked here under a larger budget. The linear-context model's covariates are inert. GBT-T
+- **Baselines.** The release's trained baselines have a budget of 15 epochs with patience 3, LSTM-T-KAN-M 30 and 8.
+  Under one relaxed budget (30 epochs, patience 8) the 36 hourly verdicts of DLinear, iTransformer, LSTM and PatchTST
+  were unchanged and two of 36 energy verdicts changed ([training budget](#robustness-training-budget-of-the-trained-baselines));
+  it is one alternative budget, not a search, and the covariate-informed trained models were not retrained. With a
+  year of context zero-shot TimesFM 2.5 is resolvably better in hourly error on BDG2 and the households
+  ([a year of context](#foundation-models-with-a-year-of-context)). The linear-context model's covariates are inert. GBT-T
   overshoots on EWELD. LSTM-T-KAN-M is not a strict reproduction of its paper ([ten deviations](#baselines)).
 - **Intervals** are descriptive; the interval readout was not designed or tuned for this carrier.
 - **Training is not bitwise repeatable** on a GPU. Three seeds are averaged and their spread is reported, but the
@@ -1334,7 +1597,7 @@ r = forecast(history, carriers, group="Public", temp_sigma_std=sigma, dst_region
 `pytest` is not required; the tests use `unittest`. From the repository root:
 
 ```bash
-python -m unittest discover -s tests -t .      # 176 tests
+python -m unittest discover -s tests -t .      # 196 tests
 python -m unittest discover -s theory -t .     # 58 checks of the exact properties
 ```
 
@@ -1345,19 +1608,21 @@ python -m unittest discover -s theory -t .     # 58 checks of the exact properti
 | `tests/test_carrier_unit.py` | 14 | parameter count, shapes, no read at or after the issue time, the pseudo-origin rule, the ensemble, the end-to-end forecast, the state rule |
 | `tests/test_carrier_equivalence.py` | 7 | features, initialisation and forecasts against the research code and the stored forecasts (needs the study's data) |
 | `tests/test_train.py` | 19 | sampler, splits, caps, pools, the returned span and one optimisation step of each stage against the research training loop (part needs the study's data) |
-| `tests/test_compare_baselines.py` | 33 | the comparison script's guards, the products, the checkpoint export, and the result files: columns, forecaster set, flags, labels, no absolute paths (part needs the ANKYRA release files, the study's data or `results/`) |
+| `tests/test_compare_baselines.py` | 40 | the comparison script's guards, the products, the checkpoint export, and the result files: columns, forecaster set, flags, labels, no absolute paths; the files and rows added on 19 October 2026 (training budget, handover arms, lead weeks, within-day trust, the added ablation, component and peak rows) with the gates of the fields cache and of the handover rebuild (part needs the ANKYRA release files, the study's data or `results/`) |
+| `tests/test_readouts_lite.py` | 13 | the readouts around a forecast (interval, blocks, raw trajectory, energy added by the projection, peak), the history-only configuration, the fields read through to the anchoring layer, no information after the origin end to end, the top-level names and the two examples (synthetic data, untrained carrier) |
 | `tests/test_evaluation.py` | 15 | the scoring module on artificial data |
 | `tests/test_external_tables.py` | 12 | the external-test table: columns, forecaster names, no absolute path, the sealed Helsinki set never read, equality with the score records field by field, no contrast of the scorer's other output files, the primary table of docs/EXTERNAL_TESTS.md (part needs the study's score records) |
 | `theory/test_operators.py`, `theory/test_carrier_properties.py` | 31, 27 | P1–P20 and C1–C10, counterexamples included |
 
 On the author's machine, with the ANKYRA checkout and the study's data available and on the regenerated `results/`
-(19 October 2026, CPU, one thread), 175 of the 176 tests passed and 1 skipped, and all 58 theory checks passed. The
+(19 October 2026, CPU, one thread), 195 of the 196 tests passed and 1 skipped, and all 58 theory checks passed. The
 skipped test compares the hourly numbers with the earlier hourly-only comparison, which scored the from-scratch stage,
 not the released products. Tests that need the ANKYRA checkout or the study's data skip with a reason where those are
 absent (as on CI): with the study's research folder unavailable (the ANKYRA checkout and `results/` present), the same
-day's run gave 147 passed and 29 skipped of 176, and 58 of 58 theory checks passed. Environment variables: `ANKYRA_ORIGINAL_ROOT` (the ANKYRA checkout), `ANKYRA_LITE_RESEARCH_ROOT`
-(the study's research folder), `ANKYRA_LITE_RESULTS` (another result directory to check) and
-`ANKYRA_LITE_TEST_MIN_FREE_GB` (the free memory a data-loading test waits for).
+day's run gave 167 passed and 29 skipped of 196, and 58 of 58 theory checks passed. Environment variables:
+`ANKYRA_ORIGINAL_ROOT` (the ANKYRA checkout), `ANKYRA_LITE_RESEARCH_ROOT` (the study's research folder),
+`ANKYRA_LITE_RESULTS` (another result directory to check) and `ANKYRA_LITE_TEST_MIN_FREE_GB` (the free memory a
+data-loading test waits for).
 
 ## Theory: exact properties
 
@@ -1419,6 +1684,10 @@ accuracy is measured.
 
 ## Version history
 
+- **0.1.1 (19 October 2026)** — the readouts API (`ankyra_lite.readouts`), the history-only configuration
+  (`forecast(history, None)`), the own-unit example (`examples/own_unit.py`), the supplementary analyses (handover,
+  lead weeks, within-day trust, training budget, generic combinations, a year of context), Figure 0 (advantage summary)
+  and a redrawn Figure 1. The forecasts, checkpoints and results of 0.1.0 are unchanged.
 - **0.1.0 (19 October 2026)** — first version. The copy-pointer carrier network (61,613 parameters) with the byte-identical
   ANKYRA 2.2.1 anchoring layer and the seasonal-naive state rule; the released training recipe R (stage 1 from scratch
   with early stopping on the 93-day validation span, stage 2 with the span returned for 8 epochs; three seeds); the 27
@@ -1448,6 +1717,19 @@ accuracy is measured.
   and the Suzhou industrial park (training windows only), each under CC BY 4.0; sources and preparation in
   [docs/DATA.md](docs/DATA.md). None is redistributed; the checkpoints contain weights fitted on these data, not the
   data. The example window in `results/` is from the University of Cambridge estate archive (CC BY 4.0).
+- **Data of the external tests** ([docs/EXTERNAL_TESTS.md](docs/EXTERNAL_TESTS.md)): Low Carbon London smart-meter
+  households (UK Power Networks, London Datastore, Creative Commons Attribution); UNICON (La Trobe University;
+  CC BY-NC-SA 4.0, research use only, so neither the data nor carriers trained on them are in this repository); the
+  HKUST smart-meter database (Dryad, CC0); GoiEner households out of time (the GoiEner archive, CC BY 4.0). None is
+  redistributed. The HKUST and UNICON temperatures are ERA5 reanalysis: Contains modified Copernicus Climate Change
+  Service information [2026]; ERA5 hourly data (Hersbach et al., 2020, doi:10.1002/qj.3803; dataset
+  doi:10.24381/cds.adbb2d47) retrieved through the Open-Meteo historical weather API (Zippenfenig,
+  doi:10.5281/zenodo.7970649, CC BY 4.0).
+- **References** for the two contrasts of [At a glance](#at-a-glance) (forecast encompassing):
+  - Chong, Y. Y., Hendry, D. F. (1986). Econometric evaluation of linear macro-economic models. *Review of Economic
+    Studies* 53(4), 671–690.
+  - Harvey, D. I., Leybourne, S. J., Newbold, P. (1998). Tests for forecast encompassing. *Journal of Business &
+    Economic Statistics* 16(2), 254–259.
 - **Citation.** [CITATION.cff](CITATION.cff); please also cite ANKYRA (listed there under references). An archive DOI
   has not been assigned yet.
 

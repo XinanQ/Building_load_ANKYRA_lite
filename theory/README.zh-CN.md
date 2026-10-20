@@ -90,7 +90,23 @@ python -m unittest discover -s theory -t .
 - **电量与非负（P11–P13）。** 截断不会让任何一个小时变差，但没有映射能同时保持电量、非负和不增误差，所以电量在截断之前读出。（在关停窗口和微负荷窗口上，锚定层原样返回载体的轨迹，不做截断；ankyra-lite 的默认状态规则这时改为交付周季节朴素预测。）
 - **峰值（P14–P18）。** 平滑预测的最大值会低估峰值，所以峰值从历史偏移包络读出；它有精确的标量形式、误差分解，以及在写明的工作分布下的中位数性质。
 - **估计目标（P19）。** 合并汇总和单位等权汇总可能因代数原因符号相反，所以结果文件并列报告单位等权 log 比、合并 MSE 比、平均单位排名和常规指标。
-- **证据界（P20）。** 聚合的极小极大速率是最坏情形的结果：七个水平候选、至多六个伪起报点误差时，它按量级占误差方差的可观比例。它为强收缩权重提供统计背景；它不是在这批数据上的测量，单凭它也不能说明这里的候选无法区分（[PROOFS.md](PROOFS.md#evidence-bound)）。锚定层报告的记录统计量（`anchoring_record`）是描述性指标；预测器不声称选出了最好的候选。
+- **证据界（P20）。** 聚合的极小极大速率是最坏情形的结果：七个水平候选、至多六个伪起报点误差时，它按量级占误差方差的可观比例。它为强收缩权重提供统计背景；它不是在这批数据上的测量，单凭它也不能说明这里的候选无法区分（[PROOFS.md](PROOFS.md#evidence-bound)）。在测试窗口上，权重最大的候选在起报时刻是最好候选的频率高于随机水平，但大约只有五个窗口中的一个（`results/level_candidate_hit_rate.csv`）。锚定层报告的记录统计量（`anchoring_record`）是描述性指标；预测器不声称选出了最好的候选。
 - **载体（C1–C10）。** 载体交给锚定层的是一条非负、均值等于其水平的轨迹（C1–C3），只用每个起报时刻之前的数据，并且不受占位值影响（C4–C6），按负荷自身的尺度、没有单位标识（C7、C8）。它的复制指针重塑一个月的形状但不移动水平，并从基础网络出发（C9）。训练截止点与测试集之间留出 186 天，锚定层拿单位自己的历史给伪起报点预测评分时，每一个都对载体是样本外的（C10）；锚定层按单位定权正是以此为前提。
+
+## 本仓库测量的后果
+
+这些性质对任意权重成立；本仓库的结果文件在测试窗口上测量了其中某条性质的后果时，文件列在下表，并在 [PROOFS.md](PROOFS.md) 的相应陈述里注明。这些读数都是描述性的；数字及其解读见 [docs/EVALUATION.md](../docs/EVALUATION.md)。
+
+| | 测量的内容 | 文件 |
+|---|---|---|
+| P1 | ankyra-lite 与各基线的逐时平方误差中每一块所占的份额 | [`results/block_shares.csv`](../results/block_shares.csv)；图 [14](../figures/fig14_block_attribution.png) |
+| P4 | 用锚定后的块替换载体的块：ankyra-lite 对单独载体的逐块对比；一个窗口上的精确替换 | [`results/contrast_ii_blocks.csv`](../results/contrast_ii_blocks.csv)（`anchored vs carrier alone`）；图 [7a](../figures/fig7_operators.png) |
+| P5、P10 | 交接对固定分工和固定权重（不加权、½、每个窗口一个最小二乘权、分周权重）的对比，以及按预测周估计出的权重 | [`results/handover_granularity.csv`](../results/handover_granularity.csv)、[`results/lead_weeks.csv`](../results/lead_weeks.csv) |
+| P7 | 按起报前记录长度和 K_eff 分层的 ankyra-lite | [`results/history_length.csv`](../results/history_length.csv) |
+| P11、P12 | 投影起作用的窗口，以及改用水平读出时的电量对比 | [`results/energy_level_readout.csv`](../results/energy_level_readout.csv) |
+| P15 | 峰值读出对轨迹最大值、上一窗口峰值以及各基线上同一读出的对比 | [`results/peak_readout.csv`](../results/peak_readout.csv) |
+| P16 | 单独载体上的同一读出：锚定后的日均值是否传到峰值 | [`results/peak_readout.csv`](../results/peak_readout.csv)（`same readout on the carrier alone`） |
+| P19 | 并列报告单位等权 log 比、合并 MSE 比、平均单位排名和常规指标 | `results/benchmark_pairwise.csv`、`benchmark_mean_unit_rank.csv`、`conventional_metrics_late.csv` |
+| P20 | 权重最大的水平候选的命中率对随机水平；锚定记录对实现收益 | [`results/level_candidate_hit_rate.csv`](../results/level_candidate_hit_rate.csv)、[`results/anchoring_gain_deciles.csv`](../results/anchoring_gain_deciles.csv) |
 
 P1–P20 及其文件来自 ANKYRA 2.2.1 的理论文件夹，只把导入从 `ankyra` 改为 `ankyra_lite.anchor`。该理论里的数据证据（来自方法早期开发和 ANKYRA 研究，载体是 TimesFM 2.5）不是本仓库的结果，已删去；本仓库结果文件测过后果的，PROOFS.md 注明该文件。C1–C10 和 `test_carrier_properties.py` 是新增的。
