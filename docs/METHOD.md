@@ -1,23 +1,31 @@
 # Method
 
-This document describes ankyra-lite 0.1.1 (its forecasts, checkpoints and results are those of 0.1.0): a small carrier network, trained per population, whose forecasts at the
-origin and at six pseudo-origins go into an unchanged copy of the ANKYRA 2.2.1 anchoring layer. Every number below was
-checked against the code: `ankyra_lite/carrier/model.py`, `features.py`, `inference.py` and `train.py`,
-`ankyra_lite/forecast.py`, and the anchoring layer `ankyra_lite/anchor/` (a byte-identical copy;
-[PROVENANCE.md](../ankyra_lite/anchor/PROVENANCE.md)). The exact properties of both parts, with proofs and numerical
-checks, are in [theory/PROOFS.md](../theory/PROOFS.md) (P1–P20 for the anchoring layer, C1–C10 for the carrier).
+This document describes ankyra-lite 0.2.0 (recipe Rw, six seeds, the continuation layer on): a small carrier network,
+trained per population, whose forecasts at the origin and at six pseudo-origins go into an unchanged copy of the
+ANKYRA 2.2.1 anchoring layer, followed by the seasonal-naive state rule and the origin-continuity layer, which corrects
+the first hours and days of the anchored trajectory toward the last observed hours. Every number below was checked
+against the code: `ankyra_lite/carrier/model.py`, `features.py`, `inference.py` and `train.py`,
+`ankyra_lite/forecast.py`, `ankyra_lite/continuation.py`, `ankyra_lite/readouts.py` and the anchoring layer
+`ankyra_lite/anchor/` (a byte-identical copy; [PROVENANCE.md](../ankyra_lite/anchor/PROVENANCE.md)). The release
+switches (the default of the continuation layer, the recipe and the seeds of the default checkpoints) are in
+`ankyra_lite/_release.py`; with the layer off, the 0.1 checkpoints (recipe R) and seeds 0–2, the package gives the
+forecasts of 0.1.1 bit for bit. The exact properties of the three parts, with proofs and numerical checks, are in
+[theory/PROOFS.md](../theory/PROOFS.md) (P1–P20 for the anchoring layer, C1–C14 for the carrier and its training
+recipe, O1–O9 for the continuation layer).
 
 Contents: [Information at the origin](#information-at-the-origin) · [The carrier network](#the-carrier-network)
 ([inputs](#inputs) · [encoder](#encoder) · [read-out](#read-out) · [energy-budget decoder](#energy-budget-decoder) ·
 [copy pointer](#copy-pointer) · [parameters](#parameters)) · [Training](#training) ([windows and split](#windows-and-split) ·
 [pooled training set](#pooled-training-set) · [sampler](#sampler) · [loss](#loss) · [optimisation](#optimisation) ·
 [early stopping](#stage-1-early-stopping) · [span return](#stage-2-the-validation-span-returned) ·
+[loss weights of recipe Rw](#stage-2-of-recipe-rw-inverse-noise-loss-weights) ·
 [seeds](#seeds-and-ensemble) · [released weights](#released-weights) · [other recipes](#other-recipes-in-the-package)) ·
 [How the anchoring layer uses the carrier](#how-the-anchoring-layer-uses-the-carrier)
 ([pseudo-origins](#pseudo-origins) · [three orthogonal blocks](#three-orthogonal-blocks) · [level](#level) ·
 [centred daily path](#centred-daily-path) · [within-day shape](#within-day-shape) ·
 [week-by-week handover](#week-by-week-handover) · [short-gap rule](#short-gap-rule)) ·
-[State windows](#state-windows-and-the-seasonal-naive-rule) · [Readouts](#readouts) · [Output fields](#output-fields) ·
+[State windows](#state-windows-and-the-seasonal-naive-rule) · [The continuation layer](#the-continuation-layer) ·
+[Readouts](#readouts) · [Output fields](#output-fields) ·
 [Inference cost](#inference-cost) · [Constants](#constants) · [What is not claimed](#what-is-not-claimed)
 
 ## Information at the origin
@@ -35,7 +43,17 @@ A forecast at origin o is a function of the following, and nothing else:
 - the carrier's weights, fitted on labels that end before the training cut, at least 186 days before the first test
   origin;
 - the carrier's forecasts issued at o and at each pseudo-origin q = o − 744k (k = 1 … 6), each built from data before q
-  only.
+  only;
+- the four constants of the continuation layer, fitted once on development windows before 0.2.0 was frozen and shared
+  by every population; the layer itself reads the last 672 hours of load before the origin, the day type of the last
+  observed day and those of the first seven forecast days (O3);
+- the carrier's loss weights in training (recipe Rw), computed from each training window's own last 28 context days
+  before its origin and from the sampler's draw probabilities (C14); they enter only through the carrier's weights,
+  which are fitted on labels that end before the training cut.
+
+The continuation layer adds no information after the origin: it is a function of the trajectory the anchoring layer
+delivers, of load before the origin and of the calendar of the first forecast week, which ankyra-lite treats as known
+at the origin like the rest of the forecast month's calendar.
 
 The carrier's weights are fitted once per population and are not changed by a forecast. The anchoring layer estimates
 its per-unit quantities (candidate weights, handover weights, within-day trust, temperature signature) at every origin
@@ -65,8 +83,9 @@ its test windows start on 2017-08-01, after those windows end. The prior can sti
 the oldest test windows of other populations (Cambridge's test set starts in July 2013).
 
 Checks in the code: [`tests/test_carrier_unit.py`](../tests/test_carrier_unit.py) (no read at or after the origin, the
-pseudo-origin rule), the anchoring layer's own [`tests/anchor/test_no_future_information.py`](../tests/anchor/test_no_future_information.py)
-and properties C4 and C10 in [theory](../theory/README.md). These establish input isolation in the implementation. They
+pseudo-origin rule), the anchoring layer's own [`tests/anchor/test_no_future_information.py`](../tests/anchor/test_no_future_information.py),
+[`tests/test_forecast_v2.py`](../tests/test_forecast_v2.py) (no information after the origin with the continuation
+layer) and properties C4, C10, C14 and O3 in [theory](../theory/README.md). These establish input isolation in the implementation. They
 do not show that the inputs carry no later information: two calendars announced holidays after some test origins
 ([DATA.md](DATA.md#calendar-caveat-holidays-announced-after-the-origin)), and providers' gap filling and later revisions
 of weather archives lie upstream of the package.
@@ -201,11 +220,12 @@ into the shape and the daily means) came from an analysis of the errors on the t
 
 ## Training
 
-One carrier is trained per target population P, with three seeds. Every constant of the recipe is a field of
-`ankyra_lite.carrier.train.TrainConfig`; `recipe(name, init_checkpoint)` builds the named configurations. The released
-recipe of version 0.1.0 has two stages: stage 1 is `recipe("from_scratch")` (= `TrainConfig()`; labelled `P3s` in
-`results/recipe_history.csv`, where it is the starting point of every arm) and stage 2 is
-`recipe("span_return", <stage-1 checkpoint>)` (labelled `R` there). Stage 1 alone is not the released recipe.
+One carrier is trained per target population P, with six seeds (three in version 0.1). Every constant of the recipe
+is a field of `ankyra_lite.carrier.train.TrainConfig`; `recipe(name, init_checkpoint)` builds the named configurations.
+The released recipe of version 0.2.0, recipe Rw, has two stages: stage 1 is `recipe("from_scratch")` (= `TrainConfig()`;
+labelled `P3s` in `results/recipe_history.csv`, where it is the starting point of every arm) and stage 2 is
+`recipe("span_return_weighted", <stage-1 checkpoint>)`, recipe R's stage 2 (`recipe("span_return", ...)`, labelled `R`
+there, released in 0.1.0) with inverse-noise loss weights. Stage 1 alone is not the released recipe.
 
 ### Windows and split
 
@@ -297,14 +317,88 @@ Starting from the kept stage-1 weights of the same seed:
    description only (its windows now lie inside the training data).
 
 Why the second stage exists, and what it changed and did not change on the test windows, is in
-[EVALUATION.md](EVALUATION.md#why-the-recipe-returns-the-validation-span).
+[EVALUATION.md](EVALUATION.md#why-the-recipe-returns-the-validation-span). This is recipe R's stage 2; recipe Rw, the
+released recipe of 0.2.0, adds the loss weights below.
+
+### Stage 2 of recipe Rw: inverse-noise loss weights
+
+Recipe Rw is recipe R with one change, in stage 2 only: each training window carries a weight in the loss
+(`recipe("span_return_weighted", <stage-1 checkpoint>)`, also `recipe("Rw", ...)`; `TrainConfig.noise_weighting =
+NoiseWeights()`). Stage 1 is unchanged: the same from-scratch training with early stopping on the 93-day span. For
+seeds 0, 1 and 2 stage 2 starts from the stage-1 checkpoints that recipe R's released weights continued; seeds 3, 4
+and 5 were trained by the same stage-1 recipe ([Seeds and ensemble](#seeds-and-ensemble)).
+
+**Why.** After log1p compression every window still has equal weight in recipe R. Windows whose last weeks are noisy
+in a way no month-ahead forecast can follow (spiky household meters, irregular operation) carry large per-window
+losses and steer the carrier toward fitting noise. Recipe Rw lowers their weight by the inverse square root of their
+own recent noise, with a floor so that quiet windows are not raised without limit, and keeps every population's share
+of the training draws. The rule was taken unchanged from an earlier study of this carrier and frozen before 0.2.0.
+Its planned effect was small (about +0.25% in whole-window hourly error), below what the seed noise lets one resolve.
+On the development windows (re-used evaluation) Rw against R with six seeds was +0.42% over the month, with the peak
+readout resolvably worse (−0.92%) within the guard written before the read; on the test windows it was +0.31%
+[+0.06, +0.56] over the month and +0.04% on the peak (`results/recipe_history.csv`).
+
+**The weights** (`noise_weights`, computed once per training pool before training):
+
+1. **Noise estimate.** For training window i with origin o and causal scale s_i (the carrier's scale input), σ̂²_i is
+   the mean of ((y_t − y_{t−168}) / s_i)² over the hours t of the last 21 days before o whose hour one week earlier is
+   also observed, read from the window's day tokens 338–365 (`noise_sigma2`: x = sinh(token) = y / s_i). With fewer
+   than 168 such pairs σ̂²_i is undefined.
+2. **Draw probabilities.** p_i is the probability that one draw of the sampler picks window i
+   (`draw_probabilities`): ½ for the target's windows together (each unit with equal total probability) and ½ split
+   equally across the borrowed populations (unit-balanced within each), exactly the sampler of [Sampler](#sampler).
+3. **Floor.** f is the 25th percentile of the defined σ̂² over the pool, weighted by p.
+4. **Raw weight.** ω_i = max(σ̂²_i, f)^(−½); a window with undefined σ̂² gets the p-weighted median of the defined raw
+   weights.
+5. **Per-population normalisation.** w_i = c_Q ω_i, with c_Q such that the p-weighted mean weight of every population
+   Q is 1: each population keeps its share of the draws, and the weighting moves weight only between windows of the
+   same population (C12).
+6. **Loss.** For a batch B, Σ_{i∈B} w_i ℓ_i / Σ_{i∈B} w_i with ℓ_i = log(1 + MSE_i + 0.1 · KL_i), the per-window
+   term of [Loss](#loss), unchanged (`weighted_log1p_loss`).
+
+Everything else is recipe R's stage 2: a fresh AdamW (learning rate 3 × 10⁻⁴, weight decay 10⁻⁴), batch 64, 16,000
+draws per epoch from the stream `default_rng(10000 + seed)`, gradient clipping at 1.0 per parameter group, exactly 8
+epochs and the final weights, with no selection.
+
+- **Causality.** The weights read only the context before each training window's origin (C14): no label hour, no
+  validation or test window. The floor and the normalisers are computed on the training pool, whose labels end at least
+  24 hours before the cut. The rule is global (γ = ½, the 25th percentile, 168 pairs, 21 days); nothing is set per
+  unit or per population.
+- **Checks.** With every weight equal to 1 the weighted loss, its gradient and two optimisation steps equal recipe R's
+  bit for bit on the CPU (C11). The first batch of every weighted epoch is checked against the weights implied by its
+  own day tokens (`expected_weight`, relative tolerance 10⁻⁹), which catches misaligned rows.
+- **Records.** `TrainResult.weights_record` and, for the released weights, the weights record named in
+  `checkpoints/MANIFEST.json`: the floor (σ̂² between 0.0087 (Cambridge) and 0.0389 (GoiEner households) over the nine
+  populations, `floor_sigma2`), each population's normaliser and draw share, the share of draws without a noise
+  estimate, the Kish effective-sample-size ratio under the draw probabilities (0.69–0.82, `kish_ess_ratio_draws`) and
+  the largest weight over the median (1.56–6.23).
+
+```python
+stage2_rw = recipe("span_return_weighted", "runs/{target}/stage1/seed{seed}.pt")   # recipe Rw: weighted, 8 epochs
+sources = {n: prepare_source(n, data[n], cut[n], stage2_rw, seed_index=i, with_validation=(n == target))
+           for i, n in enumerate(names)}
+final = train_ensemble(target, sources, stage2_rw, seeds=range(6), checkpoint_dir=f"runs/{target}/rw")
+```
+
+`train_ensemble` computes the weights once per pool and shares them across the seeds.
 
 ### Seeds and ensemble
 
-Seeds 0, 1 and 2. A seed sets Python's, NumPy's and PyTorch's generators, and through them the weight initialisation
-and, in stage 1, the sampler stream `default_rng(seed)`; the caps, the pool subsample and the returned span use fixed
-seeds per population. The carrier forecast is the plain average of the three seeds' forecasts, accumulated in float64 in
-seed order (`average_seed_forecasts`, `carrier_forecasts` with a list of carriers).
+Seeds 0 to 5. A seed sets Python's, NumPy's and PyTorch's generators, and through them the weight initialisation
+and, in stage 1, the sampler stream `default_rng(seed)`; the caps, the pool subsample, the returned span and (recipe
+Rw) the loss weights do not depend on the seed. The carrier forecast at every issue time is the plain average of the
+six seeds' forecasts, accumulated in float64 in ascending seed order and divided by six (`average_seed_forecasts`,
+`carrier_forecasts` with a list of carriers); pass the checkpoints in ascending seed order, as
+`ankyra_lite.checkpoint_paths(population)` returns them, and one training cut `cut=` for all six.
+
+Seeds 0, 1 and 2 are those of version 0.1 (their stage-1 runs are the ones behind the 0.1 checkpoints); seeds 3, 4 and
+5 were trained for 0.2.0 by the same stage-1 recipe, on the same data (Drammen and CINELDI on the corrected CINELDI
+store). Averaging more seeds lowers the carrier's retraining variance: six seeds against three were +0.07% (not
+resolved) on the development windows and +0.41% [+0.15, +0.70] on the test windows, recipe R without the layer
+(`results/recipe_history.csv`). The two groups of three seeds (0–2 and 3–5) are kept as separate products, so that the
+seed spread can be read without anchoring each seed alone ([EVALUATION.md](EVALUATION.md#seeds)). A three-seed
+ensemble remains possible: pass three checkpoints. The example below is recipe R's (version 0.1); recipe Rw's stage 2
+is above.
 
 ```python
 from ankyra_lite.carrier.train import TrainConfig, recipe, prepare_source, train_ensemble
@@ -328,29 +422,34 @@ released forecasts come from the study's research runs on a GPU, not from a full
 
 ### Released weights
 
-The repository ships the 27 carriers of the released recipe (9 populations × 3 seeds): the stage-2 final weights of
-the study's research runs, copied byte for byte by `tools/export_checkpoints.py --out checkpoints`:
+The repository ships 81 carriers: the 54 of the release configuration (recipe Rw, 9 populations × 6 seeds) and,
+unchanged, the 27 of version 0.1 (recipe R, 9 × 3). Each is the stage-2 final weights of a study run, copied byte for
+byte by `tools/export_checkpoints.py --out checkpoints`:
 
 ```
-checkpoints/<population>/seed<s>.pt     population in {bdg2, cambridge, heew, eweld, goiener_confirm, households,
-                                                       oslo, drammen, cineldi}; s in {0, 1, 2}
-checkpoints/MANIFEST.json               per file: SHA-256, size, parameters, training cut (hour index and date), store,
-                                        source run and its record's SHA-256, the stage-1 run it continued
+checkpoints/<population>/rw/seed<s>.pt  recipe Rw, s in {0, …, 5}: the carriers of version 0.2.0 (the default)
+checkpoints/<population>/seed<s>.pt     recipe R, s in {0, 1, 2}: the carriers of version 0.1 (byte-identical)
+checkpoints/MANIFEST.json               per file: SHA-256, size, parameters, recipe and recipe key, seed group, loss
+                                        weighting (rule and constants) with its weights record, training cut (hour
+                                        index and date), store, source run, training record and the stage-1 run it
+                                        continued, each with its SHA-256; which files form the release configuration
 ```
 
-Each file is `{"model": state_dict, "epoch": 8}` (about 0.27 MB) and loads strictly with
-`ankyra_lite.load_carrier(path)`. The export checks every copy against the SHA-256 in its run record and, for three test
-windows of Oslo and three of CINELDI (corrected store) per seed, reproduces the stored GPU carrier forecasts on the CPU at
-the same issue times; the rule is a relative difference below 10⁻⁴, and the largest one recorded in
-`checkpoints/MANIFEST.json` (`verification`) is 2.1 × 10⁻⁵ (CINELDI, seed 2). A checkpoint belongs to one population
+`population` is one of bdg2, cambridge, heew, eweld, goiener_confirm, households, oslo, drammen and cineldi. Each file
+is `{"model": state_dict, "epoch": 8}` (about 0.27 MB) and loads strictly with `ankyra_lite.load_carrier(path)`. The
+export checks every copy against the SHA-256 in its run record and, for three test windows of Oslo and three of CINELDI
+(corrected store) per seed of the release configuration, reproduces the stored GPU carrier forecasts on the CPU at the
+same issue times; the rule is a relative difference below 10⁻⁴, and the largest one recorded in
+`checkpoints/MANIFEST.json` (`verification`) is 2.0 × 10⁻⁵ (CINELDI, seed 2). A checkpoint belongs to one population
 and its training cut: pass that cut as `cut=` and use origins at least 186 days after it
 ([DATA.md](DATA.md#windows-borrowed-from-other-populations)); it has not been evaluated on any other population.
 
 ### Other recipes in the package
 
+`recipe("span_return", ...)` is recipe R, released in 0.1 (its 27 checkpoints ship unchanged).
 `recipe("plain_continuation", ...)` (stage 2 without the returned span) and `recipe("proportional_validation", ...)` (a
 validation span of 10% of the population's record, clipped to 38–93 days, with early stopping) are the two other arms
-of the study that chose the recipe; `TrainConfig()` alone is stage 1 without stage 2. They are kept for reproduction and
+of the study that chose recipe R; `TrainConfig()` alone is stage 1 without stage 2. They are kept for reproduction and
 are not the released recipe; their readings are in [EVALUATION.md](EVALUATION.md#why-the-recipe-returns-the-validation-span).
 
 ## How the anchoring layer uses the carrier
@@ -613,7 +712,7 @@ gives most of the gain, and the per-unit weights add to it on two populations re
 kept as the copied layer computes it.
 
 The forecast is F(d, h) = m_d + w(d, h), projected onto F ≥ 0. It reads seven carrier forecasts per window (one at the
-origin, six at pseudo-origins), each the average of the three seeds.
+origin, six at pseudo-origins), each the average of the six seeds (three in version 0.1).
 
 Code: `ankyra_lite/anchor/core.py` (`lead_week_weights`, `lead_week_transition`, `forecast`).
 
@@ -692,26 +791,160 @@ the weights, counts, the fixed division and the analog fields keep their empty d
 run. That return rests on the premise that the carrier forecasts a switched-off or near-zero meter well, which held for
 foundation models and is not guaranteed for a trained carrier. ankyra-lite therefore applies its own rule on these
 windows (`ankyra_lite.forecast`, default `state_rule="seasonal_naive"`): the delivered forecast is the last observed
-week repeated over the 744 hours (missing hours as 0), its level readout is that forecast's mean, and its peak readout
+week repeated over the 744 hours (missing hours as 0), its level readout is that forecast's mean, the continuation layer is bypassed, and its peak readout
 is read from it. `state_rule=None` keeps the layer's own return. The rule was written after an earlier scoring of the
 test windows ([EVALUATION.md](EVALUATION.md#identity-of-the-evidence)); the state windows of each population are counted
 in [EVALUATION.md](EVALUATION.md#state-windows-and-the-three-near-zero-bdg2-meters).
 
+## The continuation layer
+
+`ankyra_lite.continuation` corrects the first hours and days of the delivered trajectory toward the last observed
+hours before the origin. It runs after the anchoring layer, the state rule and the readouts
+(`forecast(..., continuation=True)`, the release default), has four constants fitted once and frozen, and trains
+nothing at forecast time.
+
+**Why.** The carrier forecasts the month from daily and monthly tokens; it has no path that continues from the last
+observed hours. On the development windows this shows as a clear curve: the log error of the anchored forecast at
+hour 0 rose almost one for one with the log anomaly of the last observed hours against the forecast's own curve (a
+slope of about 1, explaining 40–48% of the squared log error at that hour), and the slope was still about 0.6 at hour
+11 and 0.5 at hour 47. The error curve has two parts, a fast one of a few hours and a slow one of about a week; from
+the second week on the forecast already followed recent level changes about as the load did, so the slow part needs
+no more than a week. The zero-shot foundation models, which read the last hours directly, lead on forecast day 1
+([README](../README.md#where-ankyra-lite-is-weak)).
+
+**Why after the anchoring layer.** A change inside the carrier reaches the delivered forecast only in part: on the
+development windows 0.6 to 0.8 of a change in the carrier's forecast passed through the anchoring layer, whose
+history side pulls the forecast back toward the unit's past. Placed after the anchoring layer, the correction is not
+diluted, and the anchoring layer stays byte-identical.
+
+**The layer, one window** (origin o; F(h), h = 0 … 743, the trajectory before the layer):
+
+1. **Bypass.** On a state window (off-state or micro-load) the trajectory is delivered unchanged, F′ = F.
+2. **Scale.** s = mean of the observed load in the 672 hours before o (floor 10⁻³ kW); ε = 0.01 s.
+3. **Reference day.** d* = the first forecast day d = 0 … 6 whose workday class equals that of the last observed day;
+   day types 0–4 are workdays and 5, 6 and 7 (Saturday, Sunday, holiday) are not, each day's type read at its 12th
+   hour (the same calendar and hour as the anchoring layer and the peak readout). When none of the seven days has
+   that class, d* = 6 (a release rule of the layer's design; the study's development code used d* = 0, which agrees
+   wherever a day of the class exists, as on every development window; on the test windows the fallback was used on
+   33 EWELD windows, `results/continuation_record.csv`).
+4. **Two anomalies**, each clipped to [−1, 1]:
+   - fast: x_f = ln[(mean y(o − 3 … o − 1) + ε) / (max(mean F(24d* + 21 … 24d* + 23), 0) + ε)], the last 3 observed
+     hours against the forecast's same clock hours on the reference day; 0 when one of the 3 hours is unobserved;
+   - day: x_d = ln[(mean y(o − 24 … o − 1) + ε) / (max(mean F(24d* … 24d* + 23), 0) + ε)], the last observed day
+     against the forecast's reference day; 0 when one of the 24 hours is unobserved;
+   - negative loads: when a span's mean plus ε is at or below 0 the logarithm is undefined, and that anomaly is set to 0
+     and flagged (`nonpositive_fast`, `nonpositive_day`) instead of raising an error. This release rule was added after
+     the study, whose code raised an error there; no study window and no test window reached it.
+5. **Correction.** Δ(h) = κ₁ x_f e^(−h/ρ₁) + κ₂ x_d e^(−h/ρ₂) and F′(h) = F(h) e^(Δ(h)).
+
+| Constant | Value | What it sets |
+|---|---|---|
+| κ₁ | 0.479 | weight of the fast anomaly at the first hour |
+| ρ₁ | 12 h | decay time of the fast term |
+| κ₂ | 0.330 | weight of the day anomaly at the first hour |
+| ρ₂ | 168 h | decay time of the day term |
+
+**Where the constants come from.** ρ₁ and ρ₂ were chosen from the grids {2, 3, 4, 6, 8, 12} h and {72, 120, 168} h,
+and κ₁ and κ₂ fitted, in one pooled fit on the earlier development windows of six populations (the unit-equal
+whole-window squared-error ratio), on the study's development-cut products of the carrier; κ was rounded to three
+decimals (fitted 0.47897 and 0.33035; `continuation.FULL_PRECISION`). The same four numbers are used for every
+population, for the three test populations without development windows (BDG2, GoiEner non-household, the households)
+and for the external tests; they are never refitted. `continuation.DIGEST` (SHA-256 of the constants and the rule)
+identifies them, and every forecast's record carries the digest of the constants it used (O9).
+
+**How the form was chosen.** The day anomaly uses the last 24 hours, not the last 3: the 3-hour anomaly also carries
+the forecast's within-day shape error at hours 21–23, and for spiky households a day mean is less noisy. A first fit
+with a slow decay of 744 h lowered the peak readout on the later development windows by 1.3%, and the slow decay was
+then limited to at most 168 h. The form was thus chosen on the development windows, partly after reading them. The
+development check of the frozen constants, on the later development windows with six-seed carriers of recipe Rw
+trained to a development cut (+0.48% whole window, +9.49% day 1, +23.6% hours 0–2; re-used evaluation,
+`results/recipe_history.csv`, `Rw6_c vs Rw6`), tests whether the constants carry over to that carrier, not the form;
+those windows had served to choose the form, so it is not an independent confirmation.
+
+**What it guarantees** (theory/PROOFS.md, O1–O9; each property is checked):
+
+- a nonnegative trajectory stays nonnegative and exact zeros stay zero (O1);
+- each hour moves by a factor between e^(−E(h)) and e^(E(h)), E(h) = κ₁e^(−h/12) + κ₂e^(−h/168): between 0.445 and
+  2.246 at the first hour, 0.698 and 1.431 at the last hour of day 1, 0.885 and 1.130 from day 8, and 0.996 and 1.004
+  at the last hour (O2);
+- it reads only the 672 hours before the origin and the day types at o − 12 and o + 12 + 24d, d = 0 … 6 (O3);
+- state windows, and a window with one of its last 3 hours unobserved, are returned bit for bit (O4);
+- with `continuation=False` the layer is off and the trajectory before it is delivered; `continuation.ZERO` gives the
+  same trajectory bit for bit on every window with a finite trajectory (O5). Reproducing a version 0.1 forecast also
+  needs the 0.1 checkpoints (recipe R, seeds 0–2) and the same inputs;
+- energy, level and peak are read before it (O6, [Readouts](#readouts));
+- a forecast whose reference day already matches the last observed hours is left unchanged, and two anomalies of the
+  same sign move the whole window the same way (O7);
+- it does not depend on the unit of the load while the scale stays above its floor (O8).
+
+**Limits.** Through `forecast` the missing-hour bypass cannot occur, because the anchoring layer needs the 1,344 hours
+before the origin completely observed. The history-only configuration (`forecast(history, None, ...)`) is never
+continued, because it was not evaluated with the layer. The bound limits how far an hour moves, not its error: when the
+load changes level right after the origin the correction can point the wrong way.
+
+**What it did on the test windows** (`results/continuation_layer.csv`, `results/continuation_record.csv`; descriptive,
+[EVALUATION.md](EVALUATION.md#the-continuation-layer)): with the layer on against off on the same carrier, +0.46%
+[+0.33, +0.70] in whole-window hourly error, +11.1% on day 1 and +23.4% in hours 0–2 (1,891 units of the nine
+populations pooled; with populations equally weighted +0.43%, +12.77% and +27.30%, `recipe_history.csv`). 326 state
+windows were bypassed; the fast anomaly was clipped on 6.4% and the day anomaly on 4.2% of the other windows; 33
+windows used the fallback d* = 6; no span was unobserved or nonpositive; the largest |Δ| was 0.809.
+
+`ForecastResult.continuation` holds what the layer did on the window (`ContinuationRecord`):
+
+| Field | Meaning |
+|---|---|
+| `bypass` | `"state window"` (F′ = F), `"missing hours"` (an unobserved hour among the last 3; x_f = x_d = 0, F′ = F), `"nonpositive load"` (both anomalies set to 0 by the negative-load rule, or the fast one and the day span unobserved; F′ = F) or None |
+| `d_star`, `matched` | the reference day 0 … 6, and False when no day of the first week shared the last observed day's class (d* = 6) |
+| `scale_kw`, `eps_kw` | s and ε |
+| `x_fast`, `x_day` | the clipped anomalies (0 when one of their hours is unobserved, when their span mean plus ε is at or below 0, or on a state window) |
+| `raw_fast`, `raw_day` | the anomalies before clipping (NaN when not computed) |
+| `missing_fast`, `missing_day`, `clipped_fast`, `clipped_day` | an hour of the span was unobserved; the anomaly was clipped |
+| `nonpositive_fast`, `nonpositive_day` | the span's mean plus ε was at or below 0, so its anomaly was set to 0 |
+| `delta` | (744,) Δ(h) |
+| `max_abs_delta` | max \|Δ(h)\| (0 on a state window) |
+| `constants`, `digest` | the constants used and the digest of them with the rule |
+
+`continuation.apply(trajectory_kw, load_kw, day_types, origin)` applies the layer to any trajectory, and
+`continuation.apply_batch` to many windows at once (the evaluation path, applied to the stored anchored products).
+
 ## Readouts
+
+**Readout rule A.** Energy, level and peak are read before the continuation layer: for fixed carrier forecasts,
+inputs, anchoring and state rule, toggling the layer keeps them bit for bit (O6). The rule was fixed before the test
+windows were read for this version, and follows the anchoring layer's precedent of reading energy before its
+projection. Reading energy and peak from F′ instead had moved them on the development windows by −0.5% to +0.9%
+(energy) and −1.3% to +0.6% (peak). Its cost is the disclosure below: the delivered hourly curve's mean is not the
+energy readout.
 
 **Energy.** `ForecastResult.energy_kwh` = 744 × `level_kw` kWh for loads in kW. Outside state windows `level_kw` is the
 anchoring layer's level, the mean of the 31 daily means after the handover, read before the projection; on a state
-window with the seasonal-naive rule it is the mean of the delivered seasonal naive, which needs no projection.
+window with the seasonal-naive rule it is the mean of the delivered seasonal naive, which needs no projection. It is
+read before the continuation layer.
 
 - The projection max(F, 0) cannot increase any hour's absolute error when the truth is nonnegative (P11).
-- It raises the delivered energy by Σ max(−F, 0), which is known at the origin
+- It raises the energy of the trajectory before the continuation layer by Σ max(−F, 0), which is known at the origin
   (`ankyra_lite.readouts.projection_energy_increase(r)`; on the raw trajectory,
   `anchor.readouts.projection_energy_increase_kwh`).
+- The continuation layer then changes the delivered trajectory's energy by Σ F′ − Σ F, also known at the origin
+  (`ankyra_lite.readouts.continuation_energy_change(r)`), bounded by −Σ F(h)(1 − e^(−E(h))) and Σ F(h)(e^(E(h)) − 1):
+  between −7.34% and +9.31% of Σ F for a flat trajectory, and between −55.5% and +124.6% for any nonnegative
+  trajectory, the extremes approached only when almost all of the energy lies in the first hours (rounded outward; O6).
+- So Σ `trajectory_kw` = `energy_kwh` + `projection_energy_increase` + `continuation_energy_change`. These terms may be
+  zero or cancel, so the delivered curve's sum generally, but not necessarily, differs from the energy readout.
+- **Disclosure** (`results/continuation_record.csv`, row `all nine populations`; windows the layer acts on): the relative
+  difference between the delivered curve's mean and the level readout had a median of 0.77%, a 99th percentile of 7.8%
+  and a maximum of 310% (GoiEner households; GoiEner non-household 89.9%; 6.5–13.3% on the other populations). The
+  layer's own energy change lay between −14.8% and +33.4%; a larger gap is a window where the projection binds, so that
+  the trajectory before the layer already held more energy than 744 × level. On the development windows used to
+  choose the layer, the relative change of the curve (Σ F′ − Σ F)/Σ F had a median of 0.6%, a 99th percentile of 7% and
+  a maximum of 9%.
 - No map can simultaneously keep the energy readout, return nonnegative load and guarantee no increase in error (P12).
 
-The evaluation scores the energy of the delivered trajectory (744 × its mean), the first release's definition, applied
-to every forecaster; the level readout is a sensitivity. The two differ only on the windows where the projection binds
-([EVALUATION.md](EVALUATION.md#overview)).
+The evaluation scores curve energy as 744 × the window mean of the trajectory before the continuation layer
+(`trajectory_before_continuation_kw`) for ankyra-lite, and of each baseline's own trajectory; the level readout
+744 × `level_kw` is a sensitivity. The two differ only on the windows where the projection binds
+([EVALUATION.md](EVALUATION.md#overview)). The continuation layer's own effect on the delivered curve's energy is
+reported separately (`results/continuation_layer.csv`, the `energy of the delivered trajectory` rows).
 
 **Peak.** Let L̂_d be the forecast mean of day d, τ_d its day type and F̄ the forecast window mean. Let
 a_j = max_h x_j(h) − x̄_j be the excursion of context day j above its own mean (x_j(h) is the load of hour h of that
@@ -721,9 +954,10 @@ Then
 
   U = max_d (L̂_d + A_{τ_d}),   P̂_κ = F̄ + κ (U − F̄)   (κ = 1).
 
-`ForecastResult.peak_kw` is this readout of the delivered trajectory (`ankyra_lite.forecast.peak`, which calls
-`anchor.readouts.peak_readout`; the type of each origin-aligned day is read at its 12th hour). On a state window it is
-read from the seasonal naive. The operator has four properties:
+`ForecastResult.peak_kw` is this readout of the trajectory before the continuation layer,
+`trajectory_before_continuation_kw` (`ankyra_lite.forecast.peak`, which calls `anchor.readouts.peak_readout`; the type of
+each origin-aligned day is read at its 12th hour). On a state window it is read from the seasonal naive. With the layer
+off the two trajectories are the same array. The operator has four properties:
 
 1. **Motivation.** For exact conditional means, max_{d,h} E[y(d, h)] ≤ E[max_{d,h} y(d, h)]. Fitted forecasters are
    median-type summaries, so this motivates the operator rather than guaranteeing it (P14).
@@ -744,7 +978,9 @@ and 3 bound the 80% interval) and the number of pseudo-windows used; it makes th
 forecaster (historical level and daily path with the same-day-type within-day default, no carrier), not from
 ankyra-lite's own forecasts. Its hourly residuals at up to 12 completed pseudo-origins are normalised by each
 pseudo-window's origin scale and pooled by hour of day and workday status (day types 0–4 against 5–7). Their empirical
-quantiles are multiplied by the origin's scale and added to the forecast. Three details of the implementation:
+quantiles are multiplied by the origin's scale and added to the forecast, `trajectory_kw`, i.e. after the
+continuation layer when it is on, because the interval belongs to the hourly forecast; interval tables of 0.2.0
+therefore differ from those of 0.1 where the layer acts. Three details of the implementation:
 
 - a class and hour with fewer than five residuals takes the quantiles of the other class at that hour (NaN when
   neither has five, always the case with no complete pseudo-window);
@@ -767,12 +1003,14 @@ properties as operators: `theory/operators.py`.
 
 | Field | Meaning |
 |---|---|
-| `trajectory_kw` | the 744 delivered hourly values: the anchoring layer's trajectory (nonnegative), or the seasonal naive on a state window with the default state rule |
-| `level_kw` | the delivered level readout: the anchoring layer's level (the mean of `daily_means_kw`, before the projection onto nonnegative load), or the mean of the seasonal naive on a state window. It is not the seven-candidate level of the [Level](#level) section, which is the history side's input to the handover |
+| `trajectory_kw` | the 744 delivered hourly values: with the continuation layer on, F′ = F e^Δ; otherwise the trajectory before the layer (the same array) |
+| `trajectory_before_continuation_kw` | the anchoring layer's trajectory (nonnegative), or the seasonal naive on a state window with the default state rule. The peak is read from it; level and energy are read at the same step, before the continuation layer (the level before the nonnegativity projection) |
+| `level_kw` | the delivered level readout: the anchoring layer's level (the mean of `daily_means_kw`, before the projection onto nonnegative load), or the mean of the seasonal naive on a state window. It is read before the continuation layer and need not equal the mean of `trajectory_kw`. It is not the seven-candidate level of the [Level](#level) section, which is the history side's input to the handover |
 | `energy_kwh` | the energy readout, 744 × `level_kw` |
-| `peak_kw` | the peak readout of `trajectory_kw` ([Readouts](#readouts)) |
+| `peak_kw` | the peak readout of `trajectory_before_continuation_kw` ([Readouts](#readouts)) |
 | `state_window` | the anchoring layer reported `off_state` or `micro_load` (always False for the history-only configuration) |
 | `state_rule` | `"seasonal_naive"` when that rule replaced the layer's return, else None |
+| `continuation` | the `ContinuationRecord` of the layer ([The continuation layer](#the-continuation-layer)); None when the layer is off and for the history-only configuration |
 | `carrier` | {k: (744,)}: the carrier forecasts passed to the layer, issued at o − 744k ({} for the history-only configuration) |
 | `anchored` | the anchoring layer's own `AnkyraForecast` |
 
@@ -794,8 +1032,9 @@ Every other attribute is read from `anchored` (`ForecastResult.__getattr__`):
 | `off_state`, `micro_load` | which of the layer's two state rules fired, if any |
 | `anchoring_record` | `carrier_level_weight` (= `level_weights["fm"]`), `history_vs_carrier_log_ratio` and `pseudo_origins`: the unit's own pseudo-forecast record on the level, read before the forecast and not used by it. The log ratio is the smallest pseudo-origin RMS error among the six historical level candidates over that of the carrier's window mean (NaN with fewer than two such pseudo-origins); negative means the unit's history beat the carrier at its earlier origins. Its deciles against the realised gain are in [EVALUATION.md](EVALUATION.md#history-length-and-the-anchoring-record) |
 
-`r.anchored.trajectory_kw`, `r.anchored.level_kw` and `r.anchored.energy_kwh` are the layer's own values; they differ
-from the delivered ones only on state windows with the seasonal-naive rule.
+`r.anchored.trajectory_kw`, `r.anchored.level_kw` and `r.anchored.energy_kwh` are the anchoring layer's own values; they
+differ from `trajectory_before_continuation_kw` and the delivered readouts only on state windows with the seasonal-naive
+rule, and `trajectory_kw` differs from them wherever the continuation layer acts.
 
 **State windows.** On an off-state or micro-load window the fields read from `anchored` describe the layer's return,
 not the delivered seasonal naive: `daily_means_kw`, `within_day_kw` and `foundation_within_day_kw` are the carrier
@@ -839,28 +1078,30 @@ Code: `ankyra_lite/forecast.py` (`ForecastResult`), `ankyra_lite/anchor/core.py`
 
 ## Inference cost
 
-One forecast runs the carrier at up to seven issue times (the origin and up to six pseudo-origins) for each of the three
-seeds, 21 network evaluations of 61,613 parameters, then the anchoring layer (the historical estimator at the origin and
-its pseudo-origins, the analog-day shapes), the state rule and the peak readout. Everything runs on one CPU thread;
+One forecast runs the carrier at up to seven issue times (the origin and up to six pseudo-origins) for each of the six
+seeds, 42 network evaluations of 61,613 parameters, then the anchoring layer (the historical estimator at the origin and
+its pseudo-origins, the analog-day shapes), the state rule, the peak readout and the continuation layer. Everything runs on one CPU thread;
 nothing is downloaded. Measured with this repository's package and the released checkpoints on 6 Oslo test windows,
 after one untimed warm-up, on one CPU thread without a GPU
 ([`results/cost_per_window.csv`](../results/README.md#cost)):
 
 | Step | Time |
 |---|---:|
-| one forecast in all (carrier forecasts, anchoring layer with the state rule, peak readout) | 0.584 s per window |
-| carrier forecasts at the origin and the pseudo-origins (7.0 issue times on average) × 3 seeds | 0.075 s per window |
-| one carrier forecast (one issue time, one seed; mean) | 0.0036 s |
-| anchoring layer call with the carrier forecasts supplied, with the state rule | 0.509 s per window |
+| one forecast in all (carrier forecasts, anchoring layer with the state rule, continuation layer, peak readout) | 0.655 s per window |
+| carrier forecasts at the origin and the pseudo-origins (7.0 issue times on average) × 6 seeds | 0.135 s per window |
+| one carrier forecast (one issue time, one seed; mean) | 0.0032 s |
+| anchoring layer call with the carrier forecasts supplied, with the state rule and the continuation layer | 0.520 s per window |
 | peak readout | 0.0003 s per window |
-| loading the three checkpoints (once) | 0.045 s |
+| loading the six checkpoints (once) | 0.057 s |
 
-The anchoring layer, not the carrier, takes most of the time (0.509 of 0.584 s). A checkpoint is 0.2657 MB.
+The anchoring layer, not the carrier, takes most of the time (0.520 of 0.655 s); six seeds take about twice the
+carrier time of three (0.075 s in 0.1). The continuation layer is a few vector operations on 744 values and is timed
+inside the anchoring-layer row. A checkpoint is 0.2657 MB.
 
 The stored evaluation forecasts were computed by the research code on a GPU; on the CPU the package reproduces them up
 to floating-point differences between the two devices. On the timed windows the largest relative difference is
-1.98 × 10⁻⁶ for the carrier forecasts and 1.47 × 10⁻⁶ for the delivered trajectory (the two `check:` rows of
-`cost_per_window.csv`; see also `tests/test_carrier_equivalence.py`).
+1.89 × 10⁻⁶ for the carrier forecasts, 1.09 × 10⁻⁶ for the trajectory before the continuation layer and 9.8 × 10⁻⁷ for
+the delivered trajectory (the `check:` rows of `cost_per_window.csv`; see also `tests/test_carrier_equivalence.py`).
 
 ## Constants
 
@@ -917,9 +1158,32 @@ The carrier's constants:
 | learning rate, weight decay, batch, gradient clip | 3 × 10⁻⁴, 10⁻⁴, 64, 1.0 per group | `TrainConfig` |
 | loss | MSE + 0.1 × generalised KL, log1p per window | `forecast_loss` |
 | stage 1: maximum epochs, patience | 30, 5 | `TrainConfig` |
-| stage 2: epochs, label boundary before the cut | 8, 24 h | `CONTINUATION_EPOCHS`, `ReturnSpan` |
+| stage 2: epochs, label boundary before the cut | 8, 24 h (recipes R and Rw) | `CONTINUATION_EPOCHS`, `ReturnSpan` |
 | gap from the training cut to the test set | 186 days (6 × 744 h) | `evaluation/windows.py` |
-| seeds | 0, 1, 2 | `TrainConfig.seeds` |
+| seeds | 0–5 (the release configuration); 0–2 for version 0.1 | `ankyra_lite._release.CARRIER_SEEDS` |
+
+The loss weights of recipe Rw (`NoiseWeights`, fixed before 0.2.0; never tuned on test windows):
+
+| Constant | Value | Code |
+|---|---|---|
+| noise estimate: context days read, pair lag, observed flag | day tokens 338–365 (pairs on days 345–365), 7 days, flag > ½ | `NoiseWeights.context_days`, `lag_days`, `observed_threshold` |
+| minimum number of pairs | 168 | `NoiseWeights.min_pairs` |
+| floor | the draw-weighted 25th percentile of σ̂² over the pool | `NoiseWeights.floor_quantile` |
+| exponent | ω = max(σ̂², floor)^(−½) | `NoiseWeights.gamma` |
+| normalisation | draw-weighted mean weight 1 per population | `noise_weights` |
+
+The continuation layer (`continuation.CONSTANTS` and `continuation.RULE`, identified by `continuation.DIGEST`
+= d514e3ec93a745b14950671297bf2f922fd512424a804e292377e1b0c4cc1dce):
+
+| Constant | Value | Where it was fixed |
+|---|---|---|
+| κ₁, ρ₁, κ₂, ρ₂ | 0.479, 12 h, 0.330, 168 h | one pooled fit on the earlier development windows of six populations; ρ from fixed grids, κ rounded to three decimals |
+| scale: hours, floor; ε | 672 h, 10⁻³ kW; 0.01 × scale | the layer's design |
+| anomaly spans | the last 3 hours (fast), the last 24 hours (day) | the layer's design, on development windows |
+| clip | ±1 | the layer's design |
+| workday class; type hour | day type < 5; the 12th hour of each origin-aligned day | the anchoring layer's calendar convention |
+| reference days; fallback | days 0–6; d* = 6 | the layer's design (the development code used 0; no development window was affected; 33 EWELD test windows used it) |
+| nonpositive span mean (negative loads) | the anomaly is set to 0 and the window flagged | a release rule added after the study (the study code raised an error); not part of `RULE`; no test window reached it |
 
 [`results/constants.csv`](../results/README.md#constants) lists every constant of ankyra-lite in one file.
 
@@ -928,12 +1192,27 @@ The carrier's constants:
 - **Not a general-purpose model.** One carrier is trained per population and evaluated on that population's test
   windows only. A checkpoint applied to another building or population without retraining has not been evaluated.
 - **Not a first test.** The test windows had been read before, and the copy pointer's direction, the seasonal-naive
-  state rule and the recipe's second stage were chosen after reading them ([EVALUATION.md](EVALUATION.md#identity-of-the-evidence)).
+  state rule and recipe R's second stage were chosen after reading them ([EVALUATION.md](EVALUATION.md#identity-of-the-evidence)).
+  They had been read many times before 0.2.0 was read on them once, after its configuration and constants were
+  frozen; that read sets direction only.
+- **The continuation layer works at the start of the month.** Its gains are concentrated in the first hours and days
+  (+23.4% in hours 0–2, +11.1% on day 1, +0.46% over the whole window; `results/continuation_layer.csv`, nine
+  populations pooled); it is not a month-long correction, it was resolvably negative on Oslo's days 8–31, and it does
+  not make ankyra-lite lead the zero-shot foundation models on forecast day 1.
+- **Energy and peak are unchanged by toggling the layer on a fixed carrier.** They are read before it, by a rule fixed
+  in advance; this does not make comparisons across carriers identical or prove noninferiority.
+- **The constants were fitted on development windows and not on the populations without them.** BDG2, GoiEner
+  non-household and the households had no development windows; the layer is applied to them unchanged.
+- **No mechanism is established for the loss weights.** Their effect is of the order of the seed noise (+0.31% on the
+  test windows, recipe Rw against R with six seeds), and down-weighting noisy windows also changes recency and sample
+  diversity, which the study does not separate.
+- **Six seeds reduce retraining variance; they do not remove it.** The seed spread is reported
+  ([EVALUATION.md](EVALUATION.md#seeds)); the intervals of the main tables still resample units and months only.
 - **No mechanism is proven by the recipe study.** The returned span adds same-season data for the short-record
   populations, but it also changes recency, sample diversity and the replay of older windows, and adds 8 epochs of
   training; the study's readings do not separate these.
-- **Properties are not accuracy.** C1–C10 and P1–P20 hold for any weights; they make the forecaster inspectable and
-  bound what its parts can do. Accuracy is measured.
+- **Properties are not accuracy.** C1–C14, O1–O9 and P1–P20 hold for any weights, pools and trajectories; they make
+  the forecaster inspectable and bound what its parts can do. Accuracy is measured.
 - **No intervals.** The interval of the evaluation is the anchoring layer's, centred on ankyra-lite's trajectory as a
   description; ankyra-lite was not designed or tuned for it.
 - **No bitwise reproducibility of training.** GPU training is not bitwise repeatable; the package reproduces single

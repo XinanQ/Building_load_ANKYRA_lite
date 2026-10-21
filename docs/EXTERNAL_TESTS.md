@@ -1,31 +1,136 @@
-# External tests (19 October 2026)
+# External tests (19 October 2026; 0.2.0 re-run 20 October 2026)
 
-ankyra-lite 0.1.0, the copy-pointer carrier trained with recipe R, the anchoring layer copied byte for byte from ANKYRA
-2.2.1 and the seasonal-naive state rule, was tested on data outside the test windows of the nine populations. The run
-was frozen on 19 October 2026 at 07:45 UTC, before any training on these data: the test plan, an addendum written before
-the freeze, a snapshot of the package, the code that trained, anchored and scored, and every input were hashed. Each
-test set was scored once, after its forecasts had been hashed. The carrier was trained anew for each test set with the
-released recipe; the 27 shipped checkpoints were not used. Nothing on this page changes the forecaster, the recipe or
-the tables of the nine populations.
+This page has two parts. **Version 0.2.0** (recipe Rw, six seeds, the continuation layer) was re-run once on the four
+scored test sets of the frozen external test of 19 October 2026, with the same windows, comparators and estimators;
+that is the current reading, and every number of its section is a row of
+[`results/external_tests.csv`](../results/external_tests.csv). **Version 0.1** (recipe R) is the frozen external test
+itself, kept below as history: its numbers are those of the 0.1.1 release of the same file (commit `c27affc`), which
+the 0.2.0 regeneration replaced.
 
-- **LCL, UNICON and HKUST: first read of this candidate on a previously read population.** Earlier forecasters of the
-  study had been scored on these populations, earlier versions of the small network among them (trained and scored on
-  the same test windows), and the anchoring layer was fixed after those readings. These populations are therefore not
-  unseen by the design; what is new is this candidate. HKUST is a secondary test set with a small sample.
+- **LCL, UNICON and HKUST: previously read populations.** Earlier forecasters of the study had been scored on these
+  populations, earlier versions of the small network among them (trained and scored on the same test windows), and the
+  anchoring layer was fixed after those readings; the frozen external test then read them once with the 0.1 candidate.
+  The 0.2.0 re-run is a second read of each test set, the first of this version. HKUST is a secondary test set with a
+  small sample.
 - **GoiEner households, out of time: a same-source out-of-time supplementary check.** New households and a later period
   from the source of study population 6 (GoiEner households); not a new population, and correlated with the result on
   population 6.
-- **Helsinki (retrospective): trained, anchored and sealed, not scored.** Its scoring was tied to a prospective
-  Helsinki test, which is not being pursued for now (author decision, 19 October 2026); the sealed set stays unread.
-- **UCI370: skipped** in this round (the author's decision).
+- **Helsinki (retrospective): trained, anchored and sealed, not scored**, in 0.1 and untouched by the 0.2.0 re-run. Its
+  scoring was tied to a prospective Helsinki test, which is not being pursued for now (author decision, 19 October
+  2026); the sealed set stays unread.
+- **UCI370: skipped** (the author's decision).
 
-Sections: [How to read the numbers](#how-to-read-the-numbers) · [Primary readouts](#primary-readouts) ·
+Sections: [0.2.0 re-run](#version-020-re-run-20-october-2026) · [How to read the numbers](#how-to-read-the-numbers) ·
+[Version 0.1 external test](#version-01-external-test-19-october-2026) ·
 [Procedure common to every test set](#procedure-common-to-every-test-set) · [LCL](#lcl-households-london) ·
 [UNICON](#unicon-la-trobe-university-campuses) · [HKUST](#hkust-campus-incomer-meters-secondary) ·
 [GoiEner households, out of time](#goiener-households-out-of-time-supplementary) ·
 [Helsinki and UCI370](#helsinki-retrospective-and-uci370) ·
 [Decisions awaiting the author's review](#decisions-awaiting-the-authors-review) · [Run notes](#run-notes) ·
 [What these tests do not show](#what-these-tests-do-not-show) · [Files](#files)
+
+## Version 0.2.0 re-run (20 October 2026)
+
+**What was run.** For each test set the six stage-1 carriers of the frozen external test (seeds 0–5, trained there
+with stage 1 of recipe R) were continued with stage 2 of recipe Rw (the validation span returned, 8 epochs,
+inverse-noise loss weights) on that test set's own training pool, averaged at every issue time, anchored by the
+unchanged anchoring layer with the seasonal-naive state rule, corrected by the continuation layer with its four frozen
+constants (no refit on any external data) and read out by rule A (energy, level and peak before the layer). The run and
+its rules were fixed before any 0.2.0 number of these test sets was read, and each test set was scored once with the
+frozen estimators and random streams of the external test (whose primary readouts of the 0.1 candidate it reproduced
+exactly before scoring 0.2.0). The shipped checkpoints were not used. The comparators are those of the frozen test.
+
+**Identity.** A re-run on test sets read once before with the 0.1 candidate: it shows how the 0.2.0 change behaves on
+data outside the nine populations, not how ankyra-lite performs on unseen populations.
+
+### 0.2.0: primary readouts (hourly, six seeds, continuation layer)
+
+| Test set | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
+|---|---|---|---|---|
+| LCL households (London) | 710 / 710 / 5 | +2.74% [−1.16, +6.48] | +24.37% [+17.71, +30.48] * | +3.13% [+2.06, +4.19] * |
+| UNICON (La Trobe University campuses) | 450 / 59 / 23 | −2.42% [−14.33, +8.24] | +11.83% [+0.73, +21.68] * | +10.71% [+5.51, +15.62] * |
+| HKUST campus incomer meters (secondary) | 89 / 29 / 8 | +10.88% [−9.01, +27.14] | +26.18% [+6.34, +41.81] * | +4.63% [−2.96, +11.67] |
+| GoiEner households, out of time (supplementary) | 1,417 / 282 / 6 | +4.25% [+1.88, +6.57] * | +26.04% [+23.82, +28.20] * | +5.55% [+3.49, +7.57] * |
+
+Over the four scored test sets 8 of the 12 primary intervals are resolved in ankyra-lite's favour, 4 are not resolved
+and none is resolved against it (0.1 candidate: 7, 5 and 0; UNICON against the weekly seasonal naive is newly
+resolved); with no true difference, about 0.75 of the 15 planned intervals would be resolved by chance. Against
+zero-shot TimesFM 2.5 only the GoiEner check is resolved (+4.25%; whether GoiEner is in the TimesFM 2.5 pretraining data
+is not verified); on LCL (+2.74%; LCL is in the TimesFM 2.5, Chronos and Chronos-2 pretraining data), UNICON (−2.42%)
+and HKUST (+10.88%) the intervals include zero.
+
+### 0.2.0 against the frozen external candidate and the 0.1.0 configuration; decomposition
+
+Descriptive; "forecast hours 0-2" is the file's segment `forecast hours 0-2 (lead hours 0-3)`, the first three hours
+after the origin.
+
+| Test set | Readout | vs frozen candidate (R, 6 seeds) | vs 0.1.0 configuration | weighting (Rw vs R, 6 seeds, no layer) | layer on / off (recipe Rw, 6 seeds) | layer on / off (recipe R, 6 seeds) | six vs three seeds (recipe Rw, with the layer) |
+|---|---|---|---|---|---|---|---|
+| LCL households (London) | hourly | +0.06% [−0.18, +0.29] | +0.17% [−0.08, +0.42] | −0.06% [−0.30, +0.18] | +0.12% [−0.02, +0.27] | +0.12% [−0.02, +0.27] | +0.20% [+0.05, +0.39] * |
+| LCL households (London) | forecast hours 0-2 (lead hours 0-3) | +10.78% [+3.60, +17.43] * | +12.06% [+4.64, +18.90] * | +0.04% [−1.47, +1.52] | +10.75% [+2.59, +16.93] * | +10.72% [+2.64, +16.83] * | −0.43% [−1.63, +0.58] |
+| LCL households (London) | forecast day 1 | +4.89% [+2.23, +7.48] * | +5.32% [+2.50, +8.05] * | +0.29% [−0.30, +0.87] | +4.62% [+1.75, +7.19] * | +4.55% [+1.62, +7.22] * | +0.39% [+0.03, +0.84] * |
+| UNICON (La Trobe University campuses) | hourly | +2.95% [+0.82, +5.04] * | +3.20% [+0.94, +5.41] * | +1.84% [+0.27, +3.38] * | +1.14% [+0.10, +2.20] * | +1.22% [+0.14, +2.30] * | −0.09% [−0.60, +0.46] |
+| UNICON (La Trobe University campuses) | forecast hours 0-2 (lead hours 0-3) | +42.40% [+28.30, +53.73] * | +42.02% [+27.96, +53.34] * | +2.37% [−1.89, +6.45] | +41.00% [+27.57, +52.26] * | +41.84% [+27.35, +53.53] * | +1.24% [−1.82, +4.53] |
+| UNICON (La Trobe University campuses) | forecast day 1 | +16.67% [+9.10, +23.61] * | +17.49% [+10.15, +24.23] * | +1.51% [−1.24, +4.18] | +15.39% [+8.76, +22.12] * | +15.76% [+8.95, +22.73] * | +0.98% [−0.09, +1.83] |
+| HKUST campus incomer meters (secondary) | hourly | +0.72% [−1.37, +2.75] | +0.01% [−2.62, +2.57] | +0.16% [−2.09, +2.35] | +0.56% [+0.17, +1.17] * | +0.62% [+0.22, +1.22] * | −0.78% [−1.64, +0.41] |
+| HKUST campus incomer meters (secondary) | forecast hours 0-2 (lead hours 0-3) | +20.39% [+3.73, +34.16] * | +19.75% [+2.27, +34.10] * | −4.59% [−13.64, +3.74] | +23.88% [+6.24, +39.03] * | +20.71% [+4.27, +35.82] * | −0.36% [−5.15, +3.55] |
+| HKUST campus incomer meters (secondary) | forecast day 1 | +7.34% [−3.38, +16.96] | +8.46% [−2.20, +18.00] | −2.20% [−6.96, +2.35] | +9.33% [−0.24, +20.90] | +8.21% [−0.57, +19.43] | +0.96% [−1.18, +2.91] |
+| GoiEner households, out of time (supplementary) | hourly | +0.07% [−0.24, +0.38] | +0.10% [−0.27, +0.48] | +0.06% [−0.20, +0.32] | +0.01% [−0.10, +0.11] | +0.02% [−0.08, +0.13] | +0.03% [−0.04, +0.19] |
+| GoiEner households, out of time (supplementary) | forecast hours 0-2 (lead hours 0-3) | +6.89% [−0.43, +13.68] | +7.31% [−0.36, +14.39] | +0.69% [−0.84, +2.20] | +6.24% [−0.25, +13.42] | +6.56% [+0.21, +13.68] * | +0.40% [−0.37, +1.05] |
+| GoiEner households, out of time (supplementary) | forecast day 1 | +1.78% [−0.23, +3.74] | +2.07% [−0.10, +4.18] | +0.48% [−0.24, +1.20] | +1.30% [+0.38, +3.79] * | +1.42% [+0.43, +3.97] * | +0.21% [−0.05, +0.40] |
+
+- **The continuation layer** helps in the first hours on every test set (resolved on LCL, UNICON and HKUST in hours
+  0–2) and on day 1 (resolved on LCL, UNICON and GoiEner); over the month it is resolved on UNICON (+1.14%) and HKUST
+  (+0.56%) and within ±0.12% elsewhere.
+- **The loss weighting** is resolved only on UNICON over the month (+1.84%); elsewhere −0.06% to +0.16%.
+- **Against the frozen 0.1 candidate**, 0.2.0 is resolved better over the month on UNICON only (+2.95%), and on day 1 on
+  LCL (+4.89%) and UNICON (+16.67%).
+
+### 0.2.0: other readouts against TimesFM 2.5
+
+From `external_tests.csv`, block `other readouts` (six seeds; unit-and-month interval with the seed layer):
+
+| Test set | Forecast hours 0-2 | Forecast day 1 | Days 2–7 | Days 8–31 | Monthly energy (level readout) |
+|---|---|---|---|---|---|
+| LCL households (London) | −25.38% [−35.25, −16.23] (−) | −10.43% [−16.42, −4.74] (−) | −2.82% | +3.00% | +54.08% [+44.91, +61.73] * |
+| UNICON (La Trobe University campuses) | −73.88% [−109.41, −44.38] (−) | −13.29% [−30.10, +1.35] | −7.54% | −2.47% | −14.74% [−56.20, +15.72] |
+| HKUST campus incomer meters (secondary) | −25.89% [−73.73, +8.78] | −1.43% [−18.59, +13.25] | +1.90% | +12.27% | +32.52% [−79.13, +74.58] |
+| GoiEner households, out of time (supplementary) | −18.26% [−28.83, −8.57] (−) | −1.99% [−8.23, +3.89] | +0.75% | +4.51% * | +48.53% [+41.33, +54.85] * |
+
+(−) resolved worse. Zero-shot TimesFM 2.5 remains ahead in the first hours; ankyra-lite's monthly energy error is
+resolvably lower on LCL and GoiEner. Mean unit rank of ankyra-lite (block `mean unit rank`, all comparators on their
+common windows): first of 21 on LCL, third of 14 on UNICON, first of 14 on HKUST and first of 5 on GoiEner.
+
+### The day-1 rule
+
+Written before the read: if the external test sets' mean day-1 log gap to TimesFM 2.5 shrinks, from the 0.1.0
+configuration (recipe R, three seeds) to 0.2.0, by less than a third of the shrinkage measured on the development
+windows, no claim is made that 0.2.0 narrows the short-term gap.
+
+| Test set | Day 1 vs TimesFM 2.5, 0.1.0 configuration | Day 1 vs TimesFM 2.5, 0.2.0 | Shrinkage of the log gap |
+|---|---|---|---|
+| LCL households (London) | −16.63% (−) | −10.43% (−) | +0.055 |
+| UNICON (La Trobe University campuses) | −37.30% (−) | −13.29% | +0.192 |
+| HKUST campus incomer meters (secondary) | −10.80% | −1.43% | +0.088 |
+| GoiEner households, out of time (supplementary) | −2.41% | −1.99% | +0.004 |
+
+Day-1 rule (design 3.3): claim allowed (mean external shrink (log) 0.0848406119805109; line (1/3 of the development shrink) 0.03576426220072093; the external day-1 gap to TimesFM 2.5 shrank by at least 1/3 of the development-set shrink (mean over the scored faces)).
+
+The development shrinkage is +0.107 (log units). **What the rule allows:** to say that the day-1 gap to TimesFM 2.5
+narrowed from 0.1 to 0.2.0 on these test sets. It does not allow saying that ankyra-lite leads TimesFM 2.5 on day 1: it
+does not, and on LCL TimesFM 2.5 is still resolvably ahead. The shrinkage is mostly UNICON's; on GoiEner it is close to
+zero. Figure 17's footer prints the same outcome.
+
+![External tests](../figures/fig17_external_tests.png)
+
+*Figure 17. External tests of ankyra-lite 0.2.0, the 0.2.0 configuration re-run on the test sets of the frozen external
+test and scored once. a–c: the three pre-specified primary readouts of each test set (12 nominal intervals over four
+test sets, no multiplicity correction); d–f: the same contrasts by lead time, forecast hours 0–2 included; g–i:
+descriptive contrasts between ankyra-lite's own configurations by lead time (g: 0.2.0 against the 0.1.0
+configuration; h: the continuation layer on against off; i: the loss weighting of recipe Rw against recipe R, without
+the layer). Welch 95% intervals where the record has a seed layer, else unit-and-month only; filled = resolved; an
+interval end beyond the axis is drawn as an arrow. LCL is in the pretraining data of TimesFM 2.5, Chronos and
+Chronos-2. Source: `results/external_tests.csv`.*
 
 ## How to read the numbers
 
@@ -34,43 +139,43 @@ Sections: [How to read the numbers](#how-to-read-the-numbers) · [Primary readou
   ankyra-lite has the lower error**. Units whose mean load is below 10⁻⁶ kW are left out of the ratio and listed.
 - **Interval.** A 95% interval that combines the unit-and-month cluster bootstrap (2,000 draws) with the spread of the
   single-seed contrasts: SE = √(SE_unit×month² + SD_seeds²/M), with Welch degrees of freedom and a t quantile. M = 6 for
-  the six-seed ensemble (the primary readout) and 3 for the three-seed release configuration. The contrast with the
-  from-scratch stage has the unit-and-month interval only.
-- **Three-state label at zero**: *resolved better* (marked \*), *not resolved*, *resolved worse* (marked †). **Not
-  resolved is never a finding of no difference**: it means that the interval includes zero. No pass line was set.
-  "—" in a table: not computed (the peak readout exists only for the arms recomputed in this run, not for the saved
-  baselines).
-- **Multiplicity.** The primary readouts are 3 contrasts × 5 test sets = 15 nominal 95% intervals (12 scored here; the
-  3 of Helsinki are sealed). There is no multiplicity correction, no combined verdict and no pooling across test sets;
-  if no true difference existed, about 0.75 of the 15 would be expected to show "resolved" by chance.
+  the six-seed ensemble (the primary readout) and 3 for a three-seed configuration. Contrasts without a seed layer have
+  the unit-and-month interval only.
+- **Three-state label at zero**: *resolved better* (marked \*), *not resolved*, *resolved worse* (marked † in the 0.1
+  tables, (−) in the 0.2.0 tables). **Not resolved is never a finding of no difference**: it means that the interval
+  includes zero. No pass line was set. "—" in a table: not computed (the peak readout exists only for the arms
+  recomputed in a run, not for the saved baselines).
+- **Multiplicity.** The primary readouts are 3 contrasts × 5 test sets = 15 nominal 95% intervals (12 scored; the 3 of
+  Helsinki are sealed). There is no multiplicity correction, no combined verdict and no pooling across test sets; if no
+  true difference existed, about 0.75 of the 15 would be expected to show "resolved" by chance.
 - **Pretraining overlap**, stated with the TimesFM numbers: LCL is in the pretraining data of TimesFM 2.5, Chronos and
   Chronos-2, which favours the TimesFM- and Chronos-based baselines; whether GoiEner is in the TimesFM 2.5 or Chronos
   pretraining data is not verified; UNICON and HKUST are not on the published pretraining lists of TimesFM 2.5,
   Chronos or Chronos-2, which does not establish absence.
-- Every estimate, interval, label and mean rank on this page, with the window, unit and month counts of its contrast,
-  is a row of [`results/external_tests.csv`](../results/external_tests.csv), copied from the score record that its
-  `source` column cites ([`evaluation/external_tables.py`](../evaluation/external_tables.py)). The counts that describe
-  the data and the run come from the run's records, named where they appear (a field `x` of a score record is written
-  `score: x`).
+- Every estimate, interval, label and mean rank of the 0.2.0 section, with the window, unit and month counts of its
+  contrast, is a row of [`results/external_tests.csv`](../results/external_tests.csv), copied from the score record
+  that its `source` column cites ([`evaluation/external_tables.py`](../evaluation/external_tables.py)). The counts that
+  describe the data and the run come from the run's records, named where they appear (a field `x` of a score record is
+  written `score: x`).
 
-![External tests](../figures/fig17_external_tests.png)
+## Version 0.1 external test (19 October 2026)
 
-*Figure 17. External tests, each test set scored once. a–c: the primary readouts (hourly error, six seeds as circles,
-the three-seed release configuration as grey diamonds); d–f: the same contrasts by forecast day; g–i: descriptive
-contrasts with ankyra-lite's own reduced configurations. Filled: the 95% interval excludes zero; an interval end beyond
-the axis is drawn as an arrow. LCL, UNICON and HKUST:
-first read of this candidate on a previously read population; GoiEner households out of time: same-source out-of-time
-supplementary check; Helsinki: sealed, not scored. LCL is in the pretraining data of TimesFM 2.5, Chronos and
-Chronos-2. Source: `results/external_tests.csv`.*
-
-## Primary readouts
+History. ankyra-lite 0.1.0, the copy-pointer carrier trained with recipe R, the anchoring layer copied byte for byte
+from ANKYRA 2.2.1 and the seasonal-naive state rule, without a continuation layer, was tested on data outside the test
+windows of the nine populations. The run was frozen on 19 October 2026 at 07:45 UTC, before any training on these data:
+the test plan, an addendum written before the freeze, a snapshot of the package, the code that trained, anchored and
+scored, and every input were hashed. Each test set was scored once, after its forecasts had been hashed. The carrier was
+trained anew for each test set with recipe R; the shipped checkpoints were not used. The numbers of this part are those
+of `results/external_tests.csv` in the 0.1.1 release (commit `c27affc`); the 0.2.0 regeneration replaced that file.
+The sections from "Procedure" to "Run notes" describe this run; the 0.2.0 re-run used the same split, comparators,
+scoring and stage-1 carriers.
 
 Three contrasts were fixed before any reading, for every test set: ankyra-lite (six seeds) against zero-shot TimesFM
 2.5, against the weekly seasonal naive (SN-week), and against the carrier-free control with ankyra-lite's state rule
 (the unchanged anchoring layer called with the history-only forecasts in the carrier's place, with the seasonal-naive
 forecast on the same state windows). Hourly error.
 
-### Primary readouts (hourly, six seeds)
+### Version 0.1 primary readouts (hourly, six seeds)
 
 | Test set | Identity | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
 |---|---|---|---|---|---|
@@ -79,8 +184,8 @@ forecast on the same state windows). Hourly error.
 | HKUST campus incomer meters (secondary) | first read of this candidate on a previously read population (retrospective external re-evaluation) (secondary test set, small sample) | 89 / 29 / 8 | +10.24% [−9.22, +26.23] | +25.65% [+6.33, +40.98] * | +3.95% [−4.11, +11.38] |
 | GoiEner households, out of time (supplementary) | same-source out-of-time supplementary check (new units, new period), not an external population; correlated with the result on study population 6 (GoiEner households) | 1,417 / 282 / 6 | +4.19% [+1.59, +6.72] * | +25.99% [+23.87, +28.05] * | +5.48% [+3.59, +7.34] * |
 
-Over the four scored test sets (three first reads of this candidate on previously read populations and one same-source
-out-of-time supplementary check), 7 of the 12 primary intervals are resolved in ankyra-lite's favour, 5 are not resolved
+Version 0.1: over the four scored test sets (three first reads of this candidate on previously read populations and one
+same-source out-of-time supplementary check), 7 of the 12 primary intervals are resolved in ankyra-lite's favour, 5 are not resolved
 and none is resolved against it; with no true difference, about 0.75 of the 15 planned intervals would be resolved by
 chance. Against zero-shot TimesFM 2.5 only the GoiEner check is resolved (+4.19%, same-source out-of-time supplementary
 check; whether GoiEner is in the TimesFM 2.5 pretraining data is not verified); on LCL (+2.68%; LCL is in the TimesFM
@@ -602,21 +707,29 @@ for review; both were written into the plan's addendum before the freeze.
 
 - **Not tests on unseen populations.** LCL, UNICON and HKUST had been read by earlier forecasters and earlier versions of
   the small network, and the anchoring layer was fixed after those readings; GoiEner is a later period of a study
-  population's source. The Helsinki retrospective set is not scored; the prospective Helsinki test is not being pursued
-  for now.
-- **Not tests of the shipped checkpoints.** Each test set got its own carriers, trained with the released recipe.
+  population's source. The 0.2.0 re-run reads each test set a second time. The Helsinki retrospective set is not
+  scored; the prospective Helsinki test is not being pursued for now.
+- **Not tests of the shipped checkpoints.** Each test set got its own carriers, trained with recipe R (0.1) and then
+  recipe Rw (0.2.0) from the same stage-1 runs.
+- **The continuation layer's constants were not refitted** on any external data; whether other constants would serve
+  these test sets better was not examined.
+- **The day-1 rule allows one claim only**: that the day-1 gap to TimesFM 2.5 narrowed from 0.1 to 0.2.0 on these test
+  sets. It is not a lead: on LCL TimesFM 2.5 is still resolvably better on day 1, and in the first three hours it is
+  resolvably better on LCL, UNICON and GoiEner.
 - **Few months.** LCL 5, HKUST 8 and GoiEner 6 months; the month resampling has few clusters, so the intervals may be
   too narrow.
 - **No multiplicity correction** over the 15 primary intervals, and no pooling across test sets.
 
 ## Files
 
-- [`results/external_tests.csv`](../results/external_tests.csv): every contrast of the four score records with
-  ankyra-lite, its own reduced configurations and the baselines, and the mean unit ranks
-  ([columns](../results/README.md#external-tests)). The records hold no per-day curves, so there is no by-day file; the
+- [`results/external_tests.csv`](../results/external_tests.csv): every contrast of the four 0.2.0 score records with
+  ankyra-lite 0.2.0, its own configurations (the 0.1.0 configuration, the frozen 0.1 candidate, the layer and the
+  weighting on and off, three and six seeds) and the baselines, the day-1 rule and the mean unit ranks
+  ([columns](../results/README.md#external-tests)). The 0.1 file is that of the 0.1.1 release (commit `c27affc`). The records hold no per-day curves, so there is no by-day file; the
   forecast-day groups (day 1, days 2–7, days 8–31) are rows of this file.
 - [`evaluation/external_tables.py`](../evaluation/external_tables.py) writes it from the score records
-  (`ANKYRA_LITE_RESEARCH_ROOT`) and prints the tables of this page; `--check` compares the file with the records.
+  (`ANKYRA_LITE_RESEARCH_ROOT`; the 0.2.0 records with `--version 0.2`) and prints the tables of the 0.2.0 section;
+  `--check` compares the file with the records.
 - [`tests/test_external_tables.py`](../tests/test_external_tables.py) checks the file against the records, the forecaster
   names and the absence of paths.
 - [`figures/fig17_external_tests.png`](../figures/fig17_external_tests.png) (and `.pdf`), drawn from the CSV file.

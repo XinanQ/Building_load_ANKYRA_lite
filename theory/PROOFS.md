@@ -1,17 +1,21 @@
 # Proofs of the exact properties
 
-The properties below follow from the construction of ankyra-lite's two parts (identities and elementary bounds), not
-from fitted relationships; the historical estimates, the anchoring weights and the carrier's weights themselves are
-fitted to the data. This page states them with proofs and counterexamples:
+The properties below follow from the construction of ankyra-lite's three parts (identities and elementary bounds),
+not from fitted relationships; the historical estimates, the anchoring weights, the carrier's weights and the four
+constants of the continuation layer are fitted to the data. This page states them with proofs and counterexamples:
 
 - **P1–P20** belong to the anchoring layer, `ankyra_lite.anchor`, a byte-identical copy of the ANKYRA 2.2.1 package.
   They are numbered in the order of its pipeline, and their statements and proofs are those of the ANKYRA 2.2.1
   theory. The data evidence of that theory (measurements from the method's earlier development and from the ANKYRA
   study, made with TimesFM 2.5 as the carrier) is not a result of this repository and is left out; where this
   repository's result files measure a consequence, the statement names the file.
-- **C1–C10** belong to the carrier network, `ankyra_lite.carrier`
-  ([Exact properties of the carrier network](#exact-properties-of-the-carrier-network)). They hold for any weights,
-  trained or not, except C9(a), which is about the initialisation.
+- **C1–C14** belong to the carrier, `ankyra_lite.carrier`
+  ([Exact properties of the carrier network](#exact-properties-of-the-carrier-network)). C1–C10 hold for any weights,
+  trained or not, except C9(a), which is about the initialisation. C11–C14 (new in 0.2.0) are properties of the loss
+  weighting of recipe Rw's second stage and hold for any training pool.
+- **O1–O9** belong to the continuation layer, `ankyra_lite.continuation` (new in 0.2.0;
+  [Exact properties of the continuation layer](#exact-properties-of-the-continuation-layer)). They hold for any
+  trajectory the anchoring layer delivers and, unless a number is given, for any constants of the layer.
 
 They make the construction auditable:
 
@@ -19,13 +23,21 @@ They make the construction auditable:
 - every weight has a stated support requirement and a bound on how far it can move;
 - every readout has a guarantee or a counterexample that marks where the guarantee stops;
 - the carrier's forecast is a nonnegative energy budget built only from data before its issue time, and every
-  pseudo-origin forecast that the anchoring layer scores is out of sample for the carrier.
+  pseudo-origin forecast that the anchoring layer scores is out of sample for the carrier;
+- the loss weights of recipe Rw are read from each training window's own context, keep every population's share of
+  the draws and reduce to recipe R when they are all equal;
+- the continuation layer moves each hour of the anchored trajectory by a factor whose bounds are known at the origin,
+  reads no load at or after the origin (of the forecast month only the calendar of its first week), and leaves the
+  energy, level and peak readouts unchanged.
 
 The index, with the condition, use, code and check of each property, is in [README.md](README.md). P1–P20 are
 implemented in [`operators.py`](operators.py) (or in the anchoring layer's `anchor.blocks`, `anchor.readouts` and
 `anchor.metrics`) and checked in [`test_operators.py`](test_operators.py); C1–C10 are properties of the carrier's own
-code and are checked in [`test_carrier_properties.py`](test_carrier_properties.py); counterexamples are included in
-both. Where this repository's result files measure a property's consequence on data, the statement names the file.
+code and are checked in [`test_carrier_properties.py`](test_carrier_properties.py), C11–C14 in
+[`test_weighting_properties.py`](test_weighting_properties.py); O1–O9 are properties of the continuation layer's code
+and are checked in [`test_continuation_properties.py`](test_continuation_properties.py); counterexamples are included
+in all four. Where this repository's result files measure a property's consequence on data, the statement names the
+file.
 
 P1–P10 are identities and one-step bounds. Their arguments are short and are given with the statements, not as
 separate proofs; the numerical checks cover each of them.
@@ -425,8 +437,8 @@ over. Finiteness also needs finite weights and no overflow inside the linear lay
 input that overflows the pointer (a day token of 88 in float32) gives a non-finite forecast, and `carrier_forecasts`
 raises `FloatingPointError` on any non-finite or negative forecast before it reaches the anchoring layer
 (`inference.py` 80–81). The ensemble average (83–84) of nonnegative forecasts is nonnegative. The nonnegativity of
-the trajectory that ankyra-lite delivers comes from the anchoring layer's own projection (P11), not from this
-property.
+the trajectory that ankyra-lite delivers comes from the anchoring layer's own projection (P11), kept by the
+continuation layer (O1), not from this property.
 
 *Check.* `NonnegativityTests`: random weights and inputs in float32 and float64 (strictly positive in float64);
 extreme logits (exact zeros occur, negative values do not); a record with one large hour 1,000 hours before the
@@ -623,11 +635,435 @@ pseudo-origin is one hour before the cut and is dropped.
 *Where it stops.* The guarantee is about time on the population's own record. The inputs of a pseudo-origin forecast
 may include hours of the training period, as those of the forecast at the origin do. Borrowed windows of other
 populations are other units; the pooling rule makes them end before the target's validation start in the recorded
-absolute time ([README](../README.md#training-recipe-r), step 4), and on the original CINELDI store that recorded time is
+absolute time ([README](../README.md#training-recipe-rw), step 4), and on the original CINELDI store that recorded time is
 59 days early ([README](../README.md#data-splits)). With test origins closer than 186 days to the cut, `cut=` drops
 the pseudo-origins before the cut, and the anchoring layer has fewer completed errors (P7).
 
 *Check.* `PseudoOriginTests`.
+
+### The loss weighting of recipe Rw (C11–C14)
+
+New in 0.2.0. Recipe Rw is recipe R with one change in its second stage: every training window i of the pool gets a
+weight w_i in the loss (`recipe("span_return_weighted", ...)`, i.e. the span return with
+`noise_weighting=NoiseWeights()`; [`train.py`](../ankyra_lite/carrier/train.py), cited by function name). Notation,
+for a pool window i of population Q with origin o and causal scale s_i (the carrier's scale input):
+
+- x_t = sinh(day token) = y_t / s_i, the load divided by the window's scale;
+- σ̂²_i, the mean of (x_t − x_{t−168})² over the hours t of day tokens 345–365 (the last 21 days before o) whose
+  partner hour t − 168 is also observed; undefined with fewer than 168 such pairs (`noise_sigma2`);
+- p_i, the probability that one draw of the sampler picks window i (`draw_probabilities`);
+- f, the p-weighted 25th percentile of the defined σ̂² over the pool (`weighted_quantile`);
+- ω_i = max(σ̂²_i, f)^{−1/2}, and ω_i = ω̄, the p-weighted median of the defined raw weights, where σ̂²_i is undefined;
+- w_i = c_Q ω_i, with c_Q = Σ_{j∈Q} p_j / Σ_{j∈Q} p_j ω_j (`noise_weights`).
+
+The loss of a batch B is (`weighted_log1p_loss`)
+
+$$L_w=\frac{\sum_{i\in B}w_i\,\ell_i}{\sum_{i\in B}w_i},\qquad \ell_i=\log\big(1+\max(0,\ \mathrm{MSE}_i+0.1\,\mathrm{KL}_i)\big),$$
+
+where ℓ_i is the per-window term of `forecast_loss` (with `compression=True`), unchanged. The checks are in
+[`test_weighting_properties.py`](test_weighting_properties.py); they use synthetic training arrays, the package's own
+sampler and untrained carriers on the CPU.
+
+**C11. Unit weights are recipe R.**
+
+*Claim.*
+
+- (a) With every weight equal to 1, L_w is bit for bit the loss of recipe R, the batch mean of ℓ_i, on the CPU, and so
+  are its gradient and two optimisation steps of `train_step` from the same weights (clipping and AdamW included).
+- (b) L_w does not change when every weight is multiplied by the same c > 0 (bit for bit when c is a power of two); in
+  particular any constant weight gives recipe R's loss.
+- (c) Without weighting (`noise_weighting=None`, the default and every recipe of version 0.1) `train_step` runs the
+  code of version 0.1, and `TrainConfig.describe()` has no new key, so the configurations and records of the 0.1
+  recipes are unchanged. Rw's configuration differs from R's (`recipe("span_return", ...)`) in `noise_weighting` only.
+
+*Proof.* (a) Both paths compute the same tensor ℓ = log1p(clamp₀(raw)). Then 1 · ℓ_i = ℓ_i exactly, the sum is the same
+reduction and Σ_i 1 = |B| exactly; on the CPU PyTorch computes the mean of a float tensor as its sum divided by the
+number of elements (the check confirms it bit for bit for batches of 64 and of 5), so the two losses are the same
+number. The derivative of L_w with respect to ℓ_i is
+w_i / Σw = 1/|B|, the derivative of the mean, so backpropagation, the clipping and the optimiser see the same numbers.
+(b) Σ_i (c w_i) ℓ_i / Σ_i c w_i = Σ_i w_i ℓ_i / Σ_i w_i; multiplication by 2^k is exact and commutes with every
+rounding. (c) `train_step` takes the unweighted branch when `weights` is None, `describe` leaves the field out when it
+is None, and `recipe` builds Rw as the span return plus `noise_weighting=NoiseWeights()`.
+
+*Where it stops.* (a) is a property of the CPU kernels, checked with the installed PyTorch: on a GPU, or with any
+reduction whose order differs from the mean's, the two losses agree to rounding only, and GPU training is not bitwise
+repeatable in any case. For constant factors that are not powers of two the losses agree to float32 rounding. Equal
+weights are not Rw: Rw's weights are not constant (C13), and they change which windows the loss emphasises.
+
+*Check.* `UnitWeightTests`.
+
+**C12. Each population keeps its share of the draws.**
+
+*Claim.* The p_i are the sampler's exact per-draw probabilities: the target's windows share
+⌊16,000 · ½⌋ / 16,000 = ½ of the draws, each of its units with equal total probability, and the other half is split
+equally across the borrowed populations, unit-balanced within each (all draws are the target's when there is none).
+The normalisation gives, for every population Q of the pool,
+
+$$\sum_{i\in Q}p_i\,w_i=\sum_{i\in Q}p_i .$$
+
+So a draw from Q carries an expected weight of 1, the expected total weight of an epoch is its number of draws, and
+the weighting moves weight only between windows of the same population: in expectation over the draws, neither the
+target's half nor any borrowed population gains or loses weight, whatever its noise level.
+
+*Proof.* `sampler` draws ⌊draws · own_fraction⌋ windows of the target with the unit-balanced probabilities and, for
+each other draw, a borrowed population uniformly and then one of its windows with its unit-balanced probabilities;
+`draw_probabilities` writes these probabilities down. The normaliser c_Q = Σ_Q p / Σ_Q p ω gives
+Σ_Q p c_Q ω = Σ_Q p.
+
+*Where it stops.*
+
+- The balance holds in expectation, not within a batch: a batch's Σw differs from its size, which is why L_w is
+  normalised by Σw (C11b).
+- It balances weight, not loss: the weights are correlated with the windows' losses, so each population's share of the
+  loss can still move.
+- With a target share other than ½ the target's share is ⌊draws · own_fraction⌋ / draws; the recipe fixes ½.
+- The floor f is pooled over the populations, so a noisier population changes the weights of the other populations,
+  not their shares.
+
+*Check.* `SourceBalanceTests` (including a Monte-Carlo comparison of `draw_probabilities` with 10 epochs of the
+sampler's draws).
+
+**C13. Bounded weights and the floor.**
+
+*Claim.* Let σ̂²_max be the largest defined σ̂² of the pool, and let f > 0. Then:
+
+- (a) ω_i is nonincreasing in σ̂²_i and equals f^{−1/2}, the largest raw weight, for every window with σ̂²_i ≤ f; these
+  windows carry at least a quarter of the draw mass of the windows with a defined σ̂²;
+- (b) the neutral raw weight ω̄ of the windows without a noise estimate lies between the smallest and the largest
+  defined raw weight;
+- (c) every pool window gets a finite positive weight, c_Q (σ̂²_max)^{−1/2} ≤ w_i ≤ c_Q f^{−1/2}, and the windows outside
+  the pool get none (NaN);
+- (d) within a population the weights differ by at most the factor (σ̂²_max / f)^{1/2}.
+
+*Proof.* max(·, f) and t ↦ t^{−1/2} are monotone. The weighted quantile is the smallest value whose cumulative draw
+share reaches ¼, so the windows at or below it carry at least that share. A weighted median of values in
+[ω_min, ω_max] lies in that interval. (c) and (d) follow, with c_Q > 0.
+
+*Where it stops.*
+
+- *Counterexample.* The floor can be zero: windows whose last three weeks repeat exactly (σ̂² = 0, for instance a meter
+  that repeats one week) holding a quarter or more of the draw mass give f = 0 and an infinite raw weight.
+  `noise_weights` refuses such a pool (ValueError).
+- The factor in (d) is set by the pool's own noise range; on the released pools the largest weight is
+  1.56 (Cambridge) to 6.23 (GoiEner non-household) times the draw-weighted median weight (`weight_max_over_median` of
+  each weights record named in `checkpoints/MANIFEST.json`).
+- The bounds are not an accuracy statement: down-weighting noisy windows changes what the carrier fits, and whether
+  that helps is measured ([EVALUATION.md](../docs/EVALUATION.md)).
+
+*Check.* `WeightBoundTests`.
+
+**C14. The weights read only each window's own recent context.**
+
+*Claim.* σ̂²_i is a function of day tokens 338–365 of window i (its last 28 context days, the hours [o − 672, o)
+before its origin o), columns 0–47 (the 24 hourly values arcsinh(y/s) and the 24 observation flags), and of nothing
+else. It is the weekly-naive relative mean squared error of the last three weeks,
+
+$$\hat\sigma^2_i=\frac1{|P_i|}\sum_{t\in P_i}\Big(\frac{y_t-y_{t-168}}{s_i}\Big)^2,\qquad P_i=\lbrace t\in[o-504,o):\ y_t\ \text{and}\ y_{t-168}\ \text{observed}\rbrace,$$
+
+defined when |P_i| ≥ 168. f, ω̄ and c_Q are functions of the pool windows' σ̂² and p only. Hence:
+
+- (a) no label hour, no validation or test window and no window outside the pool enters a weight;
+- (b) the weights are computed once per pool, before training, use no random stream and are the same for every seed;
+- (c) they are bitwise invariant to multiplying a population's load by a power of two (through C7), and two windows
+  of one population with the same tokens get the same weight (no unit identifier, C8).
+
+*Proof.* `noise_sigma2` reads `day_tokens[:, 338:366, :48]`; sinh(arcsinh(v)) = v; a flag above ½ marks an observed
+hour; the pairs are 7 days apart and need at least 168. `pool_sigma2` reads only the pool's rows, in chunks of
+ascending rows (also from a `RowConcat`, never the full rows), and `noise_weights` combines σ̂² with
+`draw_probabilities`, which reads the units of the pool rows only. Day token 365 covers the hours [o − 24, o)
+(`features`), so everything read lies before the window's origin. No call draws a random number.
+
+*Where it stops.*
+
+- The tokens are stored in float16 for training (C7), so σ̂² is computed from rounded values: against the formula on
+  the load the relative difference is about 2 × 10⁻⁴ to 5 × 10⁻⁴ on the synthetic records of the check (which allows
+  5 × 10⁻³), and below 2 × 10⁻⁷ with float32 tokens (allowed 10⁻⁵).
+- σ̂² is relative to the window's own causal scale s_i (C7), not to its mean over the 28 days.
+- A window's weight depends on the other windows of the pool (through f, ω̄ and c_Q): adding or removing a population
+  changes every weight.
+- A window with fewer than 168 observed pairs gets the neutral weight, whatever its noise.
+
+*Check.* `WeightInputTests`.
+
+## Exact properties of the continuation layer
+
+The continuation layer is `ankyra_lite.continuation` (new in 0.2.0; [`continuation.py`](../ankyra_lite/continuation.py),
+cited by function name). `forecast(..., continuation=True)` applies it after the anchoring layer and the state rule, to
+the trajectory that version 0.1 delivered. Notation, for a window with origin o:
+
+- y_t, the load before the origin (unobserved hours are NaN);
+- F(h), h = 0 … 743, the trajectory before the layer (`trajectory_before_continuation_kw`);
+- s = max(mean of the observed y over [o − 672, o), 10⁻³ kW), the scale, and ε = 0.01 s;
+- d*, the reference day (O9);
+- m_f and m_d, the means of y over the last 3 and the last 24 hours before o;
+- n_f = max(mean of F(24d* + 21 … 24d* + 23), 0) and n_d = max(mean of F(24d* … 24d* + 23), 0).
+
+The two anomalies and the correction are (`anomalies`, `delta`, `apply_batch`)
+
+$$x_f=\mathrm{clip}\Big(\ln\frac{m_f+\varepsilon}{n_f+\varepsilon},-1,1\Big),\qquad x_d=\mathrm{clip}\Big(\ln\frac{m_d+\varepsilon}{n_d+\varepsilon},-1,1\Big),$$
+
+$$\Delta(h)=\kappa_1x_f\,e^{-h/\rho_1}+\kappa_2x_d\,e^{-h/\rho_2},\qquad F'(h)=F(h)\,e^{\Delta(h)},$$
+
+with x_f = 0 when one of the last 3 hours is unobserved, x_d = 0 when one of the last 24 is, x_f = 0 when m_f + ε ≤ 0
+and x_d = 0 when m_d + ε ≤ 0 (negative loads, where the logarithm is undefined: a rule of the release, see O4 (f)),
+Δ evaluated in the order
+(κ₁x_f)e^{−h/ρ₁} + (κ₂x_d)e^{−h/ρ₂}, and F' = F on a state window. The constants are κ₁ = 0.479, ρ₁ = 12 h,
+κ₂ = 0.330 and ρ₂ = 168 h (`CONSTANTS`), fitted once on development windows and shared by every population
+([METHOD.md](../docs/METHOD.md#the-continuation-layer)). The envelope of the correction is
+
+$$E(h)=\kappa_1e^{-h/\rho_1}+\kappa_2e^{-h/\rho_2}.$$
+
+The properties hold for any constants κ₁, κ₂ ≥ 0 and ρ₁, ρ₂ > 0 unless a number is given; the numbers are those of
+`CONSTANTS`. The checks are in [`test_continuation_properties.py`](test_continuation_properties.py): on synthetic
+windows, and end to end through `ankyra_lite.forecast` on an artificial building with a stand-in carrier and an
+untrained one; bit for bit unless a tolerance is stated. None of them is an accuracy guarantee: what the layer does on
+the test windows is measured ([EVALUATION.md](../docs/EVALUATION.md)).
+
+**O1. Nonnegativity, sign and zeros.**
+
+*Claim.* F' has the sign of F hour by hour: a nonnegative trajectory stays nonnegative, and an hour forecast as
+exactly zero stays exactly zero. In real arithmetic F'(h) = 0 only where F(h) = 0; in floating point every hour with
+|F(h)| at least the smallest normal number (2.2 × 10⁻³⁰⁸) stays nonzero. Off state windows the trajectory before the
+layer is nonnegative (the anchoring layer's projection, P11), so the delivered hourly forecast with the layer is
+nonnegative too.
+
+*Proof.* |x_f|, |x_d| ≤ 1 and 0 < e^{−h/ρ} ≤ 1, so |Δ(h)| ≤ E(0) and the factor e^{Δ(h)} lies in
+[e^{−E(0)}, e^{E(0)}], a positive normal number. A floating-point product with a positive factor keeps the sign of the
+other factor and is zero only when that factor is zero or the product underflows; with a factor of at least
+e^{−0.809} = 0.445 only the smallest subnormal number can underflow. `apply_batch` rejects a non-finite trajectory on a
+window that is not a state window (ValueError).
+
+*Where it stops.*
+
+- *Counterexample.* F(h) = 2^{−1074} kW (5 × 10⁻³²⁴, the smallest subnormal number) with Δ(h) = −0.809 gives
+  F'(h) = 0.
+- The logarithm is defined for m + ε > 0 only. When m_f or m_d is at or below −ε (a net-metered record can do this)
+  that anomaly is set to 0 and flagged (O4 (f)), so the claim still holds; a mean slightly below zero but above −ε is
+  used as it is.
+- The property is about signs, not errors.
+
+*Check.* `NonnegativityTests`.
+
+**O2. Bounded correction.**
+
+*Claim.* |Δ(h)| ≤ E(h), E decreases strictly in h, and wherever F(h) ≠ 0, e^{−E(h)} ≤ F'(h)/F(h) ≤ e^{E(h)}. For the
+frozen constants:
+
+| Hour h | E(h) | F'(h) / F(h) lies in (rounded outward) |
+|---|---|---|
+| 0, the first hour | 0.809 (0.8089999999999999 in floating point) | [0.4453, 2.2457] |
+| 23, the last hour of day 1 | 0.35824 | [0.6989, 1.4309] |
+| 167, the last hour of day 7 | 0.12213 | [0.8850, 1.1299] |
+| 168 (first hour of day 8) and later | 0.121401 at h = 168, less afterwards (≤ 0.1215) | [0.8856, 1.1291] |
+| 743, the last hour of day 31 | 0.0039609 (≤ 0.004) | [0.99604, 1.00397] |
+
+The bound is reached when both anomalies are clipped to the same sign. In floating point, |Δ(h)| never exceeds the
+envelope evaluated with the same operations, (κ₁ · 1)e^{−h/ρ₁} + (κ₂ · 1)e^{−h/ρ₂} (`envelope`), with equality at
+x_f = x_d = ±1.
+
+*Proof.* The clip, the triangle inequality with κ ≥ 0 and e^{−h/ρ} > 0, and the monotonicity of the exponential; E is a
+sum of two decreasing functions with positive weights. In floating point, rounding is monotone and symmetric under
+negation, so |x| ≤ 1 gives |fl(κx)| ≤ κ, then |fl(fl(κx) g)| ≤ fl(κg), and the rounded sum is bounded by the rounded
+sum of the bounds.
+
+*Where it stops.*
+
+- The bound limits how far the layer moves an hour away from F, not the error: a correction of the full envelope in
+  the wrong direction is possible, for instance when the load changes level right after the origin.
+- "At most 0.12 at the end of day 7" holds only after rounding to two decimals: at h = 167 the envelope is 0.12213;
+  from h = 168 on it is at most 0.1215 (0.121401 at h = 168, slightly above 0.1214).
+- With other constants E(0) = κ₁ + κ₂.
+
+*Check.* `BoundTests`.
+
+**O3. Causality.**
+
+*Claim.* F' at origin o is a function of F, of the load at the hours [o − 672, o) together with which of them are
+observed, and of the day types at the hours o − 12 and o + 12 + 24d (d = 0 … 6); of nothing else. Hence F' is bitwise
+unchanged when the load at hours before o − 672 or at or after o, or the day types at any other hour, are replaced by
+anything (NaN, infinity, negative or huge values). With C4 and the anchoring layer's own isolation, the forecast with
+the layer reads no load or temperature at or after the origin.
+
+*Proof.* `window_inputs` copies `load_kw[o − 672:o]`, `day_types[o − 12]` and `day_types[o + 12 + 24d]`; `anomalies`
+reads these and F; `delta` reads the constants only; `apply_batch` multiplies. `forecast` passes the pre-origin load
+with unobserved hours as NaN (the observed mask applied) and the calendar of the record.
+
+*Where it stops.* The calendar of the first forecast week is an input (through d*, O9): a holiday announced after the
+origin enters the layer, as it enters the carrier (C4) and the anchoring layer. The layer reads the first week of F
+itself, so whatever information F carries enters F'.
+
+*Check.* `CausalityTests` (including a sanity check that the last observed hour is read).
+
+**O4. Bypass.**
+
+*Claim.*
+
+- (a) On a state window (the anchoring layer reported off-state or micro-load) F' = F bit for bit, with either state
+  rule: the seasonal naive, or with `state_rule=None` the carrier's forecast, is delivered without continuation.
+- (b) If one of the last 3 hours before the origin is unobserved, x_f = x_d = 0 and F' = F bit for bit
+  (`bypass="missing hours"` in the record).
+- (c) If one of the last 24 hours, but none of the last 3, is unobserved, x_d = 0 and only the fast term acts.
+- (d) An unobserved hour earlier in the 672 hours changes only the scale s, the mean of the observed hours.
+- (e) The history-only configuration (`forecast(history, None, ...)`) is never continued (`continuation` is None): it
+  was not evaluated with the layer.
+- (f) Negative loads. If m_f + ε ≤ 0, x_f = 0; if m_d + ε ≤ 0, x_d = 0. The record flags it (`nonpositive_fast`,
+  `nonpositive_day`; `nonpositive_f`, `nonpositive_d` in the batch info), and when both anomalies are set to 0 this
+  way (or the day span is unobserved) F' = F bit for bit (`bypass="nonpositive load"`). This is a rule of the release,
+  chosen and disclosed by the author: the study's reference implementation raised an error there, no development or
+  test window reached the case, and so the rule changes no study output. `RULE` and `DIGEST` still identify the frozen
+  layer.
+
+*Proof.* (a) `apply_batch` copies F on state windows, and `forecast` passes `state=state_window`. (b) Both spans
+contain the last 3 hours, so x_f = x_d = 0; then Δ = (κ₁ · 0)e^{−h/ρ₁} + (κ₂ · 0)e^{−h/ρ₂} = 0, e⁰ = 1 and F · 1 = F
+exactly. (c) and (d) hold by construction. (e) `forecast` returns before the layer when `carriers` is None. (f) By
+construction (`anomalies`), with the argument of (b) when both anomalies are 0.
+
+*Where it stops.* Through `forecast`, (b)–(d) cannot occur: the anchoring layer requires the 1,344 hours before the
+origin to be completely observed and raises an error otherwise. They apply when `continuation.apply` is called
+directly on a record with gaps. (f) can occur through `forecast`, since the record may hold negative loads.
+
+*Check.* `BypassTests`, `ForecastBypassTests`.
+
+**O5. Degeneracy: switching off leaves the carrier-specific pipeline unchanged.**
+
+*Claim.* With κ₁ = κ₂ = 0 (`continuation.ZERO`) F' = F bit for bit on every window with a finite trajectory (and on
+every state window), for float32 and float64 trajectories. With `continuation=False` (or None) `forecast` returns the composition of the steps of version 0.1
+(carrier forecasts, anchoring layer, state rule, peak readout) bit for bit, with `trajectory_before_continuation_kw`
+equal to `trajectory_kw` and `continuation` None; `continuation=ZERO` gives the same trajectory and readouts.
+
+*Proof.* (0 · x)e^{−h/ρ} is a signed zero, the sum of two signed zeros is a zero, e^{±0} = 1 and F · 1 = F; float32
+values convert to float64 exactly and back. With the layer off `forecast` skips its last step, and the steps before it
+are those of version 0.1.
+
+*Where it stops.* `continuation.ZERO` still computes the anomalies and attaches a record, and it refuses a non-finite
+trajectory on a window that is not a state window (O1), as the frozen constants do; `continuation=False` (or None)
+computes nothing. (On a window with negative loads, O4 (f), ZERO and the frozen constants no longer raise; the study's
+reference implementation did.) "Version 0.1" means its steps: with another carrier (six seeds, or recipe Rw) the layer off gives
+that carrier in the 0.1 pipeline, not the 0.1 forecasts. That the package with the layer off reproduces version
+0.1.1's forecasts field by field is a test of the release against version 0.1.1 itself (`tests/test_forecast_v2.py`),
+not a property.
+
+*Check.* `DegeneracyTests`.
+
+**O6. Readouts are read before the layer.**
+
+*Claim.* the energy readout (`energy_kwh`) is 744 × `level_kw`; the published curve-energy evaluation uses ΣF. The peak is the existing
+`peak_readout` operator applied to F, not necessarily max(F). With the same carrier forecasts and inputs,
+`level_kw`, `energy_kwh`, `peak_kw`, `raw_trajectory`, the blocks of the raw trajectory, `projection_energy_increase`
+and every field of the anchoring layer are bitwise the same with the layer on and off, and `peak_kw` is the peak
+readout of `trajectory_before_continuation_kw`. The interval readout is placed around `trajectory_kw`, i.e. around F'.
+The delivered hourly curve's energy generally differs from the energy readout (`energy_kwh`) 744ℓ, where ℓ denotes the level readout, by two
+terms known at the origin (either may be zero or they may cancel),
+
+$$\sum_hF'(h)-744\,\ell=\Big[\sum_hF'(h)-\sum_hF(h)\Big]+\Big[\sum_hF(h)-744\,\ell\Big],$$
+
+the first `readouts.continuation_energy_change`, the second the pre-layer curve/readout gap, ordinarily the projection
+increase `readouts.projection_energy_increase` (P11), and for
+F ≥ 0
+
+$$-\sum_hF(h)\big(1-e^{-E(h)}\big)\le\sum_hF'(h)-\sum_hF(h)\le\sum_hF(h)\big(e^{E(h)}-1\big).$$
+
+For a flat trajectory the bounds are −7.3349% and +9.3035% of Σ F (frozen constants; −7.34% and +9.31% rounded
+outward), both reached with clipped anomalies. For any nonnegative F the relative change (Σ F' − Σ F) / Σ F lies in
+[e^{−E(0)} − 1, e^{E(0)} − 1], i.e. between −55.5% and +124.6% (rounded outward), approached only when nearly all of
+the energy lies in the first hours: the flat-trajectory bounds do not hold for every trajectory.
+
+*Proof.* `forecast` computes the trajectory, the level and the peak as version 0.1 does and then F' from that
+trajectory; `readouts` reads `daily_means_kw` and `within_day_kw` from the anchoring layer's result, which the layer
+does not touch. The identity is a telescoping sum. The bounds follow from O2 hour by hour; for a flat F they are the
+means of e^{±E(h)} − 1 over the 744 hours. In general (Σ F' − Σ F) / Σ F is a mean of e^{Δ(h)} − 1 with weights
+F(h) / Σ F, so it lies between the smallest and the largest of e^{±E(h)} − 1, which are those at h = 0 (E decreases).
+
+*Where it stops.*
+
+- The readout rule is a choice, not a consequence: because energy and peak are read before the layer, toggling it on a
+  fixed carrier leaves those readouts unchanged. The sum of the delivered hourly curve generally differs from the
+  energy readout, but need not on every window. `trajectory_kw` sums to `energy_kwh` plus `projection_energy_increase` and
+  `continuation_energy_change`; it equals `energy_kwh` only when the two changes sum to zero.
+- On the development windows used to choose the layer, the relative difference between the mean of the delivered
+  hourly curve and the energy the evaluation scores (the mean of the trajectory before the layer) had a median of
+  0.6%, a 99th percentile of 7% and a maximum of 9%. These figures are measured, not bounded by the flat-trajectory
+  bounds: a trajectory with more of its energy in the first days can move further, up to the general bound above. On
+  the test windows the difference to the level readout (744 × level) is 0.77% / 7.8% / 310% (median, 99th percentile,
+  maximum; `results/continuation_record.csv`, row `all nine populations`); the layer's own energy change there lay
+  between −14.8% and +33.4%, inside the general bound, and every larger gap is a window where the nonnegativity
+  projection binds (P11), which the flat and general bounds above do not cover.
+- Intervals placed around F' differ from those placed around F.
+
+*Check.* `ReadoutTests`.
+
+**O7. Consistency and monotonicity.**
+
+*Claim.*
+
+- (a) A forecast that already continues the last observed hours is left alone: if m_f = n_f and m_d = n_d as
+  floating-point numbers, then x_f = x_d = 0 and F' = F bit for bit.
+- (b) Δ(h) is nondecreasing in x_f and in x_d; x_f is nondecreasing in m_f and nonincreasing in n_f, and likewise x_d.
+  So if both anomalies are nonnegative (the last hours at or above the forecast's reference), F'(h) ≥ F(h) for every
+  hour of a nonnegative F, and if both are nonpositive, F'(h) ≤ F(h): the layer then raises or lowers the whole window,
+  never one part up and another down.
+
+*Proof.* (a) (m + ε)/(m + ε) = 1 exactly, ln 1 = 0 and clip(0) = 0; then as in O4(b). (b) κ ≥ 0 and e^{−h/ρ} > 0, the
+logarithm and the clip are monotone, and e^{Δ} ≥ 1 exactly when Δ ≥ 0.
+
+*Where it stops.* With anomalies of opposite signs (the last 3 hours above and the last day below the forecast, or the
+reverse) Δ changes sign once: the fast term dominates the first hours and the slow term the rest; with x_f = 1 and
+x_d = −1 the sign changes after about 4.8 hours. Beyond |ln ratio| = 1 the clip makes the anomaly flat. Monotonicity
+is in the anomalies, not in accuracy.
+
+- The monotonicity in m_f and m_d holds for m + ε > 0 only. At m + ε ≤ 0 (negative loads, O4 (f)) the anomaly is set
+  to 0, so as m falls through −ε it jumps from the clipped value −1 (or above) to 0.
+
+*Check.* `ConsistencyTests`.
+
+**O8. Scale equivariance.**
+
+*Claim.* Let c > 0, and let the scale stay above its floor for both y and c y (s ≥ 10⁻³ kW). Then the layer applied to
+the load c y and the trajectory c F gives c F': exactly in real arithmetic, and bit for bit when c is a power of two
+(barring overflow and underflow).
+
+*Proof.* s(c y) = c s(y), so ε scales with c; the ratios (c m + c ε)/(c n + c ε) do not depend on c, so x_f, x_d and Δ
+are unchanged, and (c F)e^{Δ} = c (F e^{Δ}). Multiplication by 2^k is exact and commutes with every rounded operation
+the layer uses (means, maxima, sums, products and quotients).
+
+*Where it stops.*
+
+- *Counterexample.* A load of about 10⁻⁴ kW keeps s at its floor of 10⁻³ kW for c = 1 and for c = 8, so ε does not
+  scale and the anomalies change with c.
+- Other factors are equivariant to rounding (relative differences below 10⁻¹² in the check).
+- The property is the layer's. The anchoring layer has absolute thresholds (C7), so no such statement is made for the
+  whole forecaster.
+
+*Check.* `ScaleTests`.
+
+**O9. Reference day and identity.**
+
+*Claim.*
+
+- (a) d* depends on the calendar only: it is the first forecast day d = 0 … 6 whose workday class equals that of the
+  last observed day, where day types 0–4 are workdays and 5, 6 and 7 (Saturday, Sunday, holiday) are not; each day's
+  type is read at its 12th hour (o − 12 for the last observed day, o + 12 + 24d for forecast day d, as in the peak
+  readout and the anchoring layer). d* = 6 when no day of the first forecast week has that class; with a regular
+  calendar this happens only when the last observed day is a workday and all five weekdays of the first forecast week
+  are holidays.
+- (b) The fast anomaly compares the same clock hours: for any origin hour, F(24d* + 21 … 24d* + 23) are the hours of
+  the day that y(o − 3 … o − 1) occupied. The day anomaly compares the last 24 observed hours with one origin-aligned
+  forecast day of the same class.
+- (c) The SHA-256 of the canonical JSON of the constants and the rule (sorted keys, separators "," and ":", ASCII) is
+  `DIGEST` = d514e3ec93a745b14950671297bf2f922fd512424a804e292377e1b0c4cc1dce, the identity recorded when the layer
+  was frozen. Any change of a constant or of the rule changes it, and every `ContinuationRecord` carries the digest of
+  the constants it used.
+
+*Proof.* (a) `reference_day` and `window_inputs`. (b) o + 24d* + 21 + j ≡ o − 3 + j (mod 24) for j = 0, 1, 2. (c)
+`digest`.
+
+*Where it stops.* The fallback d* = 6 is that of the layer's design; the study's development code used d* = 0. The two
+agree wherever a day of the class exists, which was every development window; 33 test
+windows, all on EWELD, used the fallback (`results/continuation_record.csv`). The class separates workdays from the other days only,
+so a Saturday is compared with a Sunday or a holiday. For an origin after noon an origin-aligned day spans two
+calendar days, as in the peak readout.
+
+*Check.* `ReferenceDayTests` (including the definition written out by hand for several origin hours).
 
 ## References
 

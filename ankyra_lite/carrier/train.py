@@ -2,12 +2,15 @@
 
 The carrier (``ankyra_lite.carrier.model.build_carrier``: a structured load network with a copy pointer, 61,613
 parameters) forecasts the 744 hours after a forecast origin from the unit's own history before the origin. One carrier
-is trained per target population; its forecasts (averaged over three seeds) are then passed to the anchoring layer
+is trained per target population; its forecasts (averaged over the seeds) are then passed to the anchoring layer
 (``ankyra_lite.anchor``). Every constant of the recipe is a field of :class:`TrainConfig`. The released recipe of
 version 0.1.0 (the study's R recipe) has two stages: stage 1 is ``TrainConfig()`` (the defaults below; the study's P3s
 recipe: training from scratch with early stopping on a fixed 93-day validation set) and stage 2 is
 ``recipe("span_return", <stage-1 checkpoint>)`` (the validation span returned to the training set, exactly 8 more
-epochs, final weights kept; see "Continuation recipes").
+epochs, final weights kept; see "Continuation recipes"). Recipe Rw differs from R in stage 2 only:
+``recipe("span_return_weighted", <stage-1 checkpoint>)`` is the same continuation with an inverse-noise weighting of
+the training windows in the loss (see "Loss weighting"). ``RECIPE_KEYS`` maps the keys "R" and "Rw" to these stage-2
+configurations.
 
 Stage 1 of the released recipe (defaults: training from scratch)
 ----------------------------------------------------------------
@@ -40,14 +43,17 @@ Stage 1 of the released recipe (defaults: training from scratch)
 8. Early stopping. After each epoch the validation criterion (:func:`validate`) is computed; the best weights are
    kept; training stops after 5 epochs without improvement, or after 30 epochs.
 9. Seeds and ensemble. Seeds 0, 1, 2 (the seed sets the weight initialisation and the sampler stream); the carrier
-   forecast is the average of the three seeds' forecasts (:func:`average_seed_forecasts`).
+   forecast is the average of the three seeds' forecasts (:func:`average_seed_forecasts`). Any seed list can be
+   trained the same way (``train_ensemble(..., seeds=range(6))`` for six seeds; the forecast is then the average over
+   all of them, in ascending seed order).
 
 Continuation recipes
 --------------------
 Three recipes continue trained weights (one start checkpoint per population and seed, ``init_checkpoint``) with a
 fresh AdamW optimiser (same learning rate and weight decay) and the sampler stream ``default_rng(10000 + seed)``;
 windows, caps, borrowed windows and their time limit are those of steps 1-5 (:func:`recipe` builds the
-configurations):
+configurations; ``"span_return_weighted"``, the span return with loss weighting, is described under "Loss
+weighting"):
 
 * ``"plain_continuation"`` (control): the same training pool, exactly 8 epochs, the final weights are kept (no
   selection). The validation criterion on the step-4 validation set is recorded per epoch as a description only.
@@ -66,6 +72,29 @@ Before the first continuation epoch the criterion of the start weights is comput
 checkpoint records the criterion it was selected with (``"val"``) and the validation set is the step-4 set, it must
 be reproduced within ``start_val_rtol`` (relative), otherwise the start does not belong to these data.
 
+Loss weighting (stage 2 of recipe Rw)
+-------------------------------------
+``recipe("span_return_weighted", ...)`` is the span return with ``noise_weighting=NoiseWeights()``; pool, sampler,
+optimiser, epochs and clipping are unchanged. Each training window i gets a weight w_i computed once per pool, before
+training, from the windows' own context only (:func:`noise_weights`; :class:`NoiseWeights` holds the constants):
+
+1. Noise estimate. With x = sinh(day token[:24]) = load / s_i (s_i the window's causal scale), sigma2_i is the mean of
+   (x_t - x_{t-168 h})^2 over the hours of day tokens 345..365 (the last 21 days before the origin) paired with the
+   same hour 7 days earlier, both observed; undefined with fewer than 168 such pairs.
+2. Floor f: the 25th percentile of sigma2 over the pool, weighted by the sampler's exact draw probabilities p
+   (:func:`draw_probabilities`: the target's share and the borrowed populations' share of the draws, units at equal
+   weight within each population).
+3. Raw weight omega_i = max(sigma2_i, f)^(-1/2); a window with undefined sigma2 gets the p-weighted median raw weight.
+4. Per-population normalisation: w_i = c_Q omega_i, with c_Q such that the p-weighted mean weight of every population
+   Q is 1 (each population keeps its share of the draws).
+5. Loss: per batch sum_i w_i l_i / sum_i w_i, l_i = log1p(clamp_0(per-window loss)) (the per-window term of
+   ``forecast_loss`` is unchanged; :func:`weighted_log1p_loss`).
+
+The weights depend only on the day tokens of the pool's windows (context hours before each origin) and on the sampler
+rule; no label hour, no validation window and no per-unit or per-population constant is used. With every weight equal
+to 1 the weighted loss equals the unweighted one bit for bit on the CPU; with ``noise_weighting=None`` (every other
+recipe) the code path is that of version 0.1.
+
 Typical use::
 
     cfg = TrainConfig()                                             # stage 1; stage 2: recipe("span_return", "runs/{target}/stage1/seed{seed}.pt")
@@ -74,7 +103,8 @@ Typical use::
     models = [r.model for r in results]
 
 For stage 2, prepare the target with ``with_validation=True`` and the other populations with
-``with_validation=False`` under the span-return configuration (docs/METHOD.md, "Seeds and ensemble"). The released
+``with_validation=False`` under the span-return configuration (docs/METHOD.md, "Seeds and ensemble"); recipe Rw uses
+the same sources (``recipe("Rw", ...)`` changes the loss only). The released
 weights, checkpoints/<population>/seed<s>.pt, are stage-2 final weights, not stage-1 checkpoints: they are not a
 start point (``init_checkpoint``) for stage 2.
 
@@ -109,7 +139,9 @@ __all__ = ["TrainConfig", "FixedSpan", "ProportionalSpan", "ReturnSpan", "RowSet
            "materialise", "prepare_source", "plan_span", "build_pool", "training_arrays", "sampler", "make_batch",
            "configure", "make_optimizer", "train_step", "run_epoch", "validate", "start_weights", "initial_model",
            "train_one", "train_ensemble", "average_seed_forecasts", "absolute_start_hour", "with_validation_rule", "recipe",
-           "RECIPES", "CONTINUATION_SEED_OFFSET", "CONTINUATION_EPOCHS", "INPUTS", "ARRAY_KEYS"]
+           "RECIPES", "CONTINUATION_SEED_OFFSET", "CONTINUATION_EPOCHS", "INPUTS", "ARRAY_KEYS", "NoiseWeights",
+           "noise_sigma2", "pool_sigma2", "draw_probabilities", "weighted_quantile", "noise_weights", "expected_weight",
+           "weighted_log1p_loss", "WEIGHTED_RECIPES", "RECIPE_KEYS"]
 
 INPUTS = ("day_tokens", "day_mask", "month_tokens", "month_mask", "future_tokens", "scale")
 ARRAY_KEYS = INPUTS + ("target", "observed")
@@ -119,6 +151,9 @@ _BOOL_KEYS = ("day_mask", "month_mask", "observed")
 CONTINUATION_SEED_OFFSET = 10000                                       # sampler stream of the continuation recipes
 CONTINUATION_EPOCHS = 8                                                # fixed length of the plain continuation and the span return
 RECIPES = ("from_scratch", "plain_continuation", "span_return", "proportional_validation")
+WEIGHTED_RECIPES = ("span_return_weighted",)                          # recipes with the inverse-noise loss weighting
+RECIPE_KEYS = {"R": "span_return", "Rw": "span_return_weighted"}       # release recipe key -> its stage-2 configuration
+NOISE_CHUNK_ROWS = 512                                                 # rows per token read when the weights are computed
 
 
 # ----------------------------------------------------------------------------- validation rules
@@ -200,6 +235,25 @@ class ReturnSpan:
         return FixedSpan(self.days, self.end_gap_hours).boundary(cut, first_origin, context_hours, horizon_hours)
 
 
+# ----------------------------------------------------------------------------- loss weighting rule
+@dataclass(frozen=True)
+class NoiseWeights:
+    """Inverse-noise weighting of the training windows in the loss (stage 2 of recipe Rw; module docstring, "Loss
+    weighting"). The defaults are the frozen constants of the recipe.
+
+    The noise estimate reads day tokens ``context_days`` (days 338..365 of the 366 daily tokens, i.e. the last 28
+    days before the origin), columns 0..23 (arcsinh(load / scale)) and 24..47 (hourly observation flags): pairs
+    (t, t - ``lag_days``) on days 345..365, both hours observed (flag > ``observed_threshold``), at least
+    ``min_pairs`` pairs. floor = weighted ``floor_quantile`` of sigma2 over the pool; raw weight
+    max(sigma2, floor)^(-``gamma``)."""
+    gamma: float = 0.5
+    floor_quantile: float = 0.25
+    min_pairs: int = 168
+    context_days: tuple[int, int] = (338, 366)
+    lag_days: int = 7
+    observed_threshold: float = 0.5
+
+
 # ----------------------------------------------------------------------------- configuration
 @dataclass(frozen=True)
 class TrainConfig:
@@ -243,6 +297,8 @@ class TrainConfig:
     token_dtype: str = "float16"              # storage precision of day and month tokens (cast to float32 per batch)
     torch_threads: int | None = 2             # torch.set_num_threads in configure(); None leaves it unchanged
     deterministic: bool = True
+    # loss weighting (stage 2 of recipe Rw); None: every window has weight 1 (all other recipes)
+    noise_weighting: NoiseWeights | None = None
 
     def row_seed(self, grid_hours: int) -> int:
         for g, s in self.row_seeds:
@@ -256,27 +312,39 @@ class TrainConfig:
         return None if self.init_checkpoint is None else str(self.init_checkpoint).format(target=target, seed=int(seed))
 
     def describe(self) -> dict:
+        """The configuration as a JSON-ready mapping (training records); without loss weighting the key
+        ``noise_weighting`` is left out, so the records of the unweighted recipes are those of version 0.1."""
         d = asdict(self)
         d["validation"] = {"rule": type(self.validation).__name__, **asdict(self.validation)}
         if isinstance(self.validation, ReturnSpan) and self.validation.holdout is not None:
             d["validation"]["holdout"] = {"rule": type(self.validation.holdout).__name__, **asdict(self.validation.holdout)}
+        if self.noise_weighting is None:
+            del d["noise_weighting"]
+        else:
+            d["noise_weighting"] = {"rule": type(self.noise_weighting).__name__, **asdict(self.noise_weighting)}
         return d
 
 
 def recipe(name: str = "from_scratch", init_checkpoint: str | None = None, **overrides) -> TrainConfig:
-    """The configuration of a named recipe (``RECIPES``), with field ``overrides``.
+    """The configuration of a named recipe (``RECIPES``, ``WEIGHTED_RECIPES``, or a key of ``RECIPE_KEYS``), with
+    field ``overrides``.
 
     from_scratch             TrainConfig() (stage 1 of the released recipe: training from scratch, fixed 93-day
                              validation set, early stopping); with ``init_checkpoint``, the same schedule from those weights
     plain_continuation       continue ``init_checkpoint`` for exactly 8 epochs (fresh AdamW, stream 10000 + seed), final weights
-    span_return              stage 2 of the released recipe: plain continuation plus the 93-day span returned to the
-                             training pool (``ReturnSpan()``)
+    span_return              stage 2 of recipe R: plain continuation plus the 93-day span returned to the training pool
+                             (``ReturnSpan()``)
     proportional_validation  continuation with ``ReturnSpan(holdout=ProportionalSpan())``: early stopping on the
                              proportional hold-out, the start counted as epoch 0, at least 5 and at most 30 epochs
+    span_return_weighted     stage 2 of recipe Rw: the span return with the inverse-noise loss weighting
+                             (``noise_weighting=NoiseWeights()``)
+    R, Rw                    the stage-2 configurations of recipes R and Rw (``RECIPE_KEYS``; stage 1 of both is
+                             ``TrainConfig()``)
 
     ``init_checkpoint`` may contain ``{target}`` and ``{seed}`` (e.g. ``"runs/{target}/stage1/seed{seed}.pt"``, the
     stage-1 weights of a continuation; the released checkpoints/<population>/seed<s>.pt are stage-2 final weights)."""
     cont = dict(init_checkpoint=init_checkpoint, sampler_seed_offset=CONTINUATION_SEED_OFFSET)
+    name = RECIPE_KEYS.get(name, name)
     if name == "from_scratch":
         cfg = TrainConfig(init_checkpoint=init_checkpoint)
     elif name == "plain_continuation":
@@ -286,8 +354,10 @@ def recipe(name: str = "from_scratch", init_checkpoint: str | None = None, **ove
     elif name == "proportional_validation":
         cfg = TrainConfig(validation=ReturnSpan(holdout=ProportionalSpan()), count_start_as_epoch0=True, min_epochs=5,
                           max_epochs=30, patience=5, **cont)
+    elif name == "span_return_weighted":
+        cfg = TrainConfig(fixed_epochs=CONTINUATION_EPOCHS, validation=ReturnSpan(), noise_weighting=NoiseWeights(), **cont)
     else:
-        raise ValueError(f"unknown recipe {name!r}; one of {RECIPES}")
+        raise ValueError(f"unknown recipe {name!r}; one of {RECIPES + WEIGHTED_RECIPES} or {tuple(RECIPE_KEYS)}")
     return replace(cfg, **overrides) if overrides else cfg
 
 
@@ -801,6 +871,142 @@ def make_batch(arrays: Mapping[str, Mapping[str, np.ndarray]], pairs: Sequence[t
     return {k: torch.from_numpy(np.ascontiguousarray(np.stack(v))).to(device) for k, v in out.items()}
 
 
+# ----------------------------------------------------------------------------- loss weighting (stage 2 of recipe Rw)
+def _noise_sigma2_block(block, rule: NoiseWeights) -> np.ndarray:
+    """sigma2 per row of a token block (rows, days ``rule.context_days``, columns 0..47); NaN below ``min_pairs``."""
+    t = np.asarray(block, dtype=np.float32)
+    x, ob = np.sinh(t[:, :, :24]).astype(np.float64), t[:, :, 24:48] > rule.observed_threshold
+    k = int(rule.lag_days)
+    d, m = x[:, k:] - x[:, :-k], ob[:, k:] & ob[:, :-k]
+    n = m.sum((1, 2))
+    return np.where(n >= rule.min_pairs, ((d ** 2) * m).sum((1, 2)) / np.maximum(n, 1), np.nan)
+
+
+def noise_sigma2(day_tokens, rule: NoiseWeights = NoiseWeights()) -> np.ndarray:
+    """Noise estimate of each window from its own day tokens ((n, 366, >= 48), as stored or as a batch): the mean of
+    (x_t - x_{t-168 h})^2, x = sinh(token[:24]) = load / scale, over the hours of days 345..365 paired with the same
+    hour 7 days earlier, both observed; NaN with fewer than ``rule.min_pairs`` pairs. Only the context before the
+    origin enters (the day tokens end at the origin)."""
+    d0, d1 = rule.context_days
+    return _noise_sigma2_block(np.asarray(day_tokens[:, d0:d1, :48]), rule)
+
+
+def _token_block(a, rows: np.ndarray, rule: NoiseWeights) -> np.ndarray:
+    """Days ``rule.context_days``, columns 0..47 of the day tokens of ``rows`` (ascending), read from an array, a memory
+    map or a :class:`RowConcat` (only this block is read, never the full rows)."""
+    rows = np.asarray(rows, np.int64)
+    d0, d1 = rule.context_days
+    if isinstance(a, RowConcat):
+        m = rows < a.n
+        out = np.zeros((len(rows), d1 - d0, 48), a.dtype)
+        if m.any():
+            out[m] = _token_block(a.first, rows[m], rule)
+        if (~m).any():
+            out[~m] = _token_block(a.second, rows[~m] - a.n, rule)
+        return out
+    return np.asarray(a[rows, d0:d1, :48])
+
+
+def pool_sigma2(arrays: Mapping[str, np.ndarray], rows: np.ndarray, rule: NoiseWeights = NoiseWeights(), *,
+                chunk: int = NOISE_CHUNK_ROWS) -> np.ndarray:
+    """:func:`noise_sigma2` of the rows ``rows`` of one population's arrays (``arrays["day_tokens"]``), returned in the
+    order of ``rows``; read in chunks of ``chunk`` ascending rows (the value of a row does not depend on the chunk)."""
+    ix = np.asarray(rows, np.int64)
+    v = np.empty(len(ix))
+    o = np.argsort(ix, kind="stable")
+    s = ix[o]
+    for c0 in range(0, len(s), int(chunk)):
+        v[o[c0:c0 + chunk]] = _noise_sigma2_block(_token_block(arrays["day_tokens"], s[c0:c0 + chunk], rule), rule)
+    return v
+
+
+def draw_probabilities(target: str, pool: Pool | Mapping[str, np.ndarray], units: Mapping[str, np.ndarray], *,
+                       draws: int = 16000, own_fraction: float = 0.5) -> dict[str, np.ndarray]:
+    """{population: probability of each pool row per draw} of :func:`sampler`: the target's share of the draws
+    (floor(draws x own_fraction) / draws; all draws without borrowed populations), the rest split equally across the
+    borrowed populations, and within each population every unit at equal total weight."""
+    pl = pool.rows if isinstance(pool, Pool) else pool
+    others = [q for q in pl if q != target]
+    n_own = draws if not others else int(math.floor(draws * own_fraction))
+    p = {}
+    for q, ix in pl.items():
+        b = np.asarray(units[q])[ix]
+        uq, cnt = np.unique(b, return_counts=True)
+        cu = dict(zip(uq.tolist(), cnt.tolist()))
+        pu = np.array([1.0 / cu[u] for u in b.tolist()])
+        pu /= pu.sum()
+        p[q] = (n_own / draws if q == target else (draws - n_own) / draws / len(others)) * pu
+    return p
+
+
+def weighted_quantile(values: np.ndarray, weights: np.ndarray, q: float) -> float:
+    """The ``q`` quantile of ``values`` under ``weights``: the smallest value whose cumulative weight share (values in
+    ascending order, ties in input order) reaches ``q``."""
+    v, p = np.asarray(values), np.asarray(weights)
+    o = np.argsort(v, kind="stable")
+    c = np.cumsum(p[o]) / p.sum()
+    return float(v[o][min(int(np.searchsorted(c, q)), len(v) - 1)])
+
+
+def noise_weights(target: str, pool: Pool | Mapping[str, np.ndarray], arrays: Mapping[str, Mapping[str, np.ndarray]],
+                  units: Mapping[str, np.ndarray], rule: NoiseWeights = NoiseWeights(), *, draws: int = 16000,
+                  own_fraction: float = 0.5, chunk: int = NOISE_CHUNK_ROWS) -> tuple[dict[str, np.ndarray], dict]:
+    """The loss weights of a training pool (module docstring, "Loss weighting").
+
+    ``arrays`` and ``units`` are those of :func:`training_arrays` (returned span rows included); ``draws`` and
+    ``own_fraction`` are the sampler's. Returns ({population: weight of every row of its arrays, NaN outside the pool},
+    record) with the record holding the floor, the weight of windows without a noise estimate, per population the
+    normaliser c_Q, draw share and rows, and the Kish effective sample size ratio under the draw probabilities.
+    Deterministic (no random stream is used); raises ValueError when a pool row gets no finite positive weight."""
+    pl = pool.rows if isinstance(pool, Pool) else pool
+    s2 = {q: pool_sigma2(arrays[q], ix, rule, chunk=chunk) if len(ix) else np.zeros(0) for q, ix in pl.items()}
+    p = draw_probabilities(target, pl, units, draws=draws, own_fraction=own_fraction)
+    S = np.concatenate([s2[q] for q in pl])
+    Pp = np.concatenate([p[q] for q in pl])
+    ok = np.isfinite(S)
+    if not ok.any():
+        raise ValueError(f"{target}: no pool window has a noise estimate (fewer than {rule.min_pairs} observed pairs)")
+    floor = weighted_quantile(S[ok], Pp[ok], rule.floor_quantile)
+    om = np.full(len(S), np.nan)
+    om[ok] = np.maximum(S[ok], floor) ** -rule.gamma
+    neutral = weighted_quantile(om[ok], Pp[ok], 0.5)
+    om[~ok] = neutral
+    W, k, src = {}, 0, {}
+    for q, ix in pl.items():
+        o_, pq = om[k:k + len(ix)], Pp[k:k + len(ix)]
+        c = pq.sum() / (pq * o_).sum()
+        w = np.full(len(units[q]), np.nan)
+        w[ix] = c * o_
+        W[q] = w
+        src[q] = {"normaliser": float(c), "draw_share": float(pq.sum()), "rows": int(len(ix))}
+        k += len(ix)
+    Wp = np.concatenate([W[q][ix] for q, ix in pl.items()])
+    if not (np.isfinite(Wp).all() and (Wp > 0).all()):
+        raise ValueError(f"{target}: a pool row has no finite positive weight")
+    rec = {"target": target, "rule": {"rule": type(rule).__name__, **asdict(rule)}, "pool": {q: int(len(ix)) for q, ix in pl.items()},
+           "draws": int(draws), "own_fraction": float(own_fraction), "gamma": rule.gamma, "floor_quantile": rule.floor_quantile,
+           "floor_sigma2": floor, "neutral_raw_weight": neutral, "undefined_sigma2_draw_share": float(Pp[~ok].sum()),
+           "sources": src, "kish_ess_ratio_draws": float((Pp * Wp).sum() ** 2 / (Pp * Wp ** 2).sum()),
+           "weight_max_over_median": float(np.nanmax(Wp) / weighted_quantile(Wp, Pp, 0.5))}
+    return W, rec
+
+
+def expected_weight(day_tokens, populations: Sequence[str], record: Mapping, rule: NoiseWeights = NoiseWeights()) -> np.ndarray:
+    """The weight of each window of a batch implied by its own day tokens and the weights ``record`` of
+    :func:`noise_weights` (``populations``: the population of each row); the row-alignment check of the first batch of
+    every weighted epoch."""
+    s2 = noise_sigma2(day_tokens, rule)
+    om = np.where(np.isfinite(s2), np.maximum(s2, record["floor_sigma2"]) ** -rule.gamma, record["neutral_raw_weight"])
+    return np.array([record["sources"][q]["normaliser"] for q in populations]) * om
+
+
+def weighted_log1p_loss(per_window, weights):
+    """Self-normalised weighted batch loss sum_i w_i l_i / sum_i w_i, l_i = log1p(clamp_0(per_window_i)) (the
+    log1p-compressed per-window loss of ``forecast_loss``; with every w_i = 1 it is the unweighted batch mean)."""
+    ell = per_window.clamp_min(0).log1p()
+    return (weights * ell).sum() / weights.sum()
+
+
 # ----------------------------------------------------------------------------- optimisation
 def configure(seed: int, config: TrainConfig = TrainConfig()) -> None:
     """Seed every generator (Python, NumPy global, torch, CUDA) and select deterministic kernels."""
@@ -825,15 +1031,26 @@ def make_optimizer(model, config: TrainConfig = TrainConfig()):
     return torch.optim.AdamW(model.parameters(), lr=config.lr, weight_decay=config.weight_decay)
 
 
-def train_step(model, optimizer, batch: Mapping, groups: Sequence[Sequence], config: TrainConfig = TrainConfig(), loss_fn: Callable | None = None):
+def train_step(model, optimizer, batch: Mapping, groups: Sequence[Sequence], config: TrainConfig = TrainConfig(), loss_fn: Callable | None = None,
+               weights: np.ndarray | None = None):
     """One optimisation step on one batch; returns the (detached) loss. Raises FloatingPointError on a non-finite loss
-    and RuntimeError on a non-finite gradient norm. Each non-empty parameter group is clipped separately."""
+    and RuntimeError on a non-finite gradient norm. Each non-empty parameter group is clipped separately.
+
+    ``weights`` (one positive weight per batch row) switches to the weighted loss :func:`weighted_log1p_loss` of the
+    per-window loss (requires ``config.log1p_compression``); None is the unweighted loss of every other recipe."""
     import torch
     if loss_fn is None:
         from ankyra_lite.carrier.model import forecast_loss as loss_fn
+    if weights is not None and not config.log1p_compression:
+        raise ValueError("the loss weighting weights the log1p-compressed per-window loss; set log1p_compression=True")
     out = model({k: batch[k] for k in INPUTS})
-    loss = loss_fn(out, torch.where(batch["observed"], batch["target"], 0.0), batch["scale"], batch["observed"],
-                   kl_weight=config.kl_weight, compression=config.log1p_compression)["loss"]
+    if weights is None:
+        loss = loss_fn(out, torch.where(batch["observed"], batch["target"], 0.0), batch["scale"], batch["observed"],
+                       kl_weight=config.kl_weight, compression=config.log1p_compression)["loss"]
+    else:
+        per_window = loss_fn(out, torch.where(batch["observed"], batch["target"], 0.0), batch["scale"], batch["observed"],
+                             kl_weight=config.kl_weight, compression=config.log1p_compression)["per_window"]
+        loss = weighted_log1p_loss(per_window, torch.as_tensor(weights, dtype=per_window.dtype, device=per_window.device))
     if not torch.isfinite(loss):
         raise FloatingPointError("non-finite training loss")
     optimizer.zero_grad(set_to_none=True)
@@ -846,14 +1063,31 @@ def train_step(model, optimizer, batch: Mapping, groups: Sequence[Sequence], con
 
 
 def run_epoch(model, optimizer, order: Sequence[tuple[str, int]], arrays: Mapping, groups: Sequence[Sequence],
-              config: TrainConfig = TrainConfig(), device="cpu", loss_fn: Callable | None = None) -> tuple[float, int]:
+              config: TrainConfig = TrainConfig(), device="cpu", loss_fn: Callable | None = None,
+              weights: Mapping[str, np.ndarray] | None = None, weights_record: Mapping | None = None) -> tuple[float, int]:
     """One pass over the draws ``order`` in batches of ``config.batch_size`` in training mode; returns (sum over
-    batches of loss x batch size, number of draws)."""
+    batches of loss x batch size, number of draws).
+
+    ``weights`` ({population: weight of every row}, :func:`noise_weights`) switches to the weighted loss; every drawn
+    row must have a finite positive weight. With ``weights_record`` the first batch is checked against the weights
+    implied by its own day tokens (:func:`expected_weight`, relative tolerance 1e-9), which catches misaligned rows."""
     model.train()
     total, seen = 0.0, 0
     for s0 in range(0, len(order), config.batch_size):
         part = order[s0:s0 + config.batch_size]
-        loss = train_step(model, optimizer, make_batch(arrays, part, device), groups, config, loss_fn)
+        if weights is None:
+            loss = train_step(model, optimizer, make_batch(arrays, part, device), groups, config, loss_fn)
+        else:
+            batch = make_batch(arrays, part, device)
+            w = np.array([weights[q][int(r)] for q, r in part], dtype=np.float64)
+            if not (np.isfinite(w).all() and (w > 0).all()):
+                raise ValueError("a drawn window has no finite positive weight (not a row of the weighted pool?)")
+            if weights_record is not None and s0 == 0:
+                ew = expected_weight(batch["day_tokens"].detach().cpu().numpy(), [q for q, _ in part], weights_record,
+                                     config.noise_weighting or NoiseWeights())
+                if not np.allclose(ew, w, rtol=1e-9, atol=0):
+                    raise RuntimeError("the weights do not belong to the drawn rows (row-alignment check of the first batch)")
+            loss = train_step(model, optimizer, batch, groups, config, loss_fn, weights=w)
         total += float(loss) * len(part); seen += len(part)
     return total, seen
 
@@ -939,7 +1173,8 @@ class TrainResult:
     With early stopping the kept weights are the best ones (``best_epoch``, ``best_val``; epoch 0 = the start weights
     when they are counted); with ``fixed_epochs`` they are the final ones and ``best_epoch``/``best_val`` are the final
     epoch and its criterion (NaN without a validation set). ``history`` starts with epoch 0 (the start weights'
-    criterion) for a continuation; ``epochs_run`` counts training epochs only."""
+    criterion) for a continuation; ``epochs_run`` counts training epochs only. ``weights_record`` is the record of the
+    loss weights (:func:`noise_weights`; ``{"rule": "given", ...}`` for weights passed in), None without weighting."""
     seed: int
     model: object
     best_epoch: int
@@ -954,6 +1189,7 @@ class TrainResult:
     start_val: float | None = None
     start_origin: str | None = None
     returned_rows: int = 0
+    weights_record: dict | None = None
 
 
 def _state(model) -> dict:
@@ -969,7 +1205,8 @@ def _save(checkpoint, state, epoch, val, seed):
 def train_one(seed: int, target: str, sources: Mapping[str, Source], config: TrainConfig = TrainConfig(), *, pool: Pool | None = None,
               validation: ValidationSet | None = None, device=None, checkpoint: str | Path | None = None,
               log: Callable[[str], None] | None = print, model_factory: Callable | None = None, loss_fn: Callable | None = None,
-              init=None, expected_start_val: float | None = None) -> TrainResult:
+              init=None, expected_start_val: float | None = None, weights: Mapping[str, np.ndarray] | None = None,
+              weights_record: Mapping | None = None) -> TrainResult:
     """Train one seed of the target's carrier (recipe steps 6-8, or a continuation recipe).
 
     ``sources`` maps population name to :class:`Source`; ``pool`` defaults to :func:`build_pool`, ``validation`` to the
@@ -979,7 +1216,12 @@ def train_one(seed: int, target: str, sources: Mapping[str, Source], config: Tra
     the target's default one (not a hold-out), it must agree within ``config.start_val_rtol``. The kept weights are
     held in memory and, with ``checkpoint``, also saved there (``{"model": state_dict, "epoch", "val", "seed"}``,
     written atomically: the best weights with early stopping, the final ones with ``fixed_epochs``). ``device``
-    defaults to CUDA when available."""
+    defaults to CUDA when available.
+
+    Loss weighting: with ``config.noise_weighting`` the weights are computed on the pool (:func:`noise_weights`, no
+    random stream is used); ``weights`` ({population: weight of every row of its training arrays}) with an optional
+    ``weights_record`` passes them in instead (:func:`train_ensemble` computes them once per pool; uniform weights
+    give the unweighted training bit for bit on the CPU). Neither: the unweighted loss."""
     import torch
     from ankyra_lite.carrier import model as M
     loss_fn = loss_fn or M.forecast_loss
@@ -996,6 +1238,12 @@ def train_one(seed: int, target: str, sources: Mapping[str, Source], config: Tra
     if validation is not None and validation.arrays is None:
         raise ValueError(f"{target}: the validation arrays were not built")
     arrays, units = training_arrays(pool, sources)
+    W, wrec = weights, weights_record
+    if W is None and config.noise_weighting is not None:
+        W, wrec = noise_weights(target, pool, arrays, units, config.noise_weighting, draws=config.draws_per_epoch,
+                                own_fraction=config.own_fraction)
+    if W is not None:
+        _check_pool_weights(target, pool, W, config)
     model, start = initial_model(seed, target, config, device=device, init=init, model_factory=model_factory)
     opt = make_optimizer(model, config)
     groups = M.param_groups(model)                                              # (base, copy pointer), clipped separately
@@ -1028,9 +1276,14 @@ def train_one(seed: int, target: str, sources: Mapping[str, Source], config: Tra
     for ep in range(1, n_epochs + 1):
         te = time.monotonic()
         order = sampler(target, pool, units, rng, draws=config.draws_per_epoch, own_fraction=config.own_fraction)
-        total, seen = run_epoch(model, opt, order, arrays, groups, config, device, loss_fn)
+        if W is None:
+            total, seen = run_epoch(model, opt, order, arrays, groups, config, device, loss_fn)
+        else:
+            total, seen = run_epoch(model, opt, order, arrays, groups, config, device, loss_fn, weights=W, weights_record=wrec)
         v = validate(model, validation.arrays, validation.index, validation.unit, device, config.batch_size) if validation is not None else None
         rec = {"epoch": ep, "train_loss": total / max(seen, 1), "val": v, "seconds": time.monotonic() - te}
+        if W is not None:
+            rec["mean_drawn_weight"] = float(np.mean([W[q][int(r)] for q, r in order]))
         if hasattr(model, "copy_gate"):
             with torch.no_grad():
                 rec["copy_gate_weight_norm"] = float(model.copy_gate.weight.norm()); rec["type_bonus"] = float(model.type_bonus)
@@ -1062,7 +1315,21 @@ def train_one(seed: int, target: str, sources: Mapping[str, Source], config: Tra
                        epochs_run=sum(1 for h in hist if h["epoch"] >= 1), stopped_by_patience=(not fixed) and bad >= config.patience,
                        seconds=time.monotonic() - t0, parameters=int(M.parameter_count(model)),
                        pool_table={q: list(map(int, t)) for q, t in pool.table.items()}, config=config.describe(),
-                       start_val=start_val, start_origin=None if start is None else start.origin, returned_rows=n_ret)
+                       start_val=start_val, start_origin=None if start is None else start.origin, returned_rows=n_ret,
+                       weights_record=None if W is None else (dict(wrec) if wrec is not None else
+                                                              {"rule": "given", "pool": {q: int(len(ix)) for q, ix in pool.rows.items()}}))
+
+
+def _check_pool_weights(target: str, pool: Pool, weights: Mapping[str, np.ndarray], config: TrainConfig) -> None:
+    """Loss weights must cover every pool row with a finite positive value; the weighting needs the log1p loss."""
+    if not config.log1p_compression:
+        raise ValueError("the loss weighting weights the log1p-compressed per-window loss; set log1p_compression=True")
+    for q, ix in pool.rows.items():
+        if q not in weights:
+            raise ValueError(f"{target}: no loss weights for population {q}")
+        w = np.asarray(weights[q], np.float64)[np.asarray(ix, np.int64)]
+        if not (np.isfinite(w).all() and (w > 0).all()):
+            raise ValueError(f"{target}: a pool row of {q} has no finite positive loss weight")
 
 
 def train_ensemble(target: str, sources: Mapping[str, Source], config: TrainConfig = TrainConfig(), *, seeds: Sequence[int] | None = None,
@@ -1070,8 +1337,14 @@ def train_ensemble(target: str, sources: Mapping[str, Source], config: TrainConf
                    inits: Mapping[int, object] | None = None, **kwargs) -> list[TrainResult]:
     """Train the target's carrier once per seed (default ``config.seeds``) on one pool; checkpoints go to
     ``checkpoint_dir/seed{s}.pt`` when given. Start weights per seed: ``inits[seed]`` when given, else
-    ``config.init_checkpoint`` with the seed filled in. Average the seeds' forecasts with :func:`average_seed_forecasts`."""
+    ``config.init_checkpoint`` with the seed filled in. Average the seeds' forecasts with :func:`average_seed_forecasts`.
+    With ``config.noise_weighting`` the loss weights are computed once for the pool and shared by the seeds."""
     pool = build_pool(target, sources, config)
+    if config.noise_weighting is not None and kwargs.get("weights") is None:
+        arrays, units = training_arrays(pool, sources)
+        kwargs["weights"], kwargs["weights_record"] = noise_weights(target, pool, arrays, units, config.noise_weighting,
+                                                                    draws=config.draws_per_epoch, own_fraction=config.own_fraction)
+        del arrays, units
     out = []
     for s in (config.seeds if seeds is None else seeds):
         ck = None if checkpoint_dir is None else Path(checkpoint_dir) / f"seed{int(s)}.pt"

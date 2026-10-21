@@ -27,6 +27,17 @@ Figure 18 shows the training-recipe study behind the released recipe (recipe_his
 evaluation figure, draws ankyra-lite against the four zero-shot foundation-model variants on the release's three primary
 readouts (benchmark_pairwise.csv, energy_error.csv, peak_readout.csv with the same-readout rule).
 
+Release 0.2.0. Result files of ankyra-lite 0.2.0 (recipe Rw, six seeds, the origin-continuity layer) are recognised by
+continuation_layer.csv (evaluation/extra_tables.py). With it, figure 1 draws the carrier's training (recipe Rw, six seeds)
+and the continuation layer after the anchoring layer; figure 6 draws ankyra-lite before (F, ankyra_before_layer_kw) and
+after (F', the delivered trajectory) the layer, with a panel on the first three days; figure 9c, beside figure 9 (which
+is kept unchanged), draws the layer on against off by lead time (hour 0, hours 0-2, day 1, days 2-7, days 8-31, the whole
+window, and the delivered trajectory's energy), pooled and by population; figure 17 reads the 0.2.0 rows of
+external_tests.csv (forecast hours 0-2 in d-f; g-i: 0.2.0 against the 0.1.0 configuration, the layer on against off, the
+loss weighting); figure 18 adds the 0.2.0 study's test read (d-e) from the rows of recipe_history.csv with a ``reading``;
+the captions name the 0.2.0 recipe and readout rule A (energy, level and peak read before the layer). Without
+continuation_layer.csv (0.1.x results) every figure is drawn as before and figure 9c is skipped.
+
 The forecasters are whatever the result files hold: ankyra-lite (the reference, highlighted) and the baselines (the 20
 external baselines of the ANKYRA release and LSTM-T-KAN-M), 22 forecasters in all. Rows of ANKYRA itself or of its
 versions are never drawn. A result file that holds a forecaster outside these 22 is stale: rows of an LSTM-T-KAN
@@ -56,7 +67,7 @@ import matplotlib                                     # noqa: E402
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt                                   # noqa: E402
-from matplotlib.colors import LinearSegmentedColormap              # noqa: E402
+from matplotlib.colors import LinearSegmentedColormap, to_rgb      # noqa: E402
 from matplotlib.lines import Line2D                                # noqa: E402
 from matplotlib.patches import FancyArrowPatch, FancyBboxPatch, Rectangle, Patch   # noqa: E402
 
@@ -113,11 +124,26 @@ LSTM_TKAN_NOTE = ("LSTM-T-KAN-M: model and training code copied line by line fro
                   "listed in docs/EVALUATION.md). On CINELDI it was retrained on the corrected data store with the same code and seeds.")
 RECIPE_NOTE = ("ankyra-lite: the released recipe R (carrier trained from scratch with early stopping on the 93-day validation set, then "
                "8 more epochs with the validation span returned; three seeds averaged; figure 1b).")
+RECIPE_NOTE_020 = ("ankyra-lite 0.2.0: carrier recipe Rw (trained from scratch with early stopping on the 93-day validation set, then 8 more "
+                   "epochs with the validation span returned and each training window's loss weighted by the inverse-noise rule; six seeds "
+                   "averaged; figure 1b), the anchoring layer, the state rule and the origin-continuity layer; hourly errors score the "
+                   "delivered trajectory after that layer, energy, level and peak are read before it (readout rule A).")
+CONT_FILE = "continuation_layer.csv"              # written by evaluation/extra_tables.py for release 0.2.0 only
+
+
+def release020():
+    """True when the result files are those of ankyra-lite 0.2.0 (results/continuation_layer.csv exists, or a stand-in of
+    it). Checked without marking a stand-in, so a figure that does not draw the file is not watermarked."""
+    return (RES / CONT_FILE).exists() or (STANDINS is not None and (STANDINS / CONT_FILE).exists())
+
+
+def recipe_note():
+    return RECIPE_NOTE_020 if release020() else RECIPE_NOTE
 
 
 def notes(models=()):
     """The caption notes of every figure of ankyra-lite's forecasts: the recipe, and the TiDE label if TiDE is drawn."""
-    return RECIPE_NOTE + (" " + LINEAR_CONTEXT_NOTE if "TiDE" in models else "") + " "
+    return recipe_note() + (" " + LINEAR_CONTEXT_NOTE if "TiDE" in models else "") + " "
 
 
 LABEL_MAX = 24                                    # longer result-file labels are drawn as the model id (e.g. LSTM-T-KAN-M)
@@ -393,13 +419,15 @@ def _architecture():
 
 def fig_architecture():
     """Figure 1, drawn by figures/architecture.py: (a) the issue times unrolled on a synthetic record, (b) the carrier
-    network, (c) the anchoring layer. Only the parameter count and the time per forecast are read (cost_per_window.csv)."""
+    network, (c) the anchoring layer; with 0.2.0 results (continuation_layer.csv present) also the carrier's training
+    (recipe Rw, six seeds) and the origin-continuity layer after the anchoring layer. Only the parameter count and the
+    time per forecast are read (cost_per_window.csv)."""
     arch = _architecture()
     n_par, cost_line = _cost()
     with plt.rc_context(arch.RC):
-        fig = arch.build(n_parameters=n_par, cost_text=cost_line)
+        fig = arch.build(n_parameters=n_par, cost_text=cost_line, release="0.2" if release020() else "0.1")
         for problem in arch.layout_problems(fig):
-            print(f"  warning: fig1 layout: {problem}")
+            print("  warning: fig1 layout: " + problem.encode("ascii", "backslashreplace").decode("ascii"))
         save(fig, "fig1_architecture", tight=False)
 
 
@@ -436,7 +464,9 @@ def fig_data_splits():
     cap = wrap("Per population, in time order: training set | validation set (the last 93 days before the training cut) | 186-day gap | "
                "test set (from the test start to the last test origin + 31 days). Released recipe: training from scratch with early stopping "
                "on the validation set, then the validation span is returned to the training set for 8 more epochs (labels ending within 24 h "
-               "of the cut excluded); nothing at or after the training cut is used for training.")
+               "of the cut excluded)" + ("; in 0.2.0 (recipe Rw) the loss of these 8 epochs is weighted per training window by the "
+                                         "inverse-noise rule, and six seeds are trained and averaged" if release020() else "")
+               + "; nothing at or after the training cut is used for training.")
     H = 1.15 + 0.30 * n + 0.1 * len(foot)
     fig = plt.figure(figsize=(7.2, H))
     gs = fig.add_gridspec(1, 3, width_ratios=[1.0, 1.0, 0.36], wspace=0.06, left=0.13, right=0.995,
@@ -696,10 +726,16 @@ def fig_advantage():
     xl = lims(vals, (-20, 30), (-60, 80), margin=1)   # interval ends included, so no interval runs into the frame
     others = len(set(cls) - {REF}) - len(variants)
     info = {m: ("shared covariate set" if info_tier(cls.get(m, "")) == 0 else "load only") for m, _ in variants}
+    v2 = release020()
+    readouts = ("a: hourly error, the unit-equal RMS ratio over the 744 hours (ankyra-lite's delivered trajectory, after the continuation "
+                "layer); b: monthly energy error, 744 × the error of the window mean (ankyra-lite: its trajectory before the continuation "
+                "layer, readout rule A; each variant: its delivered trajectory); c: monthly peak, ankyra-lite's peak readout (read before the "
+                "continuation layer) against the same readout applied to each variant's trajectory (the release's rule). The layer's own "
+                "effect by lead time is in figure 9c. ")
     cap = wrap("ankyra-lite against the zero-shot foundation-model variants on the test windows of every population, by the release's primary "
-               "estimators. a: hourly error, the unit-equal RMS ratio over the 744 hours; b: monthly energy error, 744 × the error of the window "
+               "estimators. " + (readouts if v2 else "a: hourly error, the unit-equal RMS ratio over the 744 hours; b: monthly energy error, 744 × the error of the window "
                "mean of each delivered trajectory; c: monthly peak, ankyra-lite's peak readout against the same readout applied to each "
-               "variant's trajectory (the release's rule). Improvement 100[1 − exp(r)] with 95% unit-and-month bootstrap intervals; "
+               "variant's trajectory (the release's rule). ") + "Improvement 100[1 − exp(r)] with 95% unit-and-month bootstrap intervals; "
                "filled = resolved in ankyra-lite's favour, red = resolved against it, open = not resolved; shaded: ankyra-lite better. Above each "
                "panel: the count of its contrasts resolved better, not resolved and resolved worse. TimesFM is TimesFM 2.5; the -X variants are given "
                "the release's shared covariate set (no observed future weather), the others read the load only. "
@@ -772,6 +808,9 @@ ABL_NICE = {"recipe: 8 continuation epochs, validation set held out, no span ret
             "recipe V: continuation re-split with a proportional validation set, early stopping (at most 30 epochs) (anchored)",
             "recipe: from-scratch stage alone, no continuation (anchored)":
             "recipe: from-scratch stage alone, without the 8 more epochs (anchored)"}
+# 0.2.0 configuration rows of ablation.csv (evaluation/extra_tables.py config_label), drawn with a short label
+ABL_CONFIG = re.compile(r"(0\.1\.0 )?configuration: (recipe R \(span return\)|recipe Rw \(span return with inverse-noise loss weighting\)), "
+                        r"(six seeds|seeds 0-2), (with|without|no) (?:the )?continuation layer \(anchored\)")
 ABL_MARK_SCALE = {"*": 1.7, "h": 1.15, "p": 1.15}              # the star reads smaller than the other markers at one size
 
 
@@ -883,12 +922,16 @@ def fig_ablation():
     for r in ab:
         if r["ablation"] not in names:
             names.append(r["ablation"])
-    seeds = [a for a in names if re.search(r"\bseed \d", a.lower())]                         # one seed's carrier, anchored
-    alts = [a for a in names if a not in seeds and a.strip().endswith("(anchored)")]          # other carriers and recipes, anchored
+    v2 = release020()
+    # one seed's carrier (0.1.x) or one three-seed group of the six seeds (0.2.0, evaluation/extra_tables.py), anchored
+    seeds = [a for a in names if re.search(r"\bseed \d", a.lower()) or a.lower().startswith("three-seed group")]
+    alts = [a for a in names if a not in seeds and a.strip().endswith("(anchored)")]          # other carriers, recipes, configurations
     mech_rows = {key for kind, key, _ in FIG4_MECH if kind == "ablation"}
     main = [a for a in names if a not in seeds and a not in alts and a not in mech_rows]     # parts of ankyra-lite switched off
-    groups = [(g, t) for g, t in ((main, "a   Anchoring layer and state rule"), (seeds, "b   One seed instead of three"),
-                                  (alts, "c   Other carriers and recipes")) if g]
+    groups_v2 = any(a.lower().startswith("three-seed group") for a in seeds)
+    groups = [(g, t) for g, t in ((main, "a   Anchoring, state rule, continuation" if v2 else "a   Anchoring layer and state rule"),
+                                  (seeds, "b   Three seeds instead of six" if groups_v2 else "b   One seed instead of three"),
+                                  (alts, "c   Other carriers, recipes, configurations" if v2 else "c   Other carriers and recipes")) if g]
     sets = present(ALL, ab)
     try:                                                                                       # second row: handover and lead weeks
         mech = bool(rows("handover_granularity.csv")) and bool(rows("lead_weeks.csv")) and any(r["ablation"] in mech_rows for r in ab)
@@ -898,17 +941,25 @@ def fig_ablation():
 
     def short(a):
         s_ = ABL_NICE.get(a.strip(), a.strip())
+        m_ = ABL_CONFIG.fullmatch(s_)
+        if m_:                                    # 0.2.0 configuration rows (evaluation/extra_tables.py config_label)
+            return (("0.1.0: " if m_.group(1) else "") + ("Rw" if "Rw" in m_.group(2) else "R") + ", "
+                    + ("6 seeds" if m_.group(3) == "six seeds" else "seeds 0–2") + (", with layer" if m_.group(4) == "with" else ", no layer"))
         if s_.endswith("(anchored)"):
             s_ = s_[:-len("(anchored)")].strip()
         elif " (" in s_:
             s_ = s_.split(" (")[0]
         return "\n".join(textwrap.wrap(s_, 36, break_on_hyphens=False))
 
-    cap = wrap("ankyra-lite (the carrier of the released recipe R with three seeds averaged, anchored, weekly seasonal naive on state windows) "
-               "against reduced and alternative versions of itself, hourly error on the test windows. Unit-equal improvement with 95% "
+    cap = wrap(("ankyra-lite 0.2.0 (the carrier of recipe Rw with six seeds averaged, anchored, weekly seasonal naive on state windows, then "
+                "the origin-continuity layer) " if v2 else
+                "ankyra-lite (the carrier of the released recipe R with three seeds averaged, anchored, weekly seasonal naive on state windows) ")
+               + "against reduced and alternative versions of itself, hourly error on the test windows. Unit-equal improvement with 95% "
                "unit-and-month intervals; filled = interval excludes zero; positive = ankyra-lite is better. Shaded: the six release test "
                "populations." + (" c: recipes F and V are those of figure 18; every other carrier and recipe is anchored by the same layer."
                                  if alts else "")
+               + (" Configurations: recipe R or Rw, seeds 0–2 or six seeds, with or without the continuation layer (0.1.0: recipe R, "
+                  "seeds 0–2, no layer)." if any(ABL_CONFIG.fullmatch(a.strip()) for a in alts) else "")
                + (" d: ankyra-lite against the handover arms (the fixed division without any handover, a fixed half weight on the carrier's daily "
                   "means, one weight per window instead of the weekly weights) and against one whole-window combination weight and the "
                   "half-and-half average of the history side (fixed-division daily means plus the analog-day shape) and the carrier. e: "
@@ -986,7 +1037,8 @@ def fig_peak():
     nb_ = max((len([r for r in pk if r["set"] == s and r["comparator"].startswith("same readout on ") and not excluded(r["comparator"][16:])
                     and r["comparator"] != CARRIER_PEAK]) for s in sets), default=0)
     cap += wrap("Unit-equal improvement in absolute peak error with 95% unit-and-month intervals. a, b: blue better, red worse, open or grey "
-                "not resolved. c: against the same readout applied to each baseline's trajectory (the release rule)"
+                "not resolved. a: against the maximum of ankyra-lite's own delivered trajectory (after the continuation layer); the "
+                "readout U is read before the layer (readout rule A). b: against the previous month's observed peak. c: against the same readout applied to each baseline's trajectory (the release rule)"
                 + (f", all {nb_} baselines ({nb_ + 1} forecasters)" if nb_ else "") + ". Bold: the six release test populations (shaded). "
                 + notes() + note)
     H = 2.25 + cap_height(cap) + 0.05
@@ -1046,6 +1098,8 @@ def fig_peak():
 
 # ============================================================================ Figure 6: one test window
 FC_NAME = {"timesfm_kw": "TimesFM 2.5", "chronos2_kw": "Chronos-2", "chronos_2_kw": "Chronos-2"}
+PRE_COL = "ankyra_before_layer_kw"                 # 0.2.0 (evaluation/extra_tables.py): ankyra-lite before the continuation layer
+LITE_PRE = "#E08A8F"                               # ankyra-lite before the continuation layer (a light tint of LITE)
 
 
 def _example():
@@ -1060,40 +1114,51 @@ def _example():
     if ref is None:
         raise Missing("example_window_cambridge.csv: an ankyra-lite column")
     car = next((c for c in cols if "carrier" in c.lower()), None)
-    others = [c for c in cols if c not in (ref, car)]
+    pre = PRE_COL if PRE_COL in cols else None                    # 0.2.0: ankyra-lite before the continuation layer (F)
+    others = [c for c in cols if c not in (ref, car, pre)]
     F = {c: np.array([float(r[c]) if r[c] else np.nan for r in ex]) for c in cols}
-    styles = [(ref, "ankyra-lite", LITE, 0.85)]
+    styles = [(ref, "ankyra-lite $F'$ (delivered)" if pre else "ankyra-lite", LITE, 0.85, "-")]
+    if pre:
+        styles.append((pre, "ankyra-lite $F$ (before the continuation layer)", LITE_PRE, 0.8, (0, (2.4, 1.3))))
     if car:
-        styles.append((car, "carrier alone (not anchored)", CARRIER, 0.75))
+        styles.append((car, "carrier alone (not anchored)", CARRIER, 0.75, "-"))
     palette = ["#807DBA", "#9E9E9E", "#8C6D31"]
     for i, c in enumerate(others):
-        styles.append((c, FC_NAME.get(c, c.replace("_kw", "")), palette[i % len(palette)], 0.7))
-    return h, y, F, styles, meta, car
+        styles.append((c, FC_NAME.get(c, c.replace("_kw", "")), palette[i % len(palette)], 0.7, "-"))
+    return h, y, F, styles, meta, car, pre
 
 
 def fig_example():
-    h, y, F, styles, meta, _ = _example()
+    """Figure 6: one Cambridge test window. With 0.2.0 results (the column ankyra_before_layer_kw) ankyra-lite is drawn
+    before (F) and after (F', delivered) the origin-continuity layer, and a panel zooms into the first three days."""
+    h, y, F, styles, meta, _, pre = _example()
     keep = h >= -336
     h, y = h[keep], y[keep]
     F = {k: v[keep] for k, v in F.items()}
     fut = h >= 0
+    ref = styles[0][0]
     src_note = meta.get("source", "University of Cambridge estate building energy archive, CC BY 4.0")
-    foot = ("The carrier's own forecast at the origin and ankyra-lite after anchoring. " + RECIPE_NOTE + " Data: " + src_note.split(" (")[0]
-            + (" (CC BY 4.0)." if "CC BY" in src_note else "."))
+    lead = ("The carrier's own forecast at the origin; ankyra-lite after anchoring (F) and after the origin-continuity layer (F', the delivered "
+            "trajectory; c: the first three days). " if pre else "The carrier's own forecast at the origin and ankyra-lite after anchoring. ")
+    foot = (lead + recipe_note() + " Data: " + src_note.split(" (")[0] + (" (CC BY 4.0)." if "CC BY" in src_note else "."))
     if meta.get("selection"):
         foot += " Window: " + meta["selection"][0].lower() + meta["selection"][1:] + "."
     foot = wrap(foot, fs=5.6, width=165)
     fh = 0.06 + len(foot) * 5.6 * 1.36 / 72                     # the footer block, kept clear of panel b's axis label
     H = 3.4 + fh                                               # panels as tall as before the footer grew
     fig = plt.figure(figsize=(7.2, H))
-    gs = fig.add_gridspec(2, 2, height_ratios=[1.35, 1], width_ratios=[1.6, 1], hspace=0.62, wspace=0.22, left=0.075, right=0.99,
-                          top=1 - 0.504 / H, bottom=(0.40 + fh) / H)
+    if pre:
+        gs = fig.add_gridspec(2, 3, height_ratios=[1.35, 1], width_ratios=[1.25, 0.95, 0.95], hspace=0.62, wspace=0.3, left=0.075,
+                              right=0.99, top=1 - 0.504 / H, bottom=(0.40 + fh) / H)
+    else:
+        gs = fig.add_gridspec(2, 2, height_ratios=[1.35, 1], width_ratios=[1.6, 1], hspace=0.62, wspace=0.22, left=0.075, right=0.99,
+                              top=1 - 0.504 / H, bottom=(0.40 + fh) / H)
     ax = fig.add_subplot(gs[0, :])
     ax.axvspan(h[0], 0, color="#F2F2F2", zorder=0)
     ax.plot(h[~fut], y[~fut], color="#7F7F7F", lw=0.55)
     ax.plot(h[fut], y[fut], color="#1A1A1A", lw=0.55, label="observed")
-    for c, name, col, lw in styles[::-1]:
-        ax.plot(h[fut], F[c][fut], color=col, lw=lw, label=name, zorder=3 if c == styles[0][0] else 2)
+    for c, name, col, lw, ls in styles[::-1]:
+        ax.plot(h[fut], F[c][fut], color=col, lw=lw, ls=ls, label=name, zorder=3 if c == ref else 2)
     ax.axvline(0, color="#4D4D4D", lw=0.6, ls=(0, (2, 2)))
     top = np.nanmax(np.concatenate([y] + [F[c][fut] for c, *_ in styles]))
     ax.set_ylim(top=top * 1.08)
@@ -1103,7 +1168,7 @@ def fig_example():
     hd, lb = ax.get_legend_handles_labels()
     order = [lb.index("observed")] + [lb.index(name) for _, name, *_ in styles]
     ax.legend([hd[i] for i in order], [lb[i] for i in order], loc="lower right", ncol=len(order), fontsize=6.0,
-              bbox_to_anchor=(1.0, 0.99), handlelength=1.6, borderaxespad=0.1, columnspacing=1.2)
+              bbox_to_anchor=(1.0, 0.99), handlelength=1.6, borderaxespad=0.1, columnspacing=1.0 if pre else 1.2)
     bld = str(meta.get("building", "")).split("_")[-1]
     title = f"a   {meta.get('set', 'Cambridge')} test set" + (f" · building {bld}" if bld else "") + \
         (f" · forecast for {meta['forecast_period']}" if meta.get("forecast_period") else "")
@@ -1112,23 +1177,55 @@ def fig_example():
     dm = lambda v: v[fut][:744].reshape(31, 24).mean(1)                              # noqa: E731
     bx = fig.add_subplot(gs[1, 0])
     bx.step(d, dm(y), where="mid", color="#1A1A1A", lw=0.9, label="observed")
-    for c, name, col, _ in styles[::-1]:
-        bx.step(d, dm(F[c]), where="mid", color=col, lw=0.9, label=name)
+    for c, name, col, _, ls in styles[::-1]:
+        bx.step(d, dm(F[c]), where="mid", color=col, lw=0.9, ls=ls, label=name)
     bx.set_xlim(0.5, 31.5); bx.set_xlabel("Forecast day", fontsize=6.6); bx.set_ylabel("Daily mean (kW)", fontsize=6.6)
     bx.set_title("b   Daily means: level and daily path", fontsize=7.4)
-    cx = fig.add_subplot(gs[1, 1])
+    if pre:
+        _example_first_days(fig.add_subplot(gs[1, 1]), h, y, F, ref, pre)
+    cx = fig.add_subplot(gs[1, 2 if pre else 1])
     wk = [(0, 7), (7, 14), (14, 21), (21, 31)]
     x = np.arange(4); nsty = len(styles); w = 0.8 / nsty
-    for j, (c, name, col, _) in enumerate(styles[::-1]):
+    for j, (c, name, col, _, ls) in enumerate(styles[::-1]):
         r_ = [np.sqrt(np.nanmean((F[c][fut][a * 24:b * 24] - y[fut][a * 24:b * 24]) ** 2)) for a, b in wk]
-        cx.bar(x - 0.4 + w * (j + 0.5), r_, w * 0.92, color=col, label=name)
+        cx.bar(x - 0.4 + w * (j + 0.5), r_, w * 0.92, color=col, label=name, hatch="//////" if c == pre else None,
+               edgecolor="white" if c == pre else None, lw=0)
     cx.set_xticks(x); cx.set_xticklabels(["days 1–7", "8–14", "15–21", "22–31"], fontsize=6.2); cx.set_ylabel("Hourly RMSE (kW)", fontsize=6.6)
-    cx.set_title("c   Error by forecast week", fontsize=7.4)
-    hd, lb = cx.get_legend_handles_labels()
-    cx.legend(hd[::-1], lb[::-1], fontsize=5.6, loc="upper left", handlelength=1.2, ncol=1, labelspacing=0.25)
-    cx.set_ylim(top=cx.get_ylim()[1] * (1.15 + 0.12 * nsty))
+    cx.set_title(("d" if pre else "c") + "   Error by forecast week", fontsize=7.4)
+    if not pre:                                                    # with the continuation layer, panel a's legend names every bar colour
+        hd, lb = cx.get_legend_handles_labels()
+        cx.legend(hd[::-1], lb[::-1], fontsize=5.6, loc="upper left", handlelength=1.2, ncol=1, labelspacing=0.25)
+        cx.set_ylim(top=cx.get_ylim()[1] * (1.15 + 0.12 * nsty))
     put_footer(fig, foot, H, fs=5.6, x=0.075)
     save(fig, "fig6_example_window")
+
+
+def _example_first_days(ax, h, y, F, ref, pre, before=48, after=72):
+    """Figure 6c (0.2.0): the last two observed days and the first three forecast days, ankyra-lite before (F) and after
+    (F') the continuation layer; the hourly RMSE of forecast day 1 for both."""
+    win = (h >= -before) & (h < after)
+    hw, yw = h[win], y[win]
+    past, fut = hw < 0, hw >= 0
+    ax.axvspan(-before, 0, color="#F2F2F2", zorder=0)
+    ax.plot(hw[past], yw[past], color="#7F7F7F", lw=0.7)
+    ax.plot(hw[fut], yw[fut], color="#1A1A1A", lw=0.7)
+    f0, f1 = F[pre][win][fut], F[ref][win][fut]
+    ax.fill_between(hw[fut], f0, f1, color=LITE, alpha=0.13, lw=0, zorder=1)
+    ax.plot(hw[fut], f0, color=LITE_PRE, lw=0.9, ls=(0, (2.4, 1.3)), zorder=3)
+    ax.plot(hw[fut], f1, color=LITE, lw=1.1, zorder=4)
+    ax.axvline(0, color="#4D4D4D", lw=0.6, ls=(0, (2, 2)))
+    for x_ in (24, 48):
+        ax.axvline(x_, color="#E6E6E6", lw=0.5, zorder=0)
+    day1 = (h >= 0) & (h < 24)
+    r0 = np.sqrt(np.nanmean((F[pre][day1] - y[day1]) ** 2))
+    r1 = np.sqrt(np.nanmean((F[ref][day1] - y[day1]) ** 2))
+    ax.text(0.985, 0.04, f"day-1 RMSE: $F$ {r0:.1f} kW, $F'$ {r1:.1f} kW", transform=ax.transAxes, ha="right", va="bottom", fontsize=5.6,
+            color=LITE, bbox=dict(boxstyle="square,pad=0.15", fc="white", ec="none", alpha=0.85))
+    ax.set_xlim(-before, after); ax.set_xticks([-48, -24, 0, 24, 48, 72])
+    lo = np.nanmin(np.concatenate([yw, f0, f1])); hi = np.nanmax(np.concatenate([yw, f0, f1]))
+    ax.set_ylim(max(0.0, lo - 0.25 * (hi - lo)), hi + 0.08 * (hi - lo))
+    ax.set_xlabel("Hours from the forecast origin", fontsize=6.6); ax.set_ylabel("kW", fontsize=6.6)
+    ax.set_title("c   First three days: $F$ and $F'$", fontsize=7.4)
 
 
 # ============================================================================ Figure 7: exact properties of the anchoring layer
@@ -1159,7 +1256,7 @@ def _operators():
 
 
 def fig_operators():
-    h, y_all, F, styles, meta, car = _example()
+    h, y_all, F, styles, meta, car, pre = _example()
     op, op_path = _operators()
     import torch
     from ankyra_lite.anchor import blocks, readouts
@@ -1170,23 +1267,23 @@ def fig_operators():
         raise Missing("example_window_cambridge.json (context_day_types, target_day_types)")
     fut = h >= 0
     y = y_all[fut][:744]; ctx = y_all[~fut][-1344:]
-    A = F[styles[0][0]][fut][:744]
-    base_col = car or (styles[1][0] if len(styles) > 1 else None)
+    A = F[pre or styles[0][0]][fut][:744]           # the anchoring layer's output (0.2.0: before the continuation layer)
+    base_col = car or next((s_[0] for s_ in styles[1:] if s_[0] != pre), None)
     if base_col is None:
         raise Missing("example_window_cambridge.csv: a carrier column")
     T = F[base_col][fut][:744]
-    base_name = "carrier alone" if car else styles[1][1]
+    base_name = "carrier alone" if car else next(s_[1] for s_ in styles[1:] if s_[0] == base_col)
     ct = np.array(meta["context_day_types"])[None]; tt = np.array(meta["target_day_types"])[None]
     exc = readouts.historical_excursions(ctx[None], ct, tt)[0]
 
     fig = plt.figure(figsize=(7.2, 4.85))
-    gs = fig.add_gridspec(2, 3, hspace=0.62, wspace=0.55, left=0.085, right=0.985, top=0.9, bottom=0.095)
+    gs = fig.add_gridspec(2, 3, hspace=0.62, wspace=0.55, left=0.085, right=0.985, top=0.87 if pre else 0.9, bottom=0.095)   # 0.2.0: a third caption line
 
     # a  exact accounting of block replacement on the window (P4)
     ax = fig.add_subplot(gs[0, 0])
     lvA, bpA = blocks.level(A), blocks.daily_path(A)
     arms = [(base_name, T), ("+ anchored level", op.replace_blocks(T, level=lvA)),
-            ("+ anchored daily path", op.replace_blocks(T, level=lvA, daily_path=bpA)), ("+ anchored within-day\n(= ankyra-lite)", A)]
+            ("+ anchored daily path", op.replace_blocks(T, level=lvA, daily_path=bpA)), ("+ anchored within-day\n(= ankyra-lite $F$)" if pre else "+ anchored within-day\n(= ankyra-lite)", A)]
     cols = ["#C0762A", "#E8B67A", "#807DBA"]; names = ["level", "daily path", "within-day"]
     tot0 = max(sum(blocks.block_losses(Fv, y)) for _, Fv in arms)
     for i, (lab, Fv) in enumerate(arms):
@@ -1298,9 +1395,10 @@ def fig_operators():
     fx.set_ylim(min(0, cum.min()) - 0.3 * span, max(0, cum.max()) + 0.3 * span); fx.set_ylabel("kW", fontsize=6.5)
     fx.set_title("f   Peak error: four exact terms", fontsize=7.3)
 
-    put_caption(fig, wrap("a, e, f: the Cambridge test window of Figure 6 (University of Cambridge estate archive, CC BY 4.0), ankyra-lite of "
-                          "the released recipe R (three seeds averaged). b–d: exact properties of the anchoring layer, unchanged from "
-                          "ANKYRA 2.2.1. P-numbers: theory/README.md."), 4.85)
+    who = ("ankyra-lite 0.2.0 before the origin-continuity layer (F: carrier recipe Rw, six seeds averaged, anchored; the energy, level "
+           "and peak readouts are read from F, readout rule A)" if pre else "ankyra-lite of the released recipe R (three seeds averaged)")
+    put_caption(fig, wrap("a, e, f: the Cambridge test window of Figure 6 (University of Cambridge estate archive, CC BY 4.0), " + who
+                          + ". b–d: exact properties of the anchoring layer, unchanged from ANKYRA 2.2.1. P-numbers: theory/README.md."), 4.85)
     save(fig, "fig7_operators")
 
 
@@ -1471,7 +1569,212 @@ def fig_energy_by_day():
                 f"Error of the energy delivered through each forecast day, {nf} forecasters on the same test windows. For each unit and day d, "
                 "the RMS over the unit's windows of the error of the mean load over days 1..d, divided by the unit's mean load; curves are "
                 "geometric means over one fixed set of units, the aggregation of figure 9 applied to energy. Day 31 is the monthly energy error "
-                "of figure 11. Computed after scoring. " + notes(set().union(*(p[1] for p in panels))).rstrip())
+                "of figure 11. Computed after scoring. "
+                + ("For ankyra-lite the energy to date is that of its trajectory before the continuation layer (readout rule A). " if release020() else "")
+                + notes(set().union(*(p[1] for p in panels))).rstrip())
+
+
+# ============================================================================ Figure 9c: the continuation layer by lead time
+# The segments of results/continuation_layer.csv (evaluation/extra_tables.py, CONT_SEGMENTS), in lead order; "lead hours
+# 0-3" is the study's name of hours 0, 1 and 2.
+CONT_SEGMENTS = [("lead hour 0", "hour 0"), ("lead hours 0-3", "hours 0–2"), ("forecast day 1", "day 1"),
+                 ("forecast days 2-7", "days 2–7"), ("forecast days 8-31", "days 8–31"), ("whole window", "whole window")]
+CONT_ENERGY = "energy"                                       # the column key of the delivered trajectory's monthly energy
+WORSE = LITE                                                 # resolved against the layer
+
+
+def _cont_table():
+    """{(set, column): row} of continuation_layer.csv (columns: the CONT_SEGMENTS keys of the hourly rows and CONT_ENERGY),
+    the populations in the release order, and the pooled set's name (or None)."""
+    raw = rows(CONT_FILE)
+    need = {"set", "segment", "error", "improvement_pct", "um_low", "um_high", "resolved"}
+    if not raw or not need <= set(raw[0]):
+        raise Skipped(f"{CONT_FILE} lacks the columns {', '.join(sorted(need - set(raw[0] if raw else ())))}")
+    tab = {}
+    for r in raw:
+        col = r["segment"] if (r.get("error") or "").strip() == "hourly" else (CONT_ENERGY if r["segment"] == "whole window" else None)
+        if col is None or (col != CONT_ENERGY and col not in dict(CONT_SEGMENTS)):
+            continue
+        if (r["set"], col) in tab:
+            raise Skipped(f"{CONT_FILE}: two rows for {r['set']}, {col}")
+        tab[(r["set"], col)] = r
+    sets = {s for s, _ in tab}
+    pops = [s for s in ALL if s in sets]
+    pooled = next((s for s in sets if s not in ALL and (s.startswith("all ") or "pooled" in s)), None)
+    pops += sorted(s for s in sets if s not in ALL and s != pooled)          # a population outside the nine, kept
+    if not pops and pooled is None:
+        raise Skipped(f"{CONT_FILE} has no row of a known segment")
+    return tab, pops, pooled
+
+
+def _cont_pt(r):
+    """(improvement %, interval low %, interval high %, sign of the resolved label) of a row, or None."""
+    if r is None:
+        return None
+    p, lo, hi = _num(r.get("improvement_pct")), _num(r.get("um_low")), _num(r.get("um_high"))
+    if p is None:
+        return None
+    res = (r.get("resolved") or "").strip()
+    sign = 1 if res == "first better" else (-1 if res == "second better" else 0)
+    return p, (pct(hi) if hi is not None else None), (pct(lo) if lo is not None else None), sign
+
+
+def _cont_colour(v, sign, vmax):
+    """Cell colour: blue for a lower error with the layer, red for a higher one, on a compressed scale (log1p of the
+    absolute improvement in %); a cell whose interval includes zero is drawn at a third of the strength."""
+    a = min(1.0, math.log1p(abs(v)) / math.log1p(vmax)) if vmax > 0 else 0.0
+    a = a if sign else a / 3.0
+    end = np.array(to_rgb(BETTER if v >= 0 else WORSE))
+    return tuple((1 - 0.88 * a) * np.ones(3) + 0.88 * a * end)
+
+
+def _layer_record_note():
+    """One footer sentence from continuation_record.csv: the layer's rare branches and the rule-A disclosure."""
+    try:
+        rec = rows("continuation_record.csv")
+    except Missing:
+        return ""
+    tot = next((r for r in rec if r["set"] == "all nine populations"), None)
+    if tot is None:
+        return ""
+    nm = [(r["set"], int(float(r["no_match_reference_day"] or 0))) for r in rec if r is not tot and float(r["no_match_reference_day"] or 0) > 0]
+    npos = sum(int(float(tot[k] or 0)) for k in ("nonpositive_fast_span", "nonpositive_day_span"))
+    rel = lambda k: 100 * float(tot[k])                                                              # noqa: E731
+    return ("Layer record (results/continuation_record.csv): no forecast day 1–7 of the last observed day's workday class, so "
+            f"forecast day 7 is the reference day, on {int(float(tot['no_match_reference_day'] or 0))} windows"
+            + (" (" + ", ".join(f"{s} {n}" for s, n in nm) + ")" if nm else "")
+            + f"; spans whose mean is at or below zero (x = 0, flagged; a release rule): {npos}. Mean of the delivered trajectory "
+            f"against the energy readout (rule A): median {rel('delivered_mean_vs_energy_readout_rel_p50'):.2f}%, "
+            f"99th percentile {rel('delivered_mean_vs_energy_readout_rel_p99'):.1f}%, "
+            f"maximum {rel('delivered_mean_vs_energy_readout_rel_max'):.0f}% (relative to the readout). ")
+
+
+def fig_continuation():
+    """Figure 9c (beside figure 9): the origin-continuity layer on against off on the same carrier and anchoring layer,
+    by lead time, from continuation_layer.csv (0.2.0 results only; without the file the figure is skipped)."""
+    tab, pops, pooled = _cont_table()
+    cols = [k for k, _ in CONT_SEGMENTS if any((s, k) in tab for s in pops + [pooled])]
+    has_e = any((s, CONT_ENERGY) in tab for s in pops + [pooled])
+    names = dict(CONT_SEGMENTS)
+    flags, note = flag_note([r for r in tab.values() if r["set"] in pops])
+    cap = wrap("The origin-continuity layer of ankyra-lite 0.2.0 on against off, on the same carrier and anchoring layer (the seasonal naive "
+               "of the state rule on state windows in both, where the layer is bypassed), on the test windows of every population, by lead "
+               "time. Improvement 100[1 − exp(r)] of the hourly error with the layer, r the unit-equal log RMS ratio over the hours of the "
+               "segment (hour 0; hours 0–2; forecast day 1; days 2–7; days 8–31; the whole window); 95% unit-and-month bootstrap "
+               "intervals; positive = lower error with the layer. Energy: the monthly energy error of the delivered trajectory, which the "
+               "layer changes; the release's energy readout is read before the layer (readout rule A) and does not change. "
+               + ("a: the units of all populations pooled (resampled together). " if pooled else "")
+               + ("b" if pooled else "a") + ": each population; filled cells and bold numbers: the interval excludes zero; the colour "
+               "scale is compressed. Figure 9 shows the hourly error by forecast day against the baselines. " + notes().rstrip())
+    foot = wrap(("Windows per population (state windows, bypassed by the layer): " + "; ".join(
+        f"{pop(s, flags)} {int(_num(tab[(s, cols[-1])].get('windows')) or 0):,} ({int(_num(tab[(s, cols[-1])].get('state_windows')) or 0):,})"
+        for s in pops if (s, cols[-1]) in tab) + ". " if pops else "") + _layer_record_note() + note, fs=5.6, width=165)
+    ncell = len(cols) + has_e
+    nrow = len(pops) + (1 if pooled else 0)
+    row_h = 0.215
+    hm_h = max(1.6, row_h * nrow + 0.55)
+    H = cap_height(cap) + 0.45 + hm_h + 0.62 + 0.13 * len(foot)
+    fig = plt.figure(figsize=(7.2, H))
+    top, bot = 1 - (cap_height(cap) + 0.45) / H, (0.62 + 0.13 * len(foot)) / H
+    if pooled:
+        ga = fig.add_gridspec(1, 2, width_ratios=[1.0, 0.66], wspace=0.04, left=0.095, right=0.49, top=top, bottom=bot)
+        gh = fig.add_gridspec(1, 1, left=0.605, right=0.985, top=top, bottom=bot)
+        gs = [ga[0], ga[1], gh[0]]
+    else:
+        gs = fig.add_gridspec(1, 1, left=0.16, right=0.985, top=top, bottom=bot)
+    vals = [p[0] for r in tab.values() if (p := _cont_pt(r)) is not None]
+    vmax = max([abs(v) for v in vals] + [1.0])
+
+    # ---- a: pooled, by lead segment (forest)
+    if pooled:
+        ax = fig.add_subplot(gs[0]); tx = fig.add_subplot(gs[1], sharey=ax)
+        items = [(names[k], _cont_pt(tab.get((pooled, k)))) for k in cols]
+        if has_e:
+            items.append(("energy\n(delivered)", _cont_pt(tab.get((pooled, CONT_ENERGY)))))
+        ys = -np.arange(len(items), dtype=float)
+        if has_e:
+            ys[-1] -= 0.5
+        pts = [q for _, q in items if q]
+        ends = [v for q in pts for v in q[1:3] if v is not None]
+        xl = lims([q[0] for q in pts] + ends, (-2, 5), (-60, 80), step=1 if vmax < 10 else 5, margin=0.5)
+        ax.axvspan(0, xl[1], color="#F3F6FA", zorder=0)
+        ax.axvline(0, color="#7F7F7F", lw=0.6, zorder=1)
+        if has_e:
+            ax.axhline(ys[-2] - 0.75, color="#E0E0E0", lw=0.5, zorder=0)
+        for y0, (lab, q) in zip(ys, items):
+            if q is None:
+                continue
+            p, a, b, sign = q
+            col = BETTER if sign > 0 else (WORSE if sign < 0 else GREY)
+            ci(ax, y0, p, a, b, xl, col, sign != 0, s=18, marker="o" if lab != "energy\n(delivered)" else "D")
+            iv = f" [{a:+.2f}, {b:+.2f}]" if a is not None and b is not None else ""
+            tx.text(0.04, y0, f"{p:+.2f}{iv}".replace("-", "−"), va="center", ha="left", fontsize=5.8, color="#1A1A1A",
+                    fontweight="bold" if sign else "normal")
+        ax.set_yticks(ys); ax.set_yticklabels([lab for lab, _ in items], fontsize=6.3, linespacing=1.0)
+        ax.tick_params(axis="y", length=0)
+        ax.set_ylim(ys[-1] - 0.6, 0.6); ax.set_xlim(*xl); ax.grid(axis="x", color="#EFEFEF", lw=0.4, zorder=0)
+        ax.set_xlabel("Improvement with the layer (%)", fontsize=6.5)
+        n_u = _num(tab[(pooled, cols[-1])].get("units")) if (pooled, cols[-1]) in tab else None
+        ax.set_title("a   Pooled" + (f": {int(n_u):,} units" if n_u else ""), fontsize=7.4, pad=24)     # pad of b (top tick labels): titles align
+        tx.axis("off"); tx.set_xlim(0, 1)
+        tx.text(0.04, 1.0, "% [95% interval]\nbold: resolved", transform=tx.transAxes, fontsize=5.6, color=GREY, va="bottom", ha="left",
+                linespacing=1.05)
+        hx = fig.add_subplot(gs[2])
+    else:
+        hx = fig.add_subplot(gs[0])
+
+    # ---- b: by population (heat map)
+    rows_ = pops + ([pooled] if pooled else [])
+    keys = cols + ([CONT_ENERGY] if has_e else [])
+    xs = np.arange(len(keys), dtype=float)
+    if has_e:
+        xs[-1] += 0.25
+    yr = -np.arange(len(rows_), dtype=float)
+    if pooled:
+        yr[-1] -= 0.3
+    for yy, s in zip(yr, rows_):
+        for xx, k in zip(xs, keys):
+            q = _cont_pt(tab.get((s, k)))
+            if q is None:
+                hx.add_patch(Rectangle((xx - 0.47, yy - 0.45), 0.94, 0.9, fc="#FAFAFA", ec="none", zorder=1))
+                hx.text(xx, yy, "–", ha="center", va="center", fontsize=6.0, color=GREY)
+                continue
+            p, _, _, sign = q
+            fc = _cont_colour(p, sign, vmax)
+            hx.add_patch(Rectangle((xx - 0.47, yy - 0.45), 0.94, 0.9, fc=fc, ec="white", lw=0.6, zorder=1))
+            dark = sign != 0 and math.log1p(abs(p)) / math.log1p(vmax) > 0.62
+            txt = f"{p:+.1f}" if abs(p) >= 1 else f"{p:+.2f}"
+            hx.text(xx, yy, txt.replace("-", "−"), ha="center", va="center", fontsize=5.9, zorder=2,
+                    color="white" if dark else ("#1A1A1A" if sign else GREY), fontweight="bold" if sign else "normal")
+    hx.set_xlim(xs[0] - 0.55, xs[-1] + 0.55); hx.set_ylim(yr[-1] - 0.55, 0.55)
+    hx.set_xticks(xs); hx.set_xticklabels([names[k].replace(" ", "\n", 1) if k in names else "energy\n(deliv.)" for k in keys],
+                                          fontsize=6.0, linespacing=1.0)
+    hx.xaxis.tick_top(); hx.tick_params(axis="both", length=0)
+    hx.set_yticks(yr)
+    hx.set_yticklabels([pop(s, flags) if s != pooled else "pooled" for s in rows_], fontsize=6.3)
+    if pooled:
+        hx.get_yticklabels()[-1].set_fontweight("bold")
+    for sp in hx.spines.values():
+        sp.set_visible(False)
+    hx.set_title(("b" if pooled else "a") + "   By population: hourly error by lead time, and energy", fontsize=7.4, pad=24)
+    # colour key under the map
+    kx = fig.add_axes([0.62, (0.30 + 0.13 * len(foot)) / H, 0.30, 0.06 / H])
+    ticks = [t_ for t_ in (-20, -5, -1, 0, 1, 5, 20, 50) if abs(t_) <= vmax * 1.05] or [0]
+    grid = np.linspace(-1, 1, 201)
+    for i, g in enumerate(grid[:-1]):
+        v = math.copysign(math.expm1(abs(g) * math.log1p(vmax)), g)
+        kx.add_patch(Rectangle((g, 0), grid[1] - grid[0], 1, fc=_cont_colour(v, 1, vmax), ec="none"))
+    pos = [math.copysign(math.log1p(abs(t_)) / math.log1p(vmax), t_) for t_ in ticks]
+    kx.set_xlim(-1, 1); kx.set_ylim(0, 1); kx.set_yticks([])
+    kx.set_xticks(pos); kx.set_xticklabels([f"{t_:+d}".replace("-", "−") if t_ else "0" for t_ in ticks], fontsize=5.6)
+    kx.tick_params(axis="x", length=1.5, pad=1)
+    for sp in kx.spines.values():
+        sp.set_visible(False)
+    fig.text(0.62 - 0.01, (0.30 + 0.13 * len(foot) + 0.03) / H, "improvement with the layer (%), resolved;\npaler: not resolved",
+             fontsize=5.6, color=GREY, ha="right", va="center", linespacing=1.05)
+    put_caption(fig, cap, H)
+    put_footer(fig, foot, H)
+    save(fig, "fig9c_continuation_layer")
 
 
 def fig_lead_days_relative():
@@ -1503,6 +1806,8 @@ def fig_lead_days_relative():
             rels[m] = rel
         vals = np.concatenate(list(rels.values())) if rels else np.array([0.0])
         lo, hi = min(-5.0, 5 * np.floor((vals.min() - 5) / 5)), max(5.0, 5 * np.ceil((vals.max() + 5) / 5))
+        span_ = hi - lo                                     # free bands at the top and bottom for the two region labels
+        lo, hi = lo - 0.13 * span_, hi + 0.11 * span_
         ax.axhspan(0, hi, color="#F3F6FA", zorder=0)
         ax.axhline(0, color=LITE, lw=1.3, zorder=3)
         for m, c, ls in DAY_LINES:
@@ -1557,7 +1862,9 @@ def fig_energy():
     cls = {r["model"]: r["model_class"] for r in en}
     n, k = len(models), len(cols)
     P = np.array([[float(cell[(s, sub, m)]["improvement_pct"]) if (s, sub, m) in cell else np.nan for s, sub, _ in cols] for m in models])
-    cap = wrap("Monthly energy error, 744 × the mean hourly error of the delivered trajectory, on the same test windows. Unit-equal RMS ratio "
+    cap = wrap("Monthly energy error, 744 × the mean hourly error of the delivered trajectory, on the same test windows"
+               + (" (ankyra-lite: its energy readout, the trajectory before the continuation layer, readout rule A)" if release020() else "")
+               + ". Unit-equal RMS ratio "
                "with 95% unit-and-month bootstrap intervals; * resolved in ankyra-lite's favour, (−) against it. BDG2 w/o 3: without the three "
                f"near-zero meters, where ankyra-lite's error is exactly zero (the point estimates are equal, only the intervals differ). Rows: the "
                f"{n} baselines ({n + 1} forecasters with ankyra-lite), in the order of figure 2. " + notes(models) + note)
@@ -1704,7 +2011,7 @@ def fig_intervals():
     arms = [(ref, "ankyra-lite\ninterval", LITE)] + [(a, ARM_LABEL.get(a, a).replace(" native", "\nnative"), ARM_COLOR.get(a, "#9E9E9E")) for a in rest]
     u, wn = val[ref].get("units", ""), val[ref].get("windows", "")
     cap = wrap(f"Prediction intervals on GoiEner households ({int(float(u)):,} units, {int(float(wn)):,} windows): the anchoring layer's "
-               "interval readout around ankyra-lite's trajectory and the native quantiles of two foundation models. b: ankyra-lite's "
+               "interval readout around ankyra-lite's delivered trajectory (after the continuation layer) and the native quantiles of two foundation models. b: ankyra-lite's "
                "improvement in the unit-equal Winkler score over each interval; * 95% unit-and-month interval excludes zero. Computed after "
                "scoring, as a description. " + notes().rstrip())
     H = 2.35 + cap_height(cap)
@@ -1968,6 +2275,13 @@ EXT_DAYS = [("forecast day 1", "o", "forecast day 1"), ("forecast days 2-7", "s"
 EXT_DESC = [("vs history-only configuration", "vs history-only configuration"),
             ("span return vs plain continuation", "span return vs plain continuation\n      (R vs F, three seeds)"),
             ("continuation and span return vs from-scratch stage", "continuation and span return vs\n      from-scratch stage alone")]
+# 0.2.0 (evaluation/external_tables.py --version 0.2): the re-run of the 0.2.0 configuration on the same test sets
+EXT_H02 = ("forecast hours 0-2 (lead hours 0-3)", "v", "hours 0–2")
+EXT_DESC_V2 = [("vs the 0.1.0 configuration (3 seeds)", "0.2.0 vs the 0.1.0 configuration\n      (recipe R, three seeds)"),
+               ("layer on / off (recipe Rw, 6 seeds)", "continuation layer on vs off\n      (same Rw carrier, six seeds)"),
+               ("weighting (Rw vs R, 6 seeds, no layer)", "loss weighting: Rw vs R\n      (six seeds, no layer)")]
+EXT_DESC_READS = [("hourly", "o", "whole window"), EXT_H02, ("forecast day 1", "s", "forecast day 1")]
+EXT_V2_FIRST = "ankyra-lite 0.2.0"                       # the first forecaster's label of every 0.2.0 row starts so
 
 
 def fig_external_tests():
@@ -1976,6 +2290,8 @@ def fig_external_tests():
     sets = [(k, n) for k, n in EXT_SETS if any(r["test_set_id"] == k for r in R)]
     if not sets:
         raise Skipped("external_tests.csv has no contrast of a known test set")
+    v2 = any((r.get("first") or "").startswith(EXT_V2_FIRST) for r in R) or any(r["block"] == b for r in R for b, _ in EXT_DESC_V2)
+    rule = next((r for r in raw if r.get("block") == "day-1 rule (design 3.3)"), None)
     f_ = lambda v: float(v) if (v or "").strip() else None                                          # noqa: E731
 
     def get(sid, block, model=None, readout="hourly"):
@@ -1989,7 +2305,30 @@ def fig_external_tests():
         return None if r is None else (f_(r["improvement_pct"]), f_(r["interval_low_pct"]), f_(r["interval_high_pct"]), r["label"] != "not resolved")
 
     n = len(sets)
-    cap = wrap("External tests of ankyra-lite, each test set scored once on 19 October 2026, after the run had been frozen. The "
+    days = ([EXT_H02] if v2 else []) + EXT_DAYS
+    desc = EXT_DESC_V2 if v2 else EXT_DESC
+    if v2:
+        cap = wrap("External tests of ankyra-lite 0.2.0: the 0.2.0 configuration re-run on the test sets of the frozen external test of 19 "
+                   "October 2026 (the same windows, comparators and estimators, read there once with the frozen candidate, recipe R with six "
+                   "seeds) and scored once on 20 October 2026. The carrier was trained anew for each test set with recipe Rw from the same "
+                   "stage-1 runs (six seeds averaged), under the unchanged anchoring layer, the seasonal-naive state rule and the "
+                   "origin-continuity layer (energy and peak read before the layer). LCL, UNICON and HKUST: previously read populations; "
+                   "GoiEner households out of time: a same-source out-of-time supplementary check (new households and a later period of study "
+                   "population 6), not a new population; Helsinki: trained, anchored and sealed, not scored. Improvement of the first "
+                   "forecaster's hourly error over the second (unit-equal RMS ratio; positive = the first lower); 95% intervals combine the "
+                   "unit-and-month bootstrap with the spread over seeds (Welch) where the record has a seed layer, else unit-and-month only; "
+                   "filled = the interval excludes zero (resolved), hollow = not resolved, which is not a finding of no difference; an "
+                   "interval end beyond the axis is drawn as an arrow. a–c: the three pre-specified primary readouts of each test set "
+                   f"({3 * n} nominal intervals over the {num(n)} test sets, no multiplicity correction: with no true difference about "
+                   f"{0.05 * 3 * n:.2g} of them would be resolved by chance). d–f: the same contrasts by lead time, forecast hours 0–2 "
+                   "included. g–i: descriptive contrasts between ankyra-lite's own configurations by lead time (g: 0.2.0 against the "
+                   "0.1.0 configuration; h: the continuation layer on against off; i: the loss weighting of recipe Rw against recipe R, "
+                   "without the layer). LCL is in the pretraining data of TimesFM 2.5, Chronos and Chronos-2, which favours TimesFM in a "
+                   "and d; whether GoiEner is in it is not verified; UNICON and HKUST are not on the published lists, which does not "
+                   "establish absence.")
+    else:
+        cap = None
+    cap = cap or wrap("External tests of ankyra-lite, each test set scored once on 19 October 2026, after the run had been frozen. The "
                "carrier was trained anew for each test set with the released recipe R (the test set's own training set and windows "
                "borrowed from the study's populations) under the unchanged anchoring layer and the seasonal-naive state rule; circles: "
                "six seeds averaged, grey diamonds: the three-seed release configuration. LCL, UNICON and HKUST: first read of this "
@@ -2008,8 +2347,18 @@ def fig_external_tests():
     prim = [get(k, "primary", "TimesFM") for k, _ in sets]
     foot = wrap("Windows / units / months of the primary readouts: " + "; ".join(
         f"{n_.splitlines()[0].rstrip(',')} {int(p['windows']):,} / {int(p['units']):,} / {p['months']}" for (k, n_), p in zip(sets, prim) if p)
-        + ". Source: results/external_tests.csv (every row cites the field of the score record it was copied from).", fs=5.6, width=165)
-    axes_h = (0.36 * (n + 1) + 0.15, 0.5 * n + 0.1, 0.36 * n + 0.1)      # inches: the axes of the three rows
+        + ". " + (f"Day-1 rule of the 0.2.0 design, written before the read (does the mean log gap to TimesFM 2.5 on forecast day 1 "
+                  f"narrow, from the 0.1.0 configuration to 0.2.0, by at least a third of the development-set narrowing?): {rule['label']}"
+                  + (" (" + re.sub(r"-?\d+\.\d{4,}(?:[eE][-+]?\d+)?", lambda m_: f"{float(m_.group()):.3g}",
+                                   "; ".join(s_.strip() for s_ in rule['note'].split(';')[:2])) + ")" if (rule.get("note") or "").strip() else "")
+                  + ". It allows only the statement that the day-1 gap narrowed, not a lead: on forecast day 1 ankyra-lite 0.2.0 against "
+                  "TimesFM 2.5 is " + "; ".join(
+                      f"{n_.splitlines()[0].rstrip(',')} {f_(d_['improvement_pct']):+.1f}% ({d_['label']})"
+                      for (k, n_), d_ in ((kk, next((r for r in raw if r['test_set_id'] == kk[0] and r['block'] == 'day-1 gap to TimesFM 2.5'
+                                                     and r['subgroup'] == 'after'), None)) for kk in sets) if d_) + ". "
+                  if v2 and rule else "")
+        + "Source: results/external_tests.csv (every row cites the field of the score record it was copied from).", fs=5.6, width=165)
+    axes_h = (0.36 * (n + 1) + 0.15, (0.62 if v2 else 0.5) * n + 0.1, (0.5 if v2 else 0.36) * n + 0.1)   # inches: the axes of the rows
     above, below = 0.58, 0.44                                            # inches: titles and legend; ticks and axis label
     H = cap_height(cap) + 0.05 + sum(axes_h) + 3 * (above + below) + 0.14 * len(foot) + 0.1
     fig = plt.figure(figsize=(7.2, H))
@@ -2052,21 +2401,23 @@ def fig_external_tests():
         ax.text(xl[0] + 0.03 * (xl[1] - xl[0]), -n, "not scored" if j else "trained and sealed; not scored",
                 fontsize=5.4, color=GREY, style="italic", va="center", ha="left")
         if j == 0:
-            ax.legend(handles=[Line2D([], [], marker="o", ls="", color=LITE, markersize=4, label="six seeds"),
-                               Line2D([], [], marker="D", ls="", color=GREY, markersize=3.4, label="three seeds (release configuration)")],
-                      loc="lower left", bbox_to_anchor=(0.0, 1.13), ncol=2, fontsize=5.7, handletextpad=0.2, columnspacing=1.0,
+            hs = [Line2D([], [], marker="o", ls="", color=LITE, markersize=4, label="0.2.0, six seeds" if v2 else "six seeds")]
+            if any(pt(get(k, "release configuration", m_)) for k, _ in sets for m_, _ in EXT_PRIMARY):
+                hs.append(Line2D([], [], marker="D", ls="", color=GREY, markersize=3.4, label="three seeds (release configuration)"))
+            ax.legend(handles=hs, loc="lower left", bbox_to_anchor=(0.0, 1.13), ncol=2, fontsize=5.7, handletextpad=0.2, columnspacing=1.0,
                       borderaxespad=0.1, frameon=False)
     # d-f: by forecast day, six seeds
     ys2 = [-i for i in range(n)]
     for j, (m, title) in enumerate(EXT_PRIMARY):
         ax = fig.add_subplot(grids[1][j])
-        pts = {(k, rd): pt(get(k, "primary" if rd == "hourly" else "other readouts", m, rd)) for k, _ in sets for rd, _, _ in EXT_DAYS}
+        pts = {(k, rd): pt(get(k, "primary" if rd == "hourly" else "other readouts", m, rd)) for k, _ in sets for rd, _, _ in days}
         vals = [v for q in pts.values() if q for v in q[:3] if v is not None]
-        xl = lims(vals, (-5, 5), (-45, 50), step=5, margin=3)
+        xl = lims(vals, (-5, 5), (-45, 50) if not v2 else (-80, 60), step=5, margin=3)
         frame(ax, ys2, [nm for _, nm in sets], xl, "def"[j] + "   " + title, j == 0)
         ax.set_ylim(-n + 0.5, 0.6)
+        offs = np.linspace(0.3, -0.3, len(days)) if len(days) > 1 else [0.0]
         for i, (k, _) in enumerate(sets):
-            for (rd, mk, _), dy in zip(EXT_DAYS, (0.27, 0.0, -0.27)):
+            for (rd, mk, _), dy in zip(days, offs):
                 q = pts[(k, rd)]
                 if q:
                     ci(ax, -i + dy, q[0], q[1], q[2], xl, LITE, q[3], marker=mk, s=11, lw=0.8)
@@ -2074,22 +2425,40 @@ def fig_external_tests():
             ax.axhline(-i + 0.5, color="#E6E6E6", lw=0.5, zorder=0)
         if j == 0:
             ax.legend(handles=[Line2D([], [], marker=mk, ls="", markerfacecolor="white", markeredgecolor=LITE, markersize=3.8, label=lab)
-                               for _, mk, lab in EXT_DAYS],
-                      loc="lower left", bbox_to_anchor=(0.0, 1.13), ncol=3, fontsize=5.7, handletextpad=0.15, columnspacing=1.0,
+                               for _, mk, lab in days],
+                      loc="lower left", bbox_to_anchor=(0.0, 1.13), ncol=len(days), fontsize=5.7, handletextpad=0.15, columnspacing=1.0,
                       borderaxespad=0.1, frameon=False)
-    # g-i: descriptive contrasts with ankyra-lite's own reduced configurations
-    for j, (blk, title) in enumerate(EXT_DESC):
+    # g-i: descriptive contrasts with ankyra-lite's own reduced configurations (0.2.0: by lead time)
+    reads = EXT_DESC_READS if v2 else [("hourly", None, "")]
+    for j, (blk, title) in enumerate(desc):
         ax = fig.add_subplot(grids[2][j])
-        qs = [pt(get(k, blk)) for k, _ in sets]
-        vals = [v for q in qs if q for v in q[:3] if v is not None]
+        qs = {(k, rd): pt(get(k, blk, None, rd)) for k, _ in sets for rd, _, _ in reads}
+        vals = [v for q in qs.values() if q for v in q[:3] if v is not None]
         xl = lims(vals, (-4, 4), (-45, 50), step=2, margin=1.5)
         frame(ax, ys2, [nm for _, nm in sets], xl, "ghi"[j] + "   " + title, j == 0)
         ax.set_ylim(-n + 0.5, 0.6)
-        for i, q in enumerate(qs):
-            if q:
-                ci(ax, -i, q[0], q[1], q[2], xl, LITE, q[3], marker="o" if j != 1 else "D", s=14)
-                ax.text(min(max(q[0], xl[0]), xl[1]), -i + 0.2, f"{q[0]:+.1f}".replace("-", "−"), fontsize=5.3, ha="center", va="bottom", color="#1A1A1A")
-    xlabels = ("Hourly improvement of ankyra-lite (%)", "Hourly improvement of ankyra-lite in the forecast days named (%)",
+        offs = np.linspace(0.28, -0.28, len(reads)) if len(reads) > 1 else [0.0]
+        for i, (k, _) in enumerate(sets):
+            for (rd, mk, _), dy in zip(reads, offs):
+                q = qs[(k, rd)]
+                if not q:
+                    continue
+                ci(ax, -i + dy, q[0], q[1], q[2], xl, LITE, q[3], marker=mk or ("o" if j != 1 else "D"), s=14 if not v2 else 11,
+                   lw=1.1 if not v2 else 0.8)
+                if not v2 or rd == "hourly":
+                    ax.text(min(max(q[0], xl[0]), xl[1]), -i + dy + 0.2 * (1 if not v2 else 0.55), f"{q[0]:+.1f}".replace("-", "−"),
+                            fontsize=5.3, ha="center", va="bottom", color="#1A1A1A")
+        if v2:
+            for i in range(1, n):
+                ax.axhline(-i + 0.5, color="#E6E6E6", lw=0.5, zorder=0)
+            if j == 0:
+                ax.legend(handles=[Line2D([], [], marker=mk, ls="", markerfacecolor="white", markeredgecolor=LITE, markersize=3.8, label=lab)
+                                   for _, mk, lab in reads],
+                          loc="lower left", bbox_to_anchor=(0.0, 1.17), ncol=len(reads), fontsize=5.7, handletextpad=0.15,
+                          columnspacing=1.0, borderaxespad=0.1, frameon=False)
+    xlabels = ("Hourly improvement of ankyra-lite (%)",
+               "Hourly improvement of ankyra-lite in the lead times named (%)" if v2 else
+               "Hourly improvement of ankyra-lite in the forecast days named (%)",
                "Hourly improvement of the first configuration over the second (%)")
     for b, text in zip(bottoms, xlabels):
         fig.text(0.155 + (0.985 - 0.155) / 2, b - 0.24 / H, text, fontsize=6.3, ha="center", va="top")
@@ -2192,7 +2561,14 @@ def fig_recipe_history():
     raw = rows("recipe_history.csv")
     if not raw:
         raise Skipped("recipe_history.csv has no rows")
+    v2rows = [r for r in raw if (r.get("reading") or "").startswith(V2_TEST_READ)]           # 0.2.0: the study's one test read
+    # the recipe study (R, F, V): no reading column (0.1.x) or, in a 0.2.0 file, the reading "0.1.0 study reading of the
+    # recipe arms" (evaluation/recipe_tables.py write); the 0.2.0 study's rows (development check, test read) are left out
+    raw = [r for r in raw if not (r.get("reading") or "").strip().startswith(V2_STUDY)]
+    if not raw:
+        raise Skipped("recipe_history.csv has no rows of the recipe study")
     raw = _rh_rows(raw)
+    v2 = _v2_study(v2rows)
     R = []
     for r in raw:
         p = _num(r["pct"])
@@ -2240,16 +2616,25 @@ def fig_recipe_history():
     one = lambda t: t.replace("\n", " ")                                           # noqa: E731
     neg = [x for x in agg if against_r(x)]
     low = min(pop_rf, key=lambda x: x["p"]) if pop_rf else None
-    cap = wrap("The training-recipe study behind the released recipe, on the test windows (read before: a description, not a confirmation). "
+    rel = ("recipe R (the span return; the released recipe Rw adds the inverse-noise loss weights to it)" if v2 else "the released recipe")
+    cap = wrap(f"{'a' + chr(8211) + 'c: t' if v2 else 'T'}he training-recipe study behind {rel}, on the test windows (read before: a description, not a confirmation). "
                "All three recipes start from the same checkpoints (three seeds) trained from scratch with early stopping on the 93-day "
-               "validation set. F and R then train exactly 8 more epochs: F on the unchanged training set (control); R, the "
-               "released recipe, with the validation span returned to the training set. V instead re-splits with a proportional validation "
+               "validation set. F and R then train exactly 8 more epochs: F on the unchanged training set (control); R"
+               + (" with" if v2 else ", the released recipe, with") + " the validation span returned to the training set. V instead re-splits with a proportional validation "
                "set (10% of the population's own record, 38–93 days) and stops early on it (5 to 30 epochs; the start weights count as "
                "epoch 0). Improvement of the first recipe "
                "over the second (unit-equal RMS ratio of the three-seed ensembles; positive = the first is better); 95% intervals combine the "
                "unit-and-month bootstrap with the spread over seeds (Welch); filled = interval excludes zero. Switch layer: short-record test "
                "windows whose season had no same-season month in the training set before the return and has one after it. On the four "
-               "long-record populations V's validation set is the same 93 days.")
+               "long-record populations V's validation set is the same 93 days."
+               + (" d–e: the 0.2.0 study's test read (once; the test windows had been read before, so directions only), the "
+                  "configurations named by recipe (R, Rw), seeds (3: seeds 0–2; 6) and the continuation layer: 0.2.0 (Rw6 with the layer) "
+                  "against the 0.1.0 configuration (R3) and the single changes (the layer on the same Rw6 carrier, the loss weighting Rw6 vs "
+                  "R6, six vs three seeds R6 vs R3); positive = the first is better; 95% intervals as recorded (z intervals that combine "
+                  "the unit-and-month bootstrap with the spread of the two three-seed groups where the record has them, else "
+                  "unit-and-month only). Energy and peak are read before the layer (readout rule A), so the layer contrast is zero by construction on "
+                  "the energy rows (the readout and the sum of the trajectory before the layer) and on the peak; the energy of the delivered "
+                  "trajectory, which the layer does change, is in figure 9c." if v2 else ""))
     disc = []
     if neg:
         disc.append("Resolved against R: " + "; ".join(f"{one(gname.get(x['g'], x['graw']))}, {one(rdname.get(x['rd'], x['rd'])).lower()}, "
@@ -2262,7 +2647,10 @@ def fig_recipe_history():
     nb = max(len(b_reads) * (0.5 + 0.3 * len(b_groups)) if has_b else 0, len(pops) * 0.95 if has_c else 0)
     top_h = 0.55 + 0.125 * na
     bot_h = (1.03 + 0.125 * nb) if (has_b or has_c) else 0.0
-    H = cap_height(cap) + 0.3 + top_h + bot_h + 0.12 * len(foot) + 0.12
+    v2_axes = (0.2 + 0.165 * max(len(v2["reads"]), 1.3 * len(v2["groups"]))) if v2 else 0.0
+    v2_h = (v2_axes + 1.0) if v2 else 0.0                   # the 0.2.0 row: axes, and above them its titles and the legend
+    base = 0.42 + 0.12 * len(foot)                          # inches: the footer and the last row's tick labels and axis label
+    H = cap_height(cap) + 0.3 + top_h + bot_h + v2_h + 0.12 * len(foot) + 0.12
     fig = plt.figure(figsize=(7.2, H))
     ya_top = 1 - (cap_height(cap) + 0.38) / H
     ya_bot = ya_top - (top_h - 0.3) / H
@@ -2296,13 +2684,13 @@ def fig_recipe_history():
     ax.set_title("a   Hourly error: the three recipes compared", fontsize=7.4, pad=14)
     tx.axis("off"); tx.set_xlim(0, 1)
     tx.text(0.03, 1.0, "% [95% interval]; bold: resolved", transform=tx.transAxes, fontsize=5.7, color=GREY, va="bottom", ha="left")
-    names = {"R vs F": "R (released) vs F (control)", "V vs R": "V vs R (released)"}
+    names = ({"R vs F": "R vs F (control)"} if v2 else {"R vs F": "R (released) vs F (control)", "V vs R": "V vs R (released)"})
     ax.legend(handles=[Line2D([], [], marker=cstyle[c][1], ls="", color=cstyle[c][0], markersize=4.2, label=names.get(c, c)) for c in contrasts],
               loc="lower left", bbox_to_anchor=(-0.01, 1.0), ncol=len(contrasts), fontsize=5.9, handletextpad=0.25, columnspacing=1.2,
               borderaxespad=0.15)
     if has_b or has_c:
         gb = fig.add_gridspec(1, 2, width_ratios=[1.25 if has_b else 0.01, 1.0 if has_c else 0.01], wspace=0.5, left=0.17, right=0.985,
-                              top=ya_bot - 0.86 / H, bottom=(0.42 + 0.12 * len(foot)) / H)
+                              top=ya_bot - 0.86 / H, bottom=(base + v2_h) / H)
         if has_b:
             bx = fig.add_subplot(gb[0])
             marks = {"short": "o", "dev": "s", "nine": "D"}
@@ -2337,7 +2725,7 @@ def fig_recipe_history():
                 has_iv = x["lo"] is not None and x["hi"] is not None
                 iv_all &= has_iv
                 ci(cx, yy, x["p"], x["lo"], x["hi"], xlc, LITE, res(x) != 0 if has_iv else True, marker="o" if has_iv else "D", s=13)
-                cx.text(x["p"] + (0.04 if x["p"] >= 0 else -0.04) * (xlc[1] - xlc[0]), yy + 0.36, f"{x['p']:+.1f}", fontsize=5.4,
+                cx.text(x["p"] + (0.035 if x["p"] >= 0 else -0.035) * (xlc[1] - xlc[0]), yy, f"{x['p']:+.1f}".replace("-", "−"), fontsize=5.4,
                         va="center", ha="left" if x["p"] >= 0 else "right", color="#1A1A1A")
             cx.set_yticks(yc); cx.set_yticklabels([pop(s_) for s_ in pops], fontsize=6.2); cx.tick_params(axis="y", length=0)
             for t_, s_ in zip(cx.get_yticklabels(), pops):
@@ -2347,16 +2735,124 @@ def fig_recipe_history():
             cx.set_title("c   R vs F by population, hourly", fontsize=7.4, pad=13)
             cx.text(0.0, 1.015, "bold: short-record" + ("" if iv_all else "; diamonds: point estimates only"),
                     transform=cx.transAxes, fontsize=5.6, color=GREY, va="bottom", ha="left")
+    if v2:
+        _fig18_v2(fig, v2, base, v2_axes, H)
     put_caption(fig, cap, H)
     if foot:
         put_footer(fig, foot, H, color=LITE)
     save(fig, "fig18_recipe_history")
 
 
+# 0.2.0 rows of recipe_history.csv (evaluation/recipe_tables.py, v2_rows): the study's one test read
+V2_TEST_READ = "0.2.0 test read"
+V2_STUDY = "0.2.0 "                                  # every reading of the 0.2.0 study (test read, development check) starts so
+V2_CONTRASTS = [("primary: 0.2.0 vs 0.1.0", "0.2.0 vs 0.1.0 (Rw6 + layer vs R3)", LITE, "o"),
+                ("layer on / off (Rw6", "continuation layer on vs off (Rw6)", "#4A6FA5", "s"),
+                ("decomposition: weighting", "loss weighting (Rw6 vs R6)", "#8C6D31", "D"),
+                ("decomposition: seeds", "six vs three seeds (R6 vs R3)", "#7B5EA7", "^")]
+V2_READS = [("hourly", "Whole window"), ("lead hours 0-3", "Hours 0–2"), ("lead day 1", "Forecast day 1"), ("lead days 2-7", "Days 2–7"),
+            ("lead days 8-31", "Days 8–31"), ("monthly (independent readout)", "Monthly energy"),
+            ("monthly (curve sum)", "Monthly energy\n(trajectory sum)"), ("peak", "Peak")]
+V2_GROUP_ROWS = [("all nine", "Nine populations"), ("BDG2 2017, GoiEner", "Three without a\ndevelopment set"),
+                 ("GoiEner households", "GoiEner households"), ("Cambridge, HEEW", "Six development\npopulations")]
+V2_GROUP_READS = [("hourly", "o", "whole window"), ("lead hours 0-3", "v", "hours 0–2"), ("lead day 1", "s", "forecast day 1")]
+
+
+def _v2_study(rows_):
+    """The 0.2.0 test-read rows drawn in figure 18 d-e: {"pts": {(contrast, group, quantity): (pct, lo, hi, resolved)},
+    "contrasts", "reads", "groups"}, or None when the file has none (0.1.x results)."""
+    pts = {}
+    for r in rows_:
+        c = next((k for k, *_ in V2_CONTRASTS if (r.get("comparison") or "").startswith(k)), None)
+        g = next((k for k, _ in V2_GROUP_ROWS if (r.get("population_group") or "").startswith(k)), None)
+        p = _num(r.get("improvement_pct"))
+        if c is None or g is None or p is None:
+            continue
+        lo, hi = _num(r.get("interval_low_pct")), _num(r.get("interval_high_pct"))
+        res = 0 if lo is None or hi is None else (1 if lo > 0 else (-1 if hi < 0 else 0))
+        pts[(c, g, r.get("quantity", ""))] = (p, lo, hi, res)
+    if not pts:
+        return None
+    contrasts = [k for k, *_ in V2_CONTRASTS if any(x[0] == k and x[1] == "all nine" for x in pts)]
+    reads = [k for k, _ in V2_READS if any(x[0] in contrasts and x[1] == "all nine" and x[2] == k for x in pts)]
+    groups = [k for k, _ in V2_GROUP_ROWS if any(x[0] == V2_CONTRASTS[0][0] and x[1] == k for x in pts)]
+    return {"pts": pts, "contrasts": contrasts, "reads": reads, "groups": groups}
+
+
+def _fig18_v2(fig, v2, base, axes_h, H):
+    """Figure 18 d-e: the 0.2.0 study's test read. d: the nine populations by readout, 0.2.0 against the 0.1.0
+    configuration and the single changes; e: 0.2.0 against 0.1.0 by population group and lead time."""
+    pts, contrasts, reads, groups = v2["pts"], v2["contrasts"], v2["reads"], v2["groups"]
+    gs = fig.add_gridspec(1, 2, width_ratios=[1.25, 1.0], wspace=0.5, left=0.17, right=0.985, top=(base + axes_h) / H, bottom=base / H)
+    sty = {k: (lab, col, mk) for k, lab, col, mk in V2_CONTRASTS}
+    rname = dict(V2_READS)
+
+    def frame(ax, vals, title, xlabel, pad=13):
+        xl = lims(vals, (-2, 4), (-60, 80), step=1 if max(map(abs, vals or [0])) < 8 else 5, margin=0.5)
+        if xl[1] - xl[0] > 20:
+            # on the log part a linear margin is too small: widen the ends so the markers at the extremes stay inside the axes
+            xl = (xl[0] * 1.5 if xl[0] < -2 else xl[0], xl[1] * 1.5 if xl[1] > 2 else xl[1])
+            ax.set_xscale("symlog", linthresh=2.0, linscale=0.8)
+            ax.set_xticks([t_ for t_ in (-20, -10, -5, -2, 0, 2, 5, 10, 20, 40, 60) if xl[0] <= t_ <= xl[1]])
+            ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:+.0f}".replace("-", "−") if v else "0"))
+        ax.axvspan(0, xl[1], color="#F3F6FA", zorder=0); ax.axvline(0, color="#7F7F7F", lw=0.6, zorder=1)
+        ax.set_xlim(*xl); ax.grid(axis="x", color="#EFEFEF", lw=0.4, zorder=0)
+        ax.tick_params(axis="y", length=0); ax.tick_params(axis="x", labelsize=6.0)
+        ax.set_xlabel(xlabel, fontsize=6.5)
+        ax.set_title(title, fontsize=7.4, pad=pad)
+        return xl
+
+    # d: nine populations, by readout
+    dx = fig.add_subplot(gs[0])
+    yr = np.arange(len(reads))[::-1].astype(float)
+    off = np.linspace(0.33, -0.33, len(contrasts)) if len(contrasts) > 1 else [0.0]
+    sel = [pts[(c, "all nine", q)] for c in contrasts for q in reads if (c, "all nine", q) in pts]
+    dpad = 13 + 9 * ((len(contrasts) + 1) // 2)                     # room for d's legend; e uses the same pad so the titles align
+    xl = frame(dx, [v for x in sel for v in x[:3] if v is not None], "d   0.2.0 study, nine populations: by readout",
+               "Improvement of the first configuration (%)", pad=dpad)
+    for c, dy in zip(contrasts, off):
+        lab, col, mk = sty[c]
+        for q, yy in zip(reads, yr):
+            x = pts.get((c, "all nine", q))
+            if x is not None:
+                ci(dx, yy + dy, x[0], x[1], x[2], xl, col, x[3] != 0, marker=mk, s=12, lw=0.9)
+    dx.set_yticks(yr); dx.set_yticklabels([rname.get(q, q) for q in reads], fontsize=6.1, linespacing=1.0)
+    dx.set_ylim(-0.6, len(reads) - 0.4)
+    for k in range(1, len(reads)):
+        dx.axhline(k - 0.5, color="#E6E6E6", lw=0.5, zorder=0)
+    dx.legend(handles=[Line2D([], [], marker=sty[c][2], ls="", color=sty[c][1], markersize=4, label=sty[c][0]) for c in contrasts],
+              loc="lower left", bbox_to_anchor=(-0.02, 0.995), ncol=2, fontsize=5.6, handletextpad=0.2, columnspacing=0.9,
+              borderaxespad=0.1)
+    # e: 0.2.0 vs 0.1.0 by population group and lead time
+    if groups:
+        ex_ = fig.add_subplot(gs[1])
+        c0 = V2_CONTRASTS[0][0]
+        rd = [x for x in V2_GROUP_READS if any((c0, g, x[0]) in pts for g in groups)]
+        yg = np.arange(len(groups))[::-1].astype(float)
+        off = np.linspace(0.25, -0.25, len(rd)) if len(rd) > 1 else [0.0]
+        sel = [pts[(c0, g, q)] for g in groups for q, *_ in rd if (c0, g, q) in pts]
+        xl = frame(ex_, [v for x in sel for v in x[:3] if v is not None], "e   0.2.0 vs 0.1.0 by population group",
+                   "Improvement of 0.2.0 (%)", pad=dpad)
+        for (q, mk, _), dy in zip(rd, off):
+            for g, yy in zip(groups, yg):
+                x = pts.get((c0, g, q))
+                if x is not None:
+                    ci(ex_, yy + dy, x[0], x[1], x[2], xl, LITE, x[3] != 0, marker=mk, s=12, lw=0.9)
+        ex_.set_yticks(yg); ex_.set_yticklabels([dict(V2_GROUP_ROWS)[g] for g in groups], fontsize=6.1, linespacing=1.0)
+        ex_.set_ylim(-0.6, len(groups) - 0.4)
+        for k in range(1, len(groups)):
+            ex_.axhline(k - 0.5, color="#E6E6E6", lw=0.5, zorder=0)
+        ex_.legend(handles=[Line2D([], [], marker=mk, ls="", markerfacecolor="white", markeredgecolor=LITE, markersize=4, label=lab)
+                            for _, mk, lab in rd],
+                   loc="lower left", bbox_to_anchor=(-0.02, 0.995), ncol=len(rd), fontsize=5.6, handletextpad=0.15, columnspacing=0.9,
+                   borderaxespad=0.1)
+
+
 FIGURES = [("fig0_advantage", fig_advantage), ("fig1_architecture", fig_architecture), ("fig1b_data_splits", fig_data_splits),
            ("fig2_test_ranks", fig_test_ranks), ("fig3_test_pairwise", fig_test_forest), ("fig4_ablation", fig_ablation), ("fig5_peak_operator", fig_peak),
            ("fig6_example_window", fig_example), ("fig7_operators", fig_operators), ("fig8_loss_metrics", fig_loss_metrics),
            ("fig9_loss_by_day", fig_lead_days), ("fig9b_energy_by_day", fig_energy_by_day),
+           ("fig9c_continuation_layer", fig_continuation),
            ("fig10_loss_by_day_relative", fig_lead_days_relative), ("fig11_energy_error", fig_energy),
            ("fig12_consistency", fig_consistency), ("fig13_intervals", fig_intervals), ("fig14_block_attribution", fig_block_shares),
            ("fig15_rank_tests", fig_rank_tests), ("fig16_intervals_populations", fig_intervals_all),

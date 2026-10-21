@@ -11,6 +11,12 @@ lead weeks, within-day trust, the fixed division, the whole-window weight, the c
 columns, labels and flags, and for the gates of the fields cache and of the handover rebuild (class ``AddedFileTests``; each
 test skips while its file is absent).  Nothing is recomputed (run the script first).
 
+Configuration.  The products-mapping, export and manifest checks read the configuration from evaluation/products.json
+itself (label, version, recipe R or Rw, seeds, checkpoint folder, continuation layer), so they hold for the 0.1.x
+mapping (recipe R, seeds 0-2, 27 checkpoint files) and for the 0.2.0 mapping (recipe Rw, seeds 0-5 in
+<population>/rw/, plus the 27 files of the 0.1.x configuration).  ``ManifestTests`` checks checkpoints/MANIFEST.json
+against that configuration and against ``ankyra_lite._release.checkpoint_paths``.
+
 Skips.  Tests that need the first release's published files skip when neither ANKYRA_ORIGINAL_ROOT/results nor
 ``git show <release commit>`` can provide them; tests that need the study's research folder skip when it is absent;
 the result-file tests skip when the result directory holds no complete run.  The result directory is results/ unless
@@ -52,6 +58,22 @@ _spec.loader.exec_module(CB)                                   # installs the re
 NAMES = {"bdg2": "BDG2 2017", "cambridge": "Cambridge", "heew": "HEEW Arizona", "eweld": "EWELD", "goiener_confirm": "GoiEner non-household",
          "households": "GoiEner households", "oslo": "Oslo", "drammen": "Drammen", "cineldi": "CINELDI"}
 TIDE = "Linear-context (TiDE implementation)"
+RECIPE_NAME = {"R": "span return (R)", "Rw": "span return with inverse-noise loss weighting (Rw)"}
+
+
+def configuration(raw):
+    """The configuration a products mapping names, read from the mapping itself: version (from the label's version
+    field), recipe key (R | Rw), seeds, checkpoint folder and whether the continuation layer is on.  A 0.1.x mapping
+    (no ``configuration`` field) is recipe R, seeds 0-2, no layer, checkpoints in <population>/."""
+    parts = raw.get("configuration_parts") or {}
+    v020 = bool(raw.get("configuration"))
+    return {"v020": v020, "version": str(raw.get("version", "")), "label": raw.get("label"),
+            "recipe": parts.get("recipe") or "R", "seeds": [int(s) for s in raw.get("seeds", (0, 1, 2))],
+            "folder": str(raw.get("checkpoint_folder") or ""), "layer": bool((raw.get("continuation") or {}).get("enabled"))}
+
+
+def released_configuration():
+    return configuration(json.loads(CB.PRODUCTS.read_text(encoding="utf-8")))
 
 
 def _release_available():
@@ -159,27 +181,49 @@ class HelperTests(unittest.TestCase):
 
     def test_released_products_mapping_is_the_span_return(self):
         raw = json.loads(CB.PRODUCTS.read_text(encoding="utf-8"))
-        self.assertEqual(raw["label"], "ankyra-lite 0.1.0")
-        self.assertEqual(raw["recipe"], "span return (R)")
+        cfg = configuration(raw)
+        self.assertIn(cfg["version"], ("0.1.0", "0.2.0"))
+        self.assertEqual(raw["label"], f"ankyra-lite {cfg['version']}")                 # the label the mapping itself names
+        self.assertEqual(raw["recipe"], RECIPE_NAME[cfg["recipe"]])
         self.assertEqual(raw["checkpoint"], "final.pt")
         self.assertEqual(raw["replacements"], {})
         self.assertEqual(sorted(raw["faces"]), sorted(CB.NINE))
+        seeds, key = cfg["seeds"], cfg["recipe"]
+        if cfg["v020"]:
+            self.assertEqual((key, len(seeds), cfg["layer"]), ("Rw", 6, True))                # the adopted configuration of 0.2.0
+            self.assertEqual(raw["checkpoint_folder"], "rw")
+            self.assertEqual(raw["seed_groups"], [[0, 1, 2], [3, 4, 5]])
+            self.assertEqual(raw["continuation"]["constants"], {"kappa1": 0.479, "rho1": 12.0, "kappa2": 0.33, "rho2": 168.0})
+            self.assertIn("readout rule A", raw["continuation"]["readout_rule"])
+        else:
+            self.assertEqual((key, seeds, cfg["layer"]), ("R", [0, 1, 2], False))
         for f, e in raw["faces"].items():
             self.assertEqual(e["store"], "corrected" if f in ("drammen", "cineldi") else "original", f)
-            self.assertTrue(e["npz"].endswith("/arms_R_ens.npz"), f)
-            self.assertEqual([Path(x).name for x in e["run_dirs"]], ["R_s0", "R_s1", "R_s2"], f)
-            self.assertEqual([Path(x).name for x in e["seed_npz"]], ["arms_R_s0.npz", "arms_R_s1.npz", "arms_R_s2.npz"], f)
-            self.assertEqual([Path(x).name for x in e["start_run_dirs"]], ["P3s_s0", "P3s_s1", "P3s_s2"], f)
-            self.assertEqual(sorted(e["recipe_variants"]), ["F", "P3s", "V"], f)
-            for path in [e["npz"], e["prep"], e["span_plan"]] + e["run_dirs"] + e["seed_npz"] + e["start_run_dirs"] + list(e["recipe_variants"].values()):
+            self.assertTrue(e["npz"].endswith(f"/arms_{key}_ens{len(seeds) if cfg['v020'] else ''}.npz"), f)
+            self.assertEqual([Path(x).name for x in e["run_dirs"]], [f"{key}_s{s}" for s in seeds], f)
+            self.assertEqual([Path(x).name for x in e.get("seed_npz", [])], [] if cfg["v020"] else [f"arms_R_s{s}.npz" for s in seeds], f)
+            self.assertEqual([Path(x).name for x in e["start_run_dirs"]], [f"P3s_s{s}" for s in seeds], f)
+            self.assertLessEqual({"F", "P3s", "V"}, set(e["recipe_variants"]), f)
+            if not cfg["v020"]:
+                self.assertEqual(sorted(e["recipe_variants"]), ["F", "P3s", "V"], f)
+            else:
+                self.assertEqual(len(e["group_npz"]), len(raw["seed_groups"]), f)
+                self.assertEqual(bool(e.get("continued_npz")), cfg["layer"], f)
+                self.assertTrue(e.get("weights_record"), f)                                   # recipe Rw: the loss weights' record
+            paths = ([e["npz"], e["prep"], e["span_plan"]] + e["run_dirs"] + e.get("seed_npz", []) + e["start_run_dirs"]
+                     + list(e["recipe_variants"].values()) + e.get("group_npz", []) + e.get("group_continued_npz", [])
+                     + [x for x in (e.get("continued_npz"), e.get("weights_record")) if x])
+            for path in paths:
                 self.assertFalse(re.match(r"^[A-Za-z]:|^/|^\\\\", path), path)          # relative to the research root
-            if f in ("drammen", "cineldi"):
-                self.assertIn("/dc/", e["npz"], f)                                    # the corrected-store retrain
+            if f in ("drammen", "cineldi"):                                           # the corrected-store retrain
+                self.assertTrue(any("/dc/" in x for x in [e["npz"]] + e["start_run_dirs"][:3]), f)
         self.assertTrue(raw["faces"]["cineldi"]["prep"].startswith("analysis_outputs/smallnet_sr_formal_v1/dc/v1rec/"))
-        p = CB.load_products()
+        p = CB.load_products(CB.PRODUCTS)
         self.assertEqual(p["faces"]["oslo"]["checkpoint"], "final.pt")
         self.assertEqual(p["faces"]["oslo"]["start_checkpoint"], "best.pt")
-        self.assertEqual(len(p["faces"]["oslo"]["seed_paths"]), 3)
+        self.assertEqual(len(p["faces"]["oslo"]["seed_paths"]), 0 if cfg["v020"] else 3)
+        self.assertEqual(len(p["faces"]["oslo"]["run_paths"]), len(seeds))
+        self.assertEqual(p["faces"]["oslo"]["layer"], cfg["layer"])
         fixed = CB.kan_fixed_record() is not None                                # LSTM-T-KAN-M retrained on the corrected store
         self.assertEqual(CB.face_flag("cineldi", p["faces"]["cineldi"]), "" if fixed else CB.CORRECTED_CINELDI_FLAG)
         self.assertEqual(CB.kan_dir("cineldi", p["faces"]["cineldi"]), (CB.KAN_FIX_DIR / "cineldi", True) if fixed else (CB.KAN_DIR / "cineldi", False))
@@ -310,7 +354,12 @@ class HelperTests(unittest.TestCase):
                     continue
                 self.assertTrue(v["exists"] and v["run_dirs_exist"] and v["checkpoints_exist"], (name, k))
                 if name == "R":
-                    self.assertTrue(v["seed_products_exist"] and v["start_runs_exist"] and all(v["variants_exist"].values()), (name, k))
+                    self.assertTrue(v["start_runs_exist"] and all(v["variants_exist"].values()), (name, k))
+                    if released_configuration()["v020"]:                     # 0.2.0: the three-seed groups, the continued product
+                        self.assertTrue(v["groups_exist"] and v["weights_record_exists"], (name, k))
+                        self.assertEqual(v.get("continued_exists", False), released_configuration()["layer"], (name, k))
+                    else:                                                     # 0.1.x: the stored single-seed products
+                        self.assertTrue(v["seed_products_exist"], (name, k))
 
 
 @unittest.skipUnless(HAVE_RESEARCH, NO_RESEARCH)
@@ -322,19 +371,69 @@ class ExportTests(unittest.TestCase):
         EX = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(EX)
         from ankyra_lite import load_carrier
+        cfg = released_configuration()
+        prods = CB.load_products(CB.PRODUCTS)
+        runs = json.loads(CB.PRODUCTS.read_text(encoding="utf-8"))["faces"]["oslo"]["run_dirs"]
         out = Path(tempfile.mkdtemp(prefix="ankyra_lite_export_test_"))
         try:
-            files = EX.export(out, CB.load_products(), faces=("oslo",), log=lambda *a: None)
-            self.assertEqual([f["file"] for f in files], ["oslo/seed0.pt", "oslo/seed1.pt", "oslo/seed2.pt"])
-            for f in files:
+            files = EX.export(out, prods, faces=("oslo",), log=lambda *a: None)
+            self.assertEqual([f["file"] for f in files], ["/".join(x for x in ("oslo", cfg["folder"], f"seed{s}.pt") if x) for s in cfg["seeds"]])
+            self.assertEqual((EX.folder_of(prods), EX.seeds_of(prods)), (cfg["folder"], cfg["seeds"]))
+            for f, rd in zip(files, runs):
                 self.assertEqual(EX.sha256(out / f["file"]), f["sha256"])
                 self.assertEqual(f["parameters"], 61613)
                 self.assertEqual(f["training_cut_date"], "2019-03-29")
-                self.assertTrue(f["source_run"].startswith("analysis_outputs/smallnet_sr_formal_v1/B/oslo/R_s"))
+                self.assertEqual(f["source_run"], rd)                                 # the configuration's run of that seed
                 self.assertFalse(re.search(r"[A-Za-z]:[\\/]", json.dumps(f)), f)
                 load_carrier(out / f["file"])                                    # strict
         finally:
             shutil.rmtree(out, ignore_errors=True)
+
+
+MANIFEST = REPO / "checkpoints" / "MANIFEST.json"
+
+
+@unittest.skipUnless(MANIFEST.exists(), "no checkpoints/MANIFEST.json in this checkout")
+class ManifestTests(unittest.TestCase):
+    """checkpoints/MANIFEST.json against the configuration evaluation/products.json names (no data store, no results/):
+    0.1.x, 9 populations x seeds 0-2 in <population>/ (27 files); 0.2.0, 9 x the release seeds in
+    <population>/<checkpoint_folder>/ plus, unless exported with --no-0-1, the 27 files of the 0.1.x configuration."""
+
+    def test_manifest_counts_follow_the_configuration(self):
+        cfg = released_configuration()
+        man = json.loads(MANIFEST.read_text(encoding="utf-8"))
+        self.assertEqual(man["package"], cfg["label"])                                 # exported from this mapping
+        self.assertEqual(man["count"], len(man["files"]))
+        names = [f["file"] for f in man["files"]]
+        self.assertEqual(len(names), len(set(names)))
+        release = sorted("/".join(x for x in (p, cfg["folder"], f"seed{s}.pt") if x) for p in CB.NINE for s in cfg["seeds"])
+        legacy = sorted(f"{p}/seed{s}.pt" for p in CB.NINE for s in (0, 1, 2))
+        if cfg["v020"]:
+            confs = man["configurations"]
+            self.assertEqual(man["default_configuration"], "release")
+            self.assertEqual(confs["release"]["seeds"], cfg["seeds"])
+            self.assertEqual(confs["release"]["recipe_key"], cfg["recipe"])
+            self.assertEqual(confs["release"]["continuation_layer"], cfg["layer"])
+            want = set(release) | (set(legacy) if "0.1.x" in confs else set())
+            self.assertEqual(sorted(names), sorted(want))
+            self.assertEqual(sorted(f["file"] for f in man["files"] if f.get("in_release_configuration")), release)
+        else:
+            self.assertEqual(sorted(names), legacy)
+            self.assertEqual(len(names), 27)
+        for f in man["files"]:
+            self.assertEqual(f["parameters"], 61613, f["file"])
+            self.assertFalse(re.search(r"[A-Za-z]:[\\/]", json.dumps(f)), f["file"])
+            p = REPO / "checkpoints" / f["file"]
+            if p.exists():                                                             # weights may be absent in a light clone
+                self.assertEqual(p.stat().st_size, f["bytes"], f["file"])
+
+    def test_release_switches_name_the_manifest_files(self):
+        from ankyra_lite import _release
+        files = {f["file"] for f in json.loads(MANIFEST.read_text(encoding="utf-8"))["files"]}
+        root = REPO / "checkpoints"
+        for p in CB.NINE:
+            for path in _release.checkpoint_paths(p, root):                             # the package's default checkpoints
+                self.assertIn(path.relative_to(root).as_posix(), files, (p, _release.CARRIER_RECIPE, _release.CARRIER_SEEDS))
 
 
 @unittest.skipUnless(HAVE_RESULTS, "no complete run in the result directory (run evaluation/compare_baselines.py first)")
@@ -539,8 +638,15 @@ class ResultFileTests(unittest.TestCase):
             self.skipTest("no ablation.csv")
         ab = {(r["set"], r["ablation"], r["error"]) for r in rows("ablation")}
         labs = ["carrier alone (no anchoring layer)", "state rule off (the anchoring layer's own return on state windows)"]
-        if str(record().get("recipe", "")).startswith("span return"):
-            labs += ["single seed 0 (its carrier anchored alone)", "recipe: 8 continuation epochs, validation set held out, no span return (anchored)"]
+        rec = record()
+        if str(rec.get("recipe", "")).startswith("span return"):
+            labs += ["recipe: 8 continuation epochs, validation set held out, no span return (anchored)"]
+            if rec.get("configuration"):                 # 0.2.0: six seeds, the two stored three-seed groups, the layer
+                labs += ["three-seed group 0 (seeds 0-2, anchored alone)", "three-seed group 1 (seeds 3-5, anchored alone)",
+                         "without the continuation layer (the same carrier and anchoring layer)",
+                         "0.1.0 configuration: recipe R (span return), seeds 0-2, no continuation layer (anchored)"]
+            else:
+                labs += ["single seed 0 (its carrier anchored alone)"]
         for s in sets_run():
             for lab in labs:
                 for err in ("hourly", "energy"):
@@ -551,13 +657,17 @@ class ResultFileTests(unittest.TestCase):
             self.skipTest("no training_curves.csv")
         tc = rows("training_curves")
         stages = {(r["set"], r["stage"]) for r in tc}
-        cont = str(record().get("recipe", "")).startswith("span return")
+        rec = record()
+        cont = str(rec.get("recipe", "")).startswith("span return")
+        stage2 = ("span return with inverse-noise loss weighting (fixed epochs)" if "inverse-noise" in str(rec.get("recipe", ""))
+                  else "span return (fixed epochs)")
+        n_seeds = len(rec.get("seeds") or (0, 1, 2))
         for s in sets_run():
             self.assertIn((s, "from scratch (early stopping)"), stages, s)
             if cont:
-                self.assertIn((s, "span return (fixed epochs)"), stages, s)
-                sel = [r for r in tc if r["set"] == s and r["stage"] == "span return (fixed epochs)" and r["selected"] == "True"]
-                self.assertEqual(sorted(int(r["epoch"]) for r in sel), [8, 8, 8], s)
+                self.assertIn((s, stage2), stages, s)
+                sel = [r for r in tc if r["set"] == s and r["stage"] == stage2 and r["selected"] == "True"]
+                self.assertEqual(sorted(int(r["epoch"]) for r in sel), [8] * n_seeds, s)
 
     def test_new_files(self):
         rec = record()

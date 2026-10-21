@@ -53,8 +53,9 @@ DESCRIPTION = ("ankyra-lite against DLinear, iTransformer, LSTM and PatchTST tra
                "with the relaxed budget (30 epochs, patience 8), hourly and energy, and each relaxed model against its original")
 
 
-def _losses(y, p):
-    return {"hourly": ((p - y) ** 2).mean(1), "energy": (p.mean(1) - y.mean(1)) ** 2}
+def _losses(y, p, pe=None):
+    """pe: the trajectory the energy is read from when it is not p (ankyra-lite with the continuation layer, readout rule A)."""
+    return {"hourly": ((p - y) ** 2).mean(1), "energy": ((p if pe is None else pe).mean(1) - y.mean(1)) ** 2}
 
 
 def _ctr(T, a, b, unit, month, off):
@@ -122,7 +123,7 @@ def relaxed_forecasts(face, P, prod, entry):
 def rows_for(T, P, prod, baselines, relaxed, flag, hourly_ref=None):
     """Rows of training_budget_sensitivity.csv for one population and its record."""
     y, unit, month = P["yL"], P["uL"], P["mL"]
-    Llite = _losses(y, prod["traj"])
+    Llite = _losses(y, prod["traj"], prod.get("traj_pre") if prod.get("cont") is not None else None)
     rows, rec = [], {"families": {}}
     for fam in FAMILIES:
         if fam not in relaxed:

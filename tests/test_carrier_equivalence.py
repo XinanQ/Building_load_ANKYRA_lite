@@ -265,7 +265,9 @@ class TestEndToEndHEEW(unittest.TestCase):
             h = A.History(load_kw=d["load"][b, :o], temperature_c=tmp[:o], day_types=ty[:o + 744], start_timestamp=d["start_iso"],
                           observed=np.isfinite(d["load"][b, :o]))
             F = {k: self.sp[i, k] for k in range(7) if self.sh[i, k]}
-            r = forecast(h, F, group=d["groups"][b], temp_sigma_std=self.sigma, dst_region=self.region(b), state_rule=None)
+            # the stored research forecasts precede the continuation layer (on by default from 0.2.0): compare with it off
+            r = forecast(h, F, group=d["groups"][b], temp_sigma_std=self.sigma, dst_region=self.region(b), state_rule=None,
+                         continuation=False)
             self.assertEqual(bool(r.off_state), bool(self.arms["off"][i]))
             self.assertEqual(bool(r.micro_load), bool(self.arms["micro"][i]))
             self.assertTrue(np.array_equal(r.trajectory_kw.astype(np.float32), self.arms["traj"][i]), i)   # stored in float32

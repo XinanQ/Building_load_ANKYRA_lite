@@ -1,6 +1,6 @@
 """A record of your own unit, prepared for ankyra-lite; runs on artificial data, no data or downloads needed.
 
-    python examples/own_unit.py                          # the shipped checkpoints checkpoints/cambridge/seed*.pt
+    python examples/own_unit.py                          # the shipped checkpoints checkpoints/cambridge/rw/seed*.pt (0.2.0)
     python examples/own_unit.py --population households  # the shipped checkpoints of another population
     python examples/own_unit.py --checkpoints DIR        # every seed*.pt in DIR (an ensemble of the seeds)
     python examples/own_unit.py --untrained              # an untrained network of the same shape instead
@@ -43,7 +43,7 @@ REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:                               # also runs from a checkout without ``pip install -e .``
     sys.path.insert(0, str(REPO))
 
-from ankyra_lite import History, build_carrier, fill_short_gaps, forecast, load_carrier, readouts   # noqa: E402
+from ankyra_lite import History, _release, build_carrier, fill_short_gaps, forecast, load_carrier, readouts   # noqa: E402
 from ankyra_lite.anchor.synthetic import synthetic_history                                          # noqa: E402
 
 HORIZON, CONTEXT = 744, 1344
@@ -56,12 +56,14 @@ HOLIDAYS = {date(2019, 4, 19), date(2019, 4, 22), date(2019, 5, 1), date(2019, 1
 
 def carriers(population, checkpoints=None, untrained=False):
     """(list of carrier networks, description), as in examples/quickstart.py."""
-    folder = Path(checkpoints) if checkpoints else REPO / "checkpoints" / population
+    root = REPO / "checkpoints"
+    folder = Path(checkpoints) if checkpoints else root / population / _release.CHECKPOINT_SUBDIR
+    shown = folder.name if checkpoints else folder.relative_to(root).as_posix()
     paths = [] if untrained else sorted(folder.glob("seed*.pt"))
     if paths:
-        return [load_carrier(p) for p in paths], f"{len(paths)} checkpoint(s) in {folder.name}/: " + ", ".join(p.name for p in paths)
+        return [load_carrier(p) for p in paths], f"{len(paths)} checkpoint(s) in {shown}/: " + ", ".join(p.name for p in paths)
     torch.manual_seed(0)
-    reason = "--untrained given" if untrained else f"no seed*.pt in {folder.name}/"
+    reason = "--untrained given" if untrained else f"no seed*.pt in {shown}/"
     return [build_carrier().eval()], f"untrained stand-in (build_carrier(), seed 0; {reason})"
 
 
@@ -96,7 +98,8 @@ def prepare(load_meter, temp_meter, temp_before_first, first=FIRST, holidays=HOL
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--population", default="cambridge", help="checkpoints/<population>/seed*.pt are used when present")
+    ap.add_argument("--population", default="cambridge",
+                    help="checkpoints/<population>/seed*.pt (in the release's subfolder) are used when present")
     ap.add_argument("--checkpoints", default=None, help="folder with seed*.pt (overrides --population)")
     ap.add_argument("--untrained", action="store_true", help="use the untrained stand-in even if checkpoints exist")
     args = ap.parse_args(argv)

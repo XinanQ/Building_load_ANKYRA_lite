@@ -1,16 +1,22 @@
 """Figure 1 of ankyra-lite: the issue times unrolled on one unit's record (a), with zoom-ins on the carrier network (b)
-and the anchoring layer (c).
+and the anchoring layer (c); for release 0.2.0 also the carrier's training (recipe Rw, six seeds; a strip of b) and the
+origin-continuity layer after the anchoring layer (the last row of c).
 
     draw(path_stem)                      writes <path_stem>.pdf (vector, TrueType fonts embedded) and <path_stem>.png
                                          (300 dpi) and returns the layout problems found (an empty list when clean)
-    build(n_parameters, cost_text)       the figure itself (a matplotlib Figure, 7.2 in wide), for figures/make_figures.py
+    build(n_parameters, cost_text, release="0.2")
+                                         the figure itself (a matplotlib Figure, 7.2 in wide), for figures/make_figures.py;
+                                         release "0.1" draws the 0.1.x figure (recipe R, three seeds, no continuation layer)
     layout_problems(fig)                 overlapping labels, labels outside their box or panel, text below 6 pt
 
 Facts follow ankyra_lite/carrier/model.py (CopyPointerNetwork; build_carrier: 61,613 parameters, width 48, rank 8,
 copy pointer over 56 days with 16-dimensional keys), features.py (token layout and the scale s), inference.py (issue
-times o - 744k, k = 0..6, 1,344-hour contexts, the training cut), train.py (recipe R, three seeds averaged),
-ankyra_lite/anchor/core.py and analog.py (level, handover, within-day trust), anchor/readouts.py (peak readout) and
-ankyra_lite/forecast.py (state windows: weekly seasonal naive).  The load record of panel (a) and every curve, bar and
+times o - 744k, k = 0..6, 1,344-hour contexts, the training cut), train.py (0.2.0: recipe Rw, the span return with the
+inverse-noise loss weight w = max(sigma^2, 25% quantile)^(-1/2) per training window, six seeds averaged; 0.1.x: recipe
+R, three seeds), ankyra_lite/anchor/core.py and analog.py (level, handover, within-day trust), anchor/readouts.py (peak
+readout), ankyra_lite/continuation.py (0.2.0: F' = F exp(delta), delta(h) = kappa1 x_f exp(-h/12) + kappa2 x_d
+exp(-h/168); state windows bypassed; energy, level and peak read before it, readout rule A) and ankyra_lite/forecast.py
+(state windows: weekly seasonal naive).  The load record of panel (a) and every curve, bar and
 weight in the glyphs are synthetic and illustrative (no observed data, no results).  Inside the glyphs the drawing is
 consistent with the formulas: the carrier trajectory in (b) is the product 744 l p_d q_dh of the factors drawn beside
 it, and the copy-pointer weights are a softmax with a day-type bonus over the 56 days drawn.  In (a) each pseudo-origin
@@ -257,17 +263,33 @@ def X(t):
 
 
 DLT = float(X(DELTA) - X(0))                      # one month in inches
-TOP_BC = 3.30                                      # top of panels (b) and (c)
-PB = (0.06, 0.08, 4.12, TOP_BC)                    # panel (b): x0, y0, x1, y1
-PC = (4.22, 0.08, 7.14, TOP_BC)                    # panel (c)
 PITCH, BAR_H = 0.128, 0.098                        # lanes of panel (a)
 CHIP_PAD = 0.035
-Y_LANE6 = TOP_BC + 0.25 + BAR_H / 2 + CHIP_PAD
 LANE0_GAP = 0.06                                   # extra room between F(0) and the anchoring box below it
-Y_LANE0 = Y_LANE6 + 6 * PITCH + LANE0_GAP
-Y_D0 = Y_LANE0 + 0.40                              # data layer
-Y_D1 = Y_D0 + 0.66
-HEIGHT = Y_D1 + 0.46
+TOP_BC_010 = 3.30                                  # top of panels (b) and (c), release 0.1.x
+EXTRA_020 = 0.66                                   # release 0.2.0: room for the training strip (b) and the continuation row (c)
+RELEASES = ("0.1", "0.2")
+RELEASE = "0.2"                                    # the release drawn (set by build; 0.2 = ankyra-lite 0.2.0)
+
+
+def _geometry(release):
+    """Set the module geometry for a release: 0.1 (recipe R, three seeds, no continuation layer) or 0.2 (recipe Rw,
+    six seeds, the origin-continuity layer after the anchoring layer); panels (b) and (c) are taller in 0.2."""
+    global RELEASE, TOP_BC, PB, PC, Y_LANE6, Y_LANE0, Y_D0, Y_D1, HEIGHT
+    if release not in RELEASES:
+        raise ValueError(f"release must be one of {RELEASES}, not {release!r}")
+    RELEASE = release
+    TOP_BC = TOP_BC_010 + (EXTRA_020 if release == "0.2" else 0.0)
+    PB = (0.06, 0.08, 4.12, TOP_BC)                # panel (b): x0, y0, x1, y1
+    PC = (4.22, 0.08, 7.14, TOP_BC)                # panel (c)
+    Y_LANE6 = TOP_BC + 0.25 + BAR_H / 2 + CHIP_PAD
+    Y_LANE0 = Y_LANE6 + 6 * PITCH + LANE0_GAP
+    Y_D0 = Y_LANE0 + 0.40                          # data layer
+    Y_D1 = Y_D0 + 0.66
+    HEIGHT = Y_D1 + 0.46
+
+
+_geometry(RELEASE)
 
 
 def lane_y(k):
@@ -275,9 +297,11 @@ def lane_y(k):
 
 
 # ============================================================================ the figure
-def build(n_parameters=N_PARAMETERS, cost_text=None):
+def build(n_parameters=N_PARAMETERS, cost_text=None, release="0.2"):
     """The figure (call inside ``plt.rc_context(RC)``; :func:`draw` does).  ``cost_text`` is an optional line on the
-    time per forecast (figures/make_figures.py reads it from results/cost_per_window.csv)."""
+    time per forecast (figures/make_figures.py reads it from results/cost_per_window.csv).  ``release``: "0.2"
+    (ankyra-lite 0.2.0: recipe Rw, six seeds, the origin-continuity layer) or "0.1" (0.1.x: recipe R, three seeds)."""
+    _geometry(release)
     fig = Figure(figsize=(WIDTH, HEIGHT), dpi=300)
     FigureCanvasAgg(fig)
     ax = fig.add_axes([0, 0, 1, 1])
@@ -293,12 +317,12 @@ def build(n_parameters=N_PARAMETERS, cost_text=None):
     return fig
 
 
-def draw(path_stem, n_parameters=N_PARAMETERS, cost_text=None, check=True):
+def draw(path_stem, n_parameters=N_PARAMETERS, cost_text=None, check=True, release="0.2"):
     """Write <path_stem>.pdf and <path_stem>.png (300 dpi); return the layout problems (empty when clean)."""
     path_stem = Path(path_stem)
     path_stem.parent.mkdir(parents=True, exist_ok=True)
     with plt.rc_context(RC):
-        fig = build(n_parameters, cost_text)
+        fig = build(n_parameters, cost_text, release=release)
         problems = layout_problems(fig) if check else []
         fig.savefig(str(path_stem) + ".pdf", metadata={"CreationDate": None})
         fig.savefig(str(path_stem) + ".png", dpi=300)
@@ -397,18 +421,35 @@ def _panel_a(c, t, y, workday):
     cym = (chip_y0 + chip_y1) / 2 + 0.06
     c.text(cx, cym + 0.07, "carrier\nnetwork", fs=FS + 0.3, color=CARRIER, ha="center", fontweight="bold",
            linespacing=1.05)
-    c.text(cx, cym - 0.13, "3 seeds", fs=FS_S, color=CARRIER, ha="center")
+    c.text(cx, cym - 0.13, "6 seeds · Rw" if RELEASE == "0.2" else "3 seeds", fs=FS_S, color=CARRIER, ha="center")
     c.text(cx, chip_y0 + 0.10, "b", fs=FS + 1.0, color=CARRIER, ha="center", fontweight="bold")
 
-    # anchoring box (zoomed in panel c)
+    # anchoring box (zoomed in panel c); in 0.2.0 followed by the continuation layer (also zoomed in panel c)
     bx0, bx1 = X(0) + 0.10, X(T_MAX) - 0.005
     by0, by1 = lane_y(6) - BAR_H / 2 - CHIP_PAD, lane_y(1) + BAR_H / 2 + 0.012
-    c.rbox(bx0, by0, bx1 - bx0, by1 - by0, LITE_XL, LITE, lw=0.8, r=0.05, z=5, name="anchor box")
-    bxc = (bx0 + bx1) / 2
     bym = (by0 + by1) / 2 + 0.06
-    c.text(bxc, bym + 0.07, "anchoring layer", fs=FS + 0.3, color=LITE, ha="center", fontweight="bold")
-    c.text(bxc, bym - 0.07, "copy of ANKYRA 2.2.1", fs=FS_S, color=LITE, ha="center")
-    c.text(bxc, by0 + 0.10, "c", fs=FS + 1.0, color=LITE, ha="center", fontweight="bold")
+    if RELEASE != "0.2":
+        c.rbox(bx0, by0, bx1 - bx0, by1 - by0, LITE_XL, LITE, lw=0.8, r=0.05, z=5, name="anchor box")
+        bxc = (bx0 + bx1) / 2
+        c.text(bxc, bym + 0.07, "anchoring layer", fs=FS + 0.3, color=LITE, ha="center", fontweight="bold")
+        c.text(bxc, bym - 0.07, "copy of ANKYRA 2.2.1", fs=FS_S, color=LITE, ha="center")
+        c.text(bxc, by0 + 0.10, "c", fs=FS + 1.0, color=LITE, ha="center", fontweight="bold")
+        xo_ = X(DELTA) + 0.33                                      # the delivered month leaves the anchoring box here
+    else:
+        ax1 = X(0.86 * DELTA)                                      # right end of the anchoring box
+        c.rbox(bx0, by0, ax1 - bx0, by1 - by0, LITE_XL, LITE, lw=0.8, r=0.05, z=5, name="anchor box")
+        bxc = (bx0 + ax1) / 2
+        c.text(bxc, bym + 0.09, "anchoring\nlayer", fs=FS + 0.3, color=LITE, ha="center", fontweight="bold", linespacing=1.0)
+        c.text(bxc, bym - 0.14, "copy of\nANKYRA 2.2.1", fs=FS_S, color=LITE, ha="center", linespacing=1.05)
+        c.text(bxc, by0 + 0.10, "c", fs=FS + 1.0, color=LITE, ha="center", fontweight="bold")
+        kx0 = ax1 + 0.12
+        c.rbox(kx0, by0, bx1 - kx0, by1 - by0, "white", LITE, lw=0.8, r=0.05, z=5, name="continuation box")
+        kxc = (kx0 + bx1) / 2
+        c.text(kxc, bym + 0.09, "continuation\nlayer", fs=FS + 0.3, color=LITE, ha="center", fontweight="bold", linespacing=1.0)
+        c.text(kxc, bym - 0.14, "4 frozen\nconstants", fs=FS_S, color=LITE, ha="center", linespacing=1.05)
+        c.text(kxc, by0 + 0.10, "c", fs=FS + 1.0, color=LITE, ha="center", fontweight="bold")
+        c.arrow((ax1 + 0.004, by0 + 0.10), (kx0 - 0.004, by0 + 0.10), color=LITE, lw=0.85)
+        xo_ = kxc
 
     # lanes: issue (teal), forecast month (bar), score (grey) flowing into the anchoring layer
     for k in range(0, 7):
@@ -429,7 +470,6 @@ def _panel_a(c, t, y, workday):
            fs=FS_S, color=CARRIER, style="italic")
     # F(0) into the anchoring layer, and the delivered month out of it
     c.arrow((X(0.45 * DELTA), lane_y(0) - BAR_H / 2 - 0.004), (X(0.45 * DELTA), by1 + 0.002), color=CARRIER, lw=LW)
-    xo_ = X(DELTA) + 0.33
     c.poly_arrow([(xo_, by1 + 0.002), (xo_, sy(1.10)), (X(DELTA) + 0.03, sy(1.10))], color=LITE, lw=0.85)
 
     # zoom lines
@@ -659,6 +699,68 @@ def _panel_b(c, t, y, workday, weekday, n_parameters):
     xr = fx0 + fw / 2 + 0.06
     c.arrow((xr, ay1 + 0.004), (xr, dy0 - 0.003), color=CARRIER)
     c.text(xr + 0.045, (ay1 + dy0) / 2, r"$z_d,\ v$", fs=FS_S, color=CARRIER)
+    if RELEASE == "0.2":
+        _training_strip(c, lx0, rx1, dy1)
+
+
+def _training_strip(c, lx0, rx1, below):
+    """Release 0.2.0: how the carrier is trained (recipe Rw) and ensembled (six seeds), above the decoder of (b).
+    Stage 1 from scratch with early stopping on the last 93 days before the cut; stage 2, 8 epochs with that span
+    returned and the loss of each training window i weighted by w_i = max(sigma_i^2, floor)^(-1/2) (sigma_i^2: the
+    week-lag noise of the window's own last three context weeks; floor: the 25% quantile over the pool; normalised to
+    mean 1 within each source); six seeds, their forecasts averaged at every issue time."""
+    ax = c.ax
+    sy0, sy1 = below + 0.06, below + 0.62
+    c.rbox(lx0, sy0, rx1 - lx0, sy1 - sy0, CAR_XL, CAR_L, lw=0.6, r=0.04, z=1, name="training")
+    yt = sy1 - 0.09
+    c.segments(lx0 + 0.07, yt, [("Training", CARRIER, {"fontweight": "bold"}),
+                                ("   recipe Rw: span return with inverse-noise loss weights; six seeds", GREY, {})], fs=FS)
+    # ---- stage timeline: 1 from scratch (93-day validation held out), 2 the span returned, weighted loss
+    x0, x1, xv = lx0 + 0.25, lx0 + 1.62, lx0 + 1.27
+    r1, r2, bh = sy1 - 0.27, sy1 - 0.42, 0.10                  # bottoms of the two stage bars
+    for yy, k in ((r1, "1"), (r2, "2")):
+        ax.add_patch(Circle((lx0 + 0.13, yy + bh / 2), 0.048, fc="white", ec=CARRIER, lw=0.6, zorder=5))
+        c.text(lx0 + 0.13, yy + bh / 2 - 0.004, k, fs=FS_S, color=CARRIER, ha="center", fontweight="bold")
+    c.rbox(x0, r1, xv - x0, bh, CAR_M, CAR_M, lw=0.4, r=0.015, z=4)
+    ax.add_patch(Rectangle((xv, r1), x1 - xv, bh, fc="white", ec=CARRIER, lw=0.5, hatch="//////", zorder=4))
+    c.text((x0 + xv) / 2, r1 + bh / 2, "from scratch, early stop", fs=FS_S, color="white", ha="center", z=8)
+    c.text((xv + x1) / 2, r1 + bh / 2, "93 d", fs=FS_S, color=CAR_D, ha="center", z=8,
+           bbox=dict(boxstyle="square,pad=0.08", fc="white", ec="none"))
+    c.rbox(x0, r2, x1 - x0, bh, CARRIER, CARRIER, lw=0.4, r=0.015, z=4)
+    c.text((x0 + x1) / 2, r2 + bh / 2, "8 epochs, span returned", fs=FS_S, color="white", ha="center", z=8)
+    rng = np.random.default_rng(17)                            # illustrative per-window loss weights under stage 2
+    nb = 30
+    s2 = np.exp(rng.normal(0.0, 0.8, nb))
+    w = np.maximum(s2, np.quantile(s2, 0.25)) ** -0.5
+    w = w / w.mean()
+    wb0, wh = sy0 + 0.035, 0.085
+    bw = (x1 - x0) / nb
+    for i, v in enumerate(w):
+        ax.add_patch(Rectangle((x0 + i * bw + 0.15 * bw, wb0), 0.7 * bw, wh * v / w.max(), fc=CAR_D, ec="none", zorder=4))
+    c.text(lx0 + 0.13, wb0 + wh / 2, r"$w_i$", fs=FS_S, color=CAR_D, ha="center")
+    # ---- the weight rule: w = max(sigma^2, floor)^(-1/2) on log axes (flat below the floor, slope -1/2 above)
+    gx0, gx1, gy0, gy1 = lx0 + 1.84, lx0 + 2.30, sy0 + 0.10, sy1 - 0.17
+    c.line([gx0, gx1], [gy0, gy0], color=GREY_M, lw=0.45, z=3)
+    c.line([gx0, gx0], [gy0, gy1], color=GREY_M, lw=0.45, z=3)
+    xf = gx0 + 0.34 * (gx1 - gx0)                              # the floor (25% quantile of sigma^2 over the pool)
+    yhi = gy1 - 0.02
+    c.line([gx0 + 0.01, xf, gx1 - 0.01], [yhi, yhi, yhi - 0.5 * (gx1 - 0.01 - xf)], color=CARRIER, lw=1.0, z=5)
+    c.line([xf, xf], [gy0, yhi], color=GREY, lw=0.45, z=4, ls=(0, (1.5, 1.2)))
+    c.text(gx0 - 0.03, yhi, r"$w$", fs=FS_S, color=CAR_D, ha="right")
+    c.text(gx1, gy0 - 0.05, r"$\sigma^2$", fs=FS_S, color=GREY, ha="right")
+    c.text(xf, gy0 - 0.05, "25%", fs=FS_S, color=GREY, ha="center")
+    tx = gx1 + 0.07
+    c.text(tx, sy1 - 0.215, r"$w_i=\max(\sigma_i^2,\,\sigma^2_{25\%})^{-1/2}$", fs=FS_S, color=INK)
+    c.text(tx, sy1 - 0.325, "per training window $i$", fs=FS_S, color=GREY)
+    c.text(tx, sy1 - 0.435, r"$\sigma_i^2$: its context noise", fs=FS_S, color=GREY)
+    # ---- six seeds, their forecasts averaged at every issue time
+    kw, kh, dk = 0.17, 0.12, 0.022
+    kx, ky = rx1 - 0.44, sy0 + 0.17
+    for j in range(6):
+        c.rbox(kx + dk * j, ky + 0.014 * j, kw, kh, CARRIER if j == 0 else CAR_M, "white", lw=0.4, r=0.015,
+               z=4 + 0.1 * (6 - j))                            # seed cards stacked back to the upper right; the front one labelled
+    c.text(kx + kw / 2, ky + kh / 2, "×6", fs=FS_S, color="white", ha="center", z=8, fontweight="bold")
+    c.text(kx + (kw + 5 * dk) / 2, sy0 + 0.085, "seeds averaged", fs=FS_S, color=CARRIER, ha="center")
 
 
 # ---------------------------------------------------------------------------- panel (c): the anchoring layer
@@ -666,12 +768,16 @@ def _panel_c(c, cost_text):
     ax = c.ax
     x0, y0, x1, y1 = PC
     c.rbox(x0, y0, x1 - x0, y1 - y0, "white", FRAME, lw=0.5, r=0.06, z=0, name="panel c")
-    c.letter(x0 + 0.08, y1 - 0.13, "c", "Anchoring layer", "copy of ANKYRA 2.2.1; nothing trained")
+    cont = RELEASE == "0.2"
+    if cont:
+        c.letter(x0 + 0.08, y1 - 0.13, "c", "Anchoring and continuation layers", "nothing trained")
+    else:
+        c.letter(x0 + 0.08, y1 - 0.13, "c", "Anchoring layer", "copy of ANKYRA 2.2.1; nothing trained")
 
     bx0, bx1 = x0 + 0.10, x1 - 0.10            # row boxes
     gx0, gw = bx0 + 0.14, 0.86                 # glyph column
     tx = gx0 + gw + 0.12                       # text column
-    rh, gap = 0.64, 0.12
+    rh, gap = 0.64, (0.10 if cont else 0.12)
     tops = [y1 - 0.26 - i * (rh + gap) for i in range(3)]
     names = ("level", "daily means", "within-day")
     for top, nm in zip(tops, names):
@@ -768,14 +874,28 @@ def _panel_c(c, cost_text):
     c.text(xg, (tops[1] - rh + tops[2]) / 2, "+", fs=FS + 2, color=LITE, ha="center", fontweight="bold")
     oy1 = tops[2] - rh - gap
     oy0 = y0 + 0.08
-    c.arrow((xg, tops[2] - rh - 0.004), (xg, oy1 + 0.003), color=LITE)
+    if cont:
+        ktop = oy1
+        oy1 = _continuation_row(c, bx0, bx1, gx0, gw, tx, tagx, ktop, lh) - gap
+        c.arrow((xg, tops[2] - rh - 0.004), (xg, ktop + 0.003), color=LITE)
+        c.text(xg + 0.06, (tops[2] - rh + ktop) / 2, r"$F_{d,h}=\max(m_d+w_{d,h},\,0)$, then the state rule", fs=FS_S, color=GREY)
+        xk = gx0 + gw / 2
+        c.arrow((xk, oy1 + gap - 0.004), (xk, oy1 + 0.003), color=LITE)
+    else:
+        c.arrow((xg, tops[2] - rh - 0.004), (xg, oy1 + 0.003), color=LITE)
 
     # ---- output
     c.rbox(bx0, oy0, bx1 - bx0, oy1 - oy0, "white", LITE, lw=0.9, r=0.04, z=1, name="output")
-    c.segments(bx0 + 0.08, oy1 - 0.10, [("ankyra-lite", LITE, {"fontweight": "bold"}), ("   ", INK, {}),
-                                        (r"$\hat F_{d,h}=\max(m_d+w_{d,h},\,0)$, 744 h", INK, {})], fs=FS)
-    lines = [r"energy $744\,\bar m$;   peak $\mathrm{max}_d\,(\hat L_d+A_{\tau_d})$",
-             "state windows: weekly seasonal naive"]
+    if cont:
+        c.segments(bx0 + 0.08, oy1 - 0.10, [("ankyra-lite", LITE, {"fontweight": "bold"}), ("   ", INK, {}),
+                                            (r"delivered $F'_{d,h}$, 744 h", INK, {})], fs=FS)
+        lines = [r"energy $744\,\bar m$, peak $\mathrm{max}_d\,(\hat L_d+A_{\tau_d})$:", "  read from $F$, before the continuation layer",
+                 "state windows: seasonal naive (week), no layer"]
+    else:
+        c.segments(bx0 + 0.08, oy1 - 0.10, [("ankyra-lite", LITE, {"fontweight": "bold"}), ("   ", INK, {}),
+                                            (r"$\hat F_{d,h}=\max(m_d+w_{d,h},\,0)$, 744 h", INK, {})], fs=FS)
+        lines = [r"energy $744\,\bar m$;   peak $\mathrm{max}_d\,(\hat L_d+A_{\tau_d})$",
+                 "state windows: weekly seasonal naive"]
     if cost_text:
         lines.append(" ".join(str(cost_text).split()))
     for i, s in enumerate(lines):
@@ -790,6 +910,46 @@ def _panel_c(c, cost_text):
     ax.fill_between(xs, sy0, ys, color=LITE_XL, lw=0, zorder=2)
     ax.plot(xs, ys, color=LITE, lw=0.6, zorder=3)
     c.line([sx0, sx1], [sy0, sy0], color=GREY_M, lw=0.4, z=3)
+
+
+def _continuation_row(c, bx0, bx1, gx0, gw, tx, tagx, top, lh, rh=0.58):
+    """Release 0.2.0: the origin-continuity layer (ankyra_lite/continuation.py) as the last row of panel (c); returns
+    the row's bottom.  F'(h) = F(h) exp(delta(h)), delta(h) = kappa1 x_f exp(-h / 12) + kappa2 x_d exp(-h / 168) with
+    kappa1 = 0.479, kappa2 = 0.330; x_f and x_d are the clipped log ratios of the last 3 and 24 observed hours to the same
+    hours of the reference forecast day.  The glyph is synthetic: the last day before the origin above the forecast, F'
+    pulled toward it in the first hours and back to F within the first week."""
+    ax = c.ax
+    c.rbox(bx0, top - rh, bx1 - bx0, rh, "white", LITE, lw=0.6, r=0.04, z=1, name="continuation")
+    l1 = top - 0.10
+    c.text(tx, l1, "Continuation", fs=FS, fontweight="bold", color=LITE)
+    c.tag(tagx, l1, "last 24 h before $o$")
+    c.text(tx, l1 - lh - 0.01, r"$F'(h)=F(h)\,e^{\delta(h)}$,  $h=0\ldots743$", fs=FS_M)
+    c.text(tx, l1 - 2 * lh - 0.02, r"$\delta(h)=\kappa_1x_f\,e^{-h/12}+\kappa_2x_d\,e^{-h/168}$", fs=FS_S)
+    c.text(tx, l1 - 3 * lh - 0.02, r"$x_f,x_d$: last 3 h, 24 h vs $F$ (log, $\pm1$)", fs=FS_S, color=GREY)
+    # glyph: 24 h before and 72 h after the origin
+    hb = np.arange(-24, 0) + 0.5
+    hf = np.arange(0, 72) + 0.5
+    obs = _office_day((hb + 24) % 24, True, 0.95) * 1.16 + 0.03 * np.sin(hb / 2.3)
+    F = _office_day(hf % 24, True, 0.95)
+    xf_, xd_ = 0.42, 0.20                                          # illustrative anomalies (clipped log ratios)
+    Fp = F * np.exp(0.479 * xf_ * np.exp(-hf / 12) + 0.330 * xd_ * np.exp(-hf / 168))
+    g0, g1 = gx0, gx0 + gw
+    xo = g0 + gw * 24 / 96
+    X_ = lambda h: g0 + gw * (np.asarray(h) + 24) / 96             # noqa: E731
+    cy0, ch = top - rh + 0.10, 0.36
+    lo, hi = 0.3, 1.75
+    Y_ = lambda v: cy0 + ch * (np.asarray(v) - lo) / (hi - lo)     # noqa: E731
+    ax.plot(X_(hb), Y_(obs), color=OBS_D, lw=0.7, zorder=5)
+    ax.plot(X_(hf), Y_(F), color=LITE_L, lw=0.8, zorder=5, ls=(0, (2.2, 1.2)))
+    ax.plot(X_(hf), Y_(Fp), color=LITE, lw=1.0, zorder=6)
+    c.line([g0, g1], [cy0, cy0], color=GREY_M, lw=0.4, z=3)
+    c.line([xo, xo], [cy0, cy0 + ch + 0.02], color=GREY, lw=0.5, z=4, ls=(0, (1.5, 1.2)))
+    c.text(xo, cy0 - 0.055, "$o$", fs=FS_S, color=GREY, ha="center")
+    c.text(g1, cy0 - 0.055, "+72 h", fs=FS_S, color=GREY, ha="right")
+    c.text(g0, cy0 - 0.055, "−24", fs=FS_S, color=GREY, ha="left")
+    c.text(X_(30), Y_(1.62), "$F'$", fs=FS_S, color=LITE, ha="left")
+    c.text(X_(58), Y_(0.30) + 0.05, "$F$", fs=FS_S, color=LITE_L, ha="left")
+    return top - rh
 
 
 if __name__ == "__main__":

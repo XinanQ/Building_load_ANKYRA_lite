@@ -22,6 +22,12 @@ over the unit's scale s0, change of the level and of the peak readout, firing of
 carrier alone on the corrupted context, and the largest deviation from exact scale equivariance.  The clean forecasts are
 recomputed here (CPU) and compared with the stored evaluation product (computed on a GPU).
 
+Version 0.2.0: every seed of the configuration forecasts (six seeds in a six-seed configuration) and, when the mapping
+switches it on, the continuation layer acts on every forecast (``forecast(..., continuation=True)``): corrupting the last
+hours then moves the layer as well, which is part of what is measured.  The hourly errors read the delivered trajectory;
+the level and peak readouts are read before the layer (readout rule A).  The clean trajectories before the layer are
+compared with the stored product and the delivered ones with the stored continued product.
+
 Called by extra_tables.Collector.finish; ``python -B evaluation/robustness.py --face oslo --windows 64 --out <dir>``
 runs it alone (CPU, one thread) and writes robustness.csv / robustness.json into <dir>.
 """
@@ -94,8 +100,9 @@ def corrupt(load_row, o, kind, rng):
     return L, c
 
 
-def measure(T, face, entry, n=N, log=print):
-    """Run the stress test on one population; returns (record, rows)."""
+def measure(T, face, entry, n=N, log=print, layer=None):
+    """Run the stress test on one population; returns (record, rows).  ``layer``: the continuation layer on or off
+    (default: the mapping's)."""
     import torch
     torch.set_num_threads(1)
     if str(CB.REPO) not in sys.path:
@@ -114,6 +121,9 @@ def measure(T, face, entry, n=N, log=print):
     sigma = float(json.loads(Path(entry["prep_path"]).read_text(encoding="utf-8"))["sigma"])
     models = [load_carrier(Path(rd) / entry["checkpoint"]) for rd in entry["run_paths"]]
     zx = np.load(entry["npz_path"], allow_pickle=False)
+    layer = bool(entry.get("layer")) if layer is None else bool(layer)
+    zc = np.load(entry["continued_path"], allow_pickle=False) if (layer and entry.get("continued_path") is not None) else None
+    kw = {"continuation": True} if layer else {}
     pick = np.unique(np.linspace(0, len(zx["building"]) - 1, n).round().astype(int))
     wb, wo = zx["building"][pick].astype(int), zx["origin"][pick].astype(int)
     load, temp, types = d["load"], d["temp"], d["types"]
@@ -125,24 +135,35 @@ def measure(T, face, entry, n=N, log=print):
     m = len(wb)
     rng = np.random.default_rng(SEED)
     F, C, LEV, PK, OFF, MIC, CS, sec = {}, {}, {}, {}, {}, {}, {}, {}
+    F_before = None
     for kind in KINDS:
         t0 = time.perf_counter()
         Fk, Ck = np.zeros((m, HORIZON)), np.zeros((m, HORIZON))
+        Fb = np.zeros((m, HORIZON)) if (kind == "clean" and layer) else None
         lev, pk, off, mic, cs = np.zeros(m), np.zeros(m), np.zeros(m, bool), np.zeros(m, bool), np.ones(m)
         for i, (b, o) in enumerate(zip(wb, wo)):
             L, c = corrupt(load[b], int(o), kind, rng)
             ty = types if types.ndim == 1 else types[b]
             tmp = temp[b] if temp.ndim == 2 else temp
             h = History(load_kw=L, temperature_c=tmp[:o], day_types=ty[:o + HORIZON], start_timestamp=d["start_iso"], observed=np.isfinite(L))
-            r = FM.forecast(h, models, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut)
+            r = FM.forecast(h, models, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut, **kw)
             Fk[i], Ck[i], lev[i], pk[i], cs[i] = r.trajectory_kw, r.carrier[0], r.level_kw, r.peak_kw, c
+            if Fb is not None:
+                Fb[i] = r.trajectory_before_continuation_kw
             off[i], mic[i] = bool(r.anchored.off_state), bool(r.anchored.micro_load)
         F[kind], C[kind], LEV[kind], PK[kind], OFF[kind], MIC[kind], CS[kind] = Fk, Ck, lev, pk, off, mic, cs
+        if Fb is not None:
+            F_before = Fb
         sec[kind] = time.perf_counter() - t0
         log(f"robustness {face} {kind}: {sec[kind]:.0f} s, off-state {int(off.sum())}, micro-load {int(mic.sum())}")
     stored = zx["traj"][pick].astype(np.float64)
     st = OFF["clean"] | MIC["clean"]
-    clean_rel = float(np.max(np.abs(F["clean"][~st] - stored[~st]) / np.maximum(np.abs(stored[~st]).mean(1, keepdims=True), 1e-9))) if (~st).any() else float("nan")
+    Fc = F["clean"] if F_before is None else F_before                       # before the continuation layer, as the stored product
+    clean_rel = float(np.max(np.abs(Fc[~st] - stored[~st]) / np.maximum(np.abs(stored[~st]).mean(1, keepdims=True), 1e-9))) if (~st).any() else float("nan")
+    cont_rel = None
+    if zc is not None and (~st).any():
+        sc = zc["traj"][pick].astype(np.float64)
+        cont_rel = float(np.max(np.abs(F["clean"][~st] - sc[~st]) / np.maximum(np.abs(sc[~st]).mean(1, keepdims=True), 1e-9)))
     s0 = np.array([max(float(load[b, o - HORIZON:o].std()), max(0.01 * abs(float(load[b, o - HORIZON:o].mean())), 1e-3)) for b, o in zip(wb, wo)])
     ypk = y.max(1)
     uu, inv = np.unique(wb, return_inverse=True)
@@ -181,6 +202,10 @@ def measure(T, face, entry, n=N, log=print):
                                                      "clean_forecast_vs_stored_product_max_rel": clean_rel},
            "seconds_by_corruption": sec, "seconds_total": total, "seconds_per_window_and_corruption": float(np.mean(list(sec.values()))) / max(m, 1),
            "device": "cpu", "threads": torch.get_num_threads(), "window_sample": "evenly spread over the test windows in the product's order"}
+    if layer or len(models) != 3:                                            # version 0.2.0 fields
+        rec |= {"seeds": len(models), "continuation_layer": layer}
+        if layer:
+            rec["clean"]["clean_delivered_vs_stored_continued_product_max_rel"] = cont_rel
     return rec, rows
 
 
@@ -195,7 +220,8 @@ def summary(rec):
     pct = lambda v: f"{100 * (np.exp(v) - 1):+.1f}%"                                  # noqa: E731  (positive = worse)
     L = ["## Robustness to corrupted contexts (`robustness.csv`)", "",
          f"{rec['windows']} {rec['face_name']} test windows ({rec['units']} units), only the context corrupted, re-forecast on the CPU with the",
-         "released checkpoints (carrier forecasts at every issue time, anchoring layer, state rule). Change of the hourly RMS error",
+         "released checkpoints (carrier forecasts at every issue time, anchoring layer, state rule"
+         + (", continuation layer" if rec.get("continuation_layer") else "") + "). Change of the hourly RMS error",
          "against the clean context (positive = worse); the comparator is the carrier alone from the same corrupted record.", "",
          "| Corruption of the context | ankyra-lite: hourly error vs clean | carrier alone | level change, median / max | peak readout change, median | ankyra-lite vs carrier alone (corrupted) |",
          "|---|---:|---:|---:|---:|---:|"]
@@ -217,13 +243,14 @@ def main():
     ap.add_argument("--face", default=FACE)
     ap.add_argument("--windows", type=int, default=N)
     ap.add_argument("--recipe", default="R", choices=sorted(CB.RECIPE_PRODUCTS))
+    ap.add_argument("--products", default=None, help="another products mapping (overrides --recipe)")
     ap.add_argument("--out", required=True, help="output directory (robustness.csv and robustness.json)")
     a = ap.parse_args()
     CB.RESULTS = Path(a.out).resolve()
     if CB._in_read_only(CB.RESULTS):
         raise SystemExit("the output directory lies in a read-only tree")
     CB.RESULTS.mkdir(parents=True, exist_ok=True)
-    prods = CB.load_products(CB.RECIPE_PRODUCTS[a.recipe])
+    prods = CB.load_products(Path(a.products) if a.products else CB.RECIPE_PRODUCTS[a.recipe])
     CB.wait_for_memory("robustness")
     T = CB.Tools()
     rec, rows = measure(T, a.face, prods["faces"][a.face], n=a.windows, log=CB.log)

@@ -1,5 +1,5 @@
 {
- "utc": "2026-10-19T08:50:44Z",
+ "utc": "2026-10-21T04:15:10Z",
  "what": "scoring-code check: the late-window rows of ten release tables recomputed with the scoring functions used for ankyra-lite and the release's own reference forecaster, compared field by field with the published files; only the match counts are kept",
  "reference_of_the_check": "the release's reference forecaster (saved forecasts of the release panel)",
  "published": "<original release root>/results",
@@ -152,7 +152,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 27.6
+   "seconds": 35.8
   },
   "cambridge": {
    "windows_full": 1456,
@@ -161,7 +161,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 35.2
+   "seconds": 29.7
   },
   "heew": {
    "windows_full": 1282,
@@ -170,7 +170,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 20.6
+   "seconds": 15.7
   },
   "eweld": {
    "windows_full": 1023,
@@ -179,7 +179,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 15.4
+   "seconds": 13.5
   },
   "goiener_confirm": {
    "windows_full": 1237,
@@ -188,7 +188,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 31.6
+   "seconds": 28.8
   },
   "households": {
    "windows_full": 1258,
@@ -197,7 +197,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 26.4
+   "seconds": 28.5
   },
   "oslo": {
    "windows_full": 1147,
@@ -206,7 +206,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 10.9
+   "seconds": 11.7
   },
   "drammen": {
    "windows_full": 1375,
@@ -215,7 +215,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 12.6
+   "seconds": 12.9
   },
   "cineldi": {
    "windows_full": 929,
@@ -233,7 +233,7 @@
    "late_equals_rank_tool_subset": true,
    "incomplete_files": [],
    "files_left_to_step_b": [],
-   "seconds": 6.8
+   "seconds": 6.5
   }
  },
  "tables_reproduced": [

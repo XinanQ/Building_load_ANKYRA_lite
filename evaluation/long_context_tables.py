@@ -73,7 +73,7 @@ def long_context(face, P, prod):
 def rows_for(xt, P, prod, baselines, lc, flag):
     """Rows of long_context_baselines.csv for one population (xt: the extra_tables Collector, for its contrast)."""
     y, unit, month = P["yL"], P["uL"], P["mL"]
-    L = {"ankyra-lite": xt.losses(y, prod["traj"])}
+    L = {"ankyra-lite": xt.losses(y, prod["traj"], prod.get("traj_pre") if prod.get("cont") is not None else None)}   # energy before the layer
     L |= {k: xt.losses(y, v[0]) for k, v in lc.items()}
     L |= {s: xt.losses(y, baselines[s]) for s in SHORT.values() if s in baselines}
     base = {"set": P["name"], "tier": P["tier"], "subset": "late", "windows": int(len(y)), "units": int(len(np.unique(unit))), "flag": flag or ""}

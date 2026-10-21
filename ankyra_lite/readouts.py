@@ -1,32 +1,38 @@
 """Readouts of an ankyra-lite forecast: the prediction interval, the block split, the energy added by the
-nonnegativity projection, and the monthly peak.
+nonnegativity projection, the energy changed by the origin-continuity layer, and the monthly peak.
 
     from ankyra_lite import forecast, readouts
     r = forecast(history, carriers, group="Office", temp_sigma_std=0.25)
     bands, n = readouts.interval(history, r, group="Office", temp_sigma_std=0.25)   # rows: 5, 10, 50, 90, 95 %
     b = readouts.blocks(readouts.raw_trajectory(r))      # level, centred daily path, within-day path
-    readouts.projection_energy_increase(r)               # kWh that max(F, 0) added to the delivered trajectory
-    readouts.peak(r.trajectory_kw, load_kw, day_types)   # the peak readout behind r.peak_kw
+    readouts.projection_energy_increase(r)               # kWh that max(F, 0) added to the trajectory before the layer
+    readouts.continuation_energy_change(r)               # kWh that the continuation layer changed (0 when it is off)
+    readouts.peak(r.trajectory_before_continuation_kw, load_kw, day_types)   # the peak readout behind r.peak_kw
 
 Every function calls the public API of the anchoring layer (``ankyra_lite.anchor.readouts`` and
 ``ankyra_lite.anchor.blocks``) and nothing else; none of them changes the forecast.
 
 Energy.  ``ForecastResult.energy_kwh`` is 744 x ``level_kw``, the level read before the nonnegativity projection.  The
-projection max(F, 0) cannot increase any hour's absolute error when the truth is nonnegative; it raises the delivered
-trajectory's energy by sum(max(-F, 0)), which is known at the origin (:func:`projection_energy_increase`).
+projection max(F, 0) cannot increase any hour's absolute error when the truth is nonnegative; it raises the
+trajectory's energy by sum(max(-F, 0)), which is known at the origin (:func:`projection_energy_increase`).  The
+origin-continuity layer is applied after the projection and energy is read before it, so with the layer on the
+delivered trajectory's sum differs from ``energy_kwh`` by a further :func:`continuation_energy_change`, also known at
+the origin.
 
 Peak.  U = max_d (L_d + A_{t_d}): the largest, over the 31 forecast days, of the day's forecast mean L_d plus the
 largest excursion above its own mean among the four most recent context days of the same day type (all context days
 when the type is absent from the context; a holiday borrows Sunday when the context holds no holiday).
-``ForecastResult.peak_kw`` is this readout of the delivered trajectory (kappa = 1).
+``ForecastResult.peak_kw`` is this readout of ``trajectory_before_continuation_kw`` (kappa = 1), the trajectory
+before the continuation layer (the delivered trajectory when the layer is off).
 
 Interval.  Hourly residuals of the unit's own history-only pseudo-forecasts (historical level and daily path with a
 same-day-type within-day default, no carrier) at up to 12 completed pseudo-origins, normalised by each pseudo-window's
 origin scale and pooled by hour of day and workday / other day, give empirical quantiles; they are added to the
-point trajectory, scaled by the origin scale, clipped at zero and made monotone across levels.  The residuals are not
-those of ankyra-lite's own forecasts and are not centred.  The interval reads the record with unobserved hours as
-missing and applies neither the short-gap rule nor its 90% target rule: a pseudo-window counts only when its context
-and target month are completely observed.
+point trajectory, scaled by the origin scale, clipped at zero and made monotone across levels.  The point trajectory
+is ``trajectory_kw``, i.e. after the continuation layer when it is on.  The residuals are not those of ankyra-lite's
+own forecasts and are not centred.  The interval reads the record with unobserved hours as missing and applies
+neither the short-gap rule nor its 90% target rule: a pseudo-window counts only when its context and target month are
+completely observed.
 """
 from __future__ import annotations
 
@@ -37,7 +43,8 @@ import numpy as np
 from .forecast import HORIZON, HR, _anchor, _masked_load, peak
 from .carrier.inference import CONTEXT
 
-__all__ = ["interval", "blocks", "Blocks", "raw_trajectory", "projection_energy_increase", "peak", "LEVELS"]
+__all__ = ["interval", "blocks", "Blocks", "raw_trajectory", "projection_energy_increase", "continuation_energy_change",
+           "peak", "LEVELS"]
 
 LEVELS = (0.05, 0.1, 0.5, 0.9, 0.95)        # rows of ``interval``: rows 1 and 3 bound the 80% interval, 0 and 4 the 90% one
 
@@ -66,7 +73,8 @@ def interval(history, result, *, group: str, temp_sigma_std: float):
 
     history          the ``ankyra_lite.anchor.History`` the forecast was made from
     result           the ``ForecastResult`` of ``ankyra_lite.forecast`` (or an ``AnkyraForecast``, or a (744,) point
-                     trajectory); the bands are placed around its ``trajectory_kw``
+                     trajectory); the bands are placed around its ``trajectory_kw`` (after the continuation layer
+                     when it is on)
     group, temp_sigma_std
                      the arguments of the forecast (the history-only pseudo-forecasts use the same estimator)
 
@@ -103,18 +111,31 @@ def raw_trajectory(result) -> np.ndarray:
     """The forecast before the nonnegativity projection, (744,) kW.
 
     Off a state window this is the anchoring layer's daily means repeated over the hours plus its within-day block
-    (``np.repeat(daily_means_kw, 24) + within_day_kw``), so ``max(raw, 0)`` is the delivered trajectory; for the
-    history-only configuration likewise.  On a state window no projection is applied and the delivered trajectory is
-    returned (a copy)."""
+    (``np.repeat(daily_means_kw, 24) + within_day_kw``), so ``max(raw, 0)`` is ``trajectory_before_continuation_kw``
+    (the delivered trajectory when the continuation layer is off); for the history-only configuration likewise.  On a
+    state window no projection is applied and the delivered trajectory is returned (a copy)."""
     if _state_window(result):
         return np.array(result.trajectory_kw, dtype=np.float64, copy=True)
     return np.repeat(np.asarray(result.daily_means_kw, dtype=np.float64), HR) + np.asarray(result.within_day_kw, dtype=np.float64)
 
 
 def projection_energy_increase(result) -> float:
-    """Energy (kWh) that the nonnegativity projection max(F, 0) added to the delivered trajectory; known at the origin.
+    """Energy (kWh) that the nonnegativity projection max(F, 0) added to the trajectory; known at the origin.
 
-    ``sum(trajectory_kw) - 744 * level_kw`` up to rounding; 0 on a state window, where no projection is applied."""
+    ``sum(trajectory_before_continuation_kw) - 744 * level_kw`` up to rounding; 0 on a state window, where no
+    projection is applied."""
     if _state_window(result):
         return 0.0
     return float(_anchor().readouts.projection_energy_increase_kwh(raw_trajectory(result)))
+
+
+def continuation_energy_change(result) -> float:
+    """Energy (kWh) that the origin-continuity layer added to the delivered trajectory (negative when it removed
+    energy): ``sum(trajectory_kw) - sum(trajectory_before_continuation_kw)``; known at the origin.
+
+    0 when the layer is off, on a state window (bypass) and for an ``AnkyraForecast``.  With the layer on,
+    ``sum(trajectory_kw) = energy_kwh + projection_energy_increase + continuation_energy_change`` up to rounding."""
+    before = getattr(result, "trajectory_before_continuation_kw", None)
+    if before is None:
+        return 0.0
+    return float(np.asarray(result.trajectory_kw, dtype=np.float64).sum() - np.asarray(before, dtype=np.float64).sum())

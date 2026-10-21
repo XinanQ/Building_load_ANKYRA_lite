@@ -22,6 +22,9 @@ counterpart exists, with ankyra-lite in ANKYRA's place; ``results/README.md`` de
   training_curves.csv               per population and seed: both training stages (from scratch with early stopping, then
                                     the span return), validation criterion and training loss by epoch
   recipe_history.csv, constants.csv the recipe arms of the study and every constant                   (recipe_tables.py)
+  continuation_layer.csv            version 0.2.0: the origin-continuity layer on and off on the same carrier, by lead time
+  continuation_record.csv           version 0.2.0: what the layer did (bypasses, clipped spans, reference days, |Delta|) and
+                                    the gap between the delivered trajectory's mean and the energy readout (readout rule A)
 
 Files added on 19 October 2026 (the first release's analyses of the same name or purpose, with ankyra-lite's numbers; the
 ones marked "fields" read the ``fields`` mode of lite_reanchor.py, the anchoring layer's own fields of every window):
@@ -43,6 +46,15 @@ ones marked "fields" read the ``fields`` mode of lite_reanchor.py, the anchoring
 
 Interval estimand and contrasts are the release's: 2,000-draw unit x target-month bootstrap of the unit-equal log
 ratio (tools_hcr_ext_drammen_score_v1), a fresh random stream per contrast.
+
+Version 0.2.0 (a products mapping with a configuration and, possibly, the continuation layer).  ankyra-lite is the
+delivered forecast: hourly errors read the trajectory after the layer, energy errors the trajectory before it (readout
+rule A; the level and peak readouts are those of the product).  Re-anchored versions of the anchoring layer (the
+switched-off parts, the handover arms, the whole-window weights) get the same layer, so that each row changes one part;
+the carriers inside the anchoring layer and contrast (ii) compare the trajectories before the layer (the layer's
+constants were fixed on this carrier's products), with one added row each for the layer.  The seed spread reads the
+carriers of every seed and, anchored, the two stored three-seed groups.  With a 0.1.x mapping (no configuration, no
+layer) every table is the 0.1.x table.
 """
 from __future__ import annotations
 
@@ -113,6 +125,63 @@ HALF_AVERAGE = "half-and-half average of the history side and the carrier"
 COMPONENT.update({WHOLE_WINDOW: "block-wise weights instead of one whole-window weight",
                   HALF_AVERAGE: "block-wise weights against a half-and-half average"})
 ADDED_ABLATIONS = (FIXED_DIVISION, HALF_HANDOVER, WHOLE_WINDOW, HALF_AVERAGE)
+# ---- version 0.2.0 (the continuation layer, six seeds, recipe Rw)
+NO_LAYER = "without the continuation layer (the same carrier and anchoring layer)"
+COMPONENT[NO_LAYER] = "origin-continuity layer"
+LAYER_ROW = " with the continuation layer"                           # suffix of the added layer rows (carriers, contrast (ii))
+CONT_SEGMENTS = (("lead hour 0", 0, 1), ("lead hours 0-3", 0, 3), ("forecast day 1", 0, 24), ("forecast days 2-7", 24, 168),
+                 ("forecast days 8-31", 168, 744), ("whole window", 0, 744))           # "lead hours 0-3" = hours 0, 1, 2 (the study's definition)
+CONT_LAYER_FIELDS = ["set", "tier", "segment", "hours", "error", "windows", "units", "state_windows", "log_ratio", "um_low", "um_high",
+                     "improvement_pct", "resolved", "flag"]
+CONT_RECORD_FIELDS = ["set", "tier", "windows", "state_windows_bypassed", "missing_fast_span", "missing_day_span", "nonpositive_fast_span",
+                      "nonpositive_day_span", "clipped_fast_share", "clipped_day_share", "no_match_reference_day", "x_fast_median", "x_day_median",
+                      "x_fast_mean_abs", "x_day_mean_abs", "max_abs_delta", "delivered_mean_vs_energy_readout_rel_p50",
+                      "delivered_mean_vs_energy_readout_rel_p99", "delivered_mean_vs_energy_readout_rel_max", "layer_energy_change_pct_min",
+                      "layer_energy_change_pct_max", "flag"]
+RECIPE_WORDS = {"R": "recipe R (span return)", "Rw": "recipe Rw (span return with inverse-noise loss weighting)"}
+FACTOR_COMPONENT = {"recipe": "inverse-noise loss weighting (recipe Rw instead of recipe R)", "seeds": "six seeds instead of three",
+                    "continuation": "origin-continuity layer"}
+COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def config_of(key):
+    """(recipe, seeds, layer) of a 0.2.0 recipe-variant key (R_g0, R_ens6_c, Rw_g0, ...), or None for another key."""
+    import re
+    m = re.fullmatch(r"(R|Rw)_(g0|ens6)(_c)?", key)
+    if not m:
+        return None
+    return m.group(1), 6 if m.group(2) == "ens6" else 3, bool(m.group(3))
+
+
+def config_label(key):
+    """The ablation label of a 0.2.0 recipe variant."""
+    r, n, c = config_of(key)
+    if key == "R_g0":
+        return "0.1.0 configuration: recipe R (span return), seeds 0-2, no continuation layer (anchored)"
+    return (f"configuration: {RECIPE_WORDS[r]}, {'six seeds' if n == 6 else 'seeds 0-2'}, "
+            f"{'with' if c else 'without'} the continuation layer (anchored)")
+
+
+def config_component(key, parts):
+    """The component a 0.2.0 recipe variant isolates against the release configuration ``parts``, or None: the variant
+    differs from the release in one factor that the release has (recipe Rw, six seeds, the layer), or it is the 0.1.0
+    configuration (every change together)."""
+    r, n, c = config_of(key)
+    if not parts:
+        return None
+    rel = (parts.get("recipe"), int(parts.get("seeds", 3)), bool(parts.get("continuation")))
+    if key == "R_g0" and rel != ("R", 3, False):
+        return "0.2.0 against 0.1.0 (every change of the release configuration together)"
+    diff = [f for f, a, b in (("recipe", r, rel[0]), ("seeds", n, rel[1]), ("continuation", c, rel[2])) if a != b]
+    if len(diff) != 1:
+        return None
+    f = diff[0]
+    has = {"recipe": rel[0] == "Rw", "seeds": rel[1] == 6, "continuation": rel[2]}[f]
+    return FACTOR_COMPONENT[f] if has else None
+
+
+def n_words(n):
+    return COUNT_WORDS.get(int(n), str(n))
 ARMS = ("A0", "Ah", "AM", "AW")                     # handover arms (the first release's names; Ah = a fixed weight of one half)
 ARM_WORDS = {"A0": "no handover (history-side daily means only)", "Ah": "fixed half handover weight",
              "AM": "one handover weight per unit and window", "AW": "weekly handover weights (ankyra-lite)"}
@@ -144,7 +213,7 @@ ADDED_FILES = {
                                      "how often the level candidate with the smallest pseudo-origin error is the best one at the origin, against chance"),
     "energy_level_readout.csv": ("energy_level_readout", ["set", "tier", "windows", "units", "model", "model_label", "log_ratio", "um_low", "um_high", "improvement_pct",
                                                           "resolved", "median_energy_ape_pct", "windows_projection_binds", "flag"],
-                                 "the energy contrasts with ankyra-lite's level readout (744 x level) in place of its delivered trajectory's mean"),
+                                 "the energy contrasts with ankyra-lite's level readout (744 x level) in place of its trajectory's mean before the continuation layer"),
 }
 
 def _resolved(lo, hi, identical=False):
@@ -166,6 +235,8 @@ class Collector:
         self.extra_json = {}
         self.faces = []
         self.notes = defaultdict(list)
+        self.cont_pool = []                                          # per-population losses of continuation_layer.csv (pooled rows)
+        self.parts = prods.get("configuration_parts") or {}          # version 0.2.0: recipe, seeds, continuation of the release
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             import tools_hcr_intervals_v1 as IV
@@ -185,8 +256,31 @@ class Collector:
         return {"log_ratio": float(lr), "um_low": float(lo), "um_high": float(hi), "improvement_pct": 100 * (1 - math.exp(lr)), "resolved": _resolved(lo, hi)}
 
     @staticmethod
-    def losses(y, p):
-        return {"hourly": ((p - y) ** 2).mean(1), "energy": (p.mean(1) - y.mean(1)) ** 2}
+    def losses(y, p, pe=None):
+        """Hourly and monthly-energy losses; ``pe``: the trajectory the energy is read from when it is not ``p`` (ankyra-lite
+        with the continuation layer: the trajectory before the layer, readout rule A)."""
+        return {"hourly": ((p - y) ** 2).mean(1), "energy": ((p if pe is None else pe).mean(1) - y.mean(1)) ** 2}
+
+    @staticmethod
+    def layered(prod, raw, state):
+        """The release continuation layer on a variant's trajectory before the layer (float32-stored values, as the study's
+        continued products), with the product's pre-origin inputs and the variant's own state flags; ``raw`` unchanged
+        when the product has no layer."""
+        c = prod.get("cont")
+        if c is None:
+            return raw
+        Fp, _ = CB.apply_layer(np.asarray(raw, np.float64).astype(np.float32), c["pre"], c["last_type"], c["day_types"], np.asarray(state, bool))
+        return Fp.astype(np.float64)
+
+    def deliver(self, prod, a, key="traj"):
+        """A re-anchored or saved variant as delivered: with the layer when the product has one (the cache's layered
+        trajectory ``traj_cont`` where it exists, else the release layer applied here), then the state rule.  Returns
+        (hourly forecast, forecast the energy is read from)."""
+        pre = self.state_rule(prod, a[key].astype(np.float64), a["off"], a["micro"])
+        if prod.get("cont") is None:
+            return pre, None
+        tc = a["traj_cont"].astype(np.float64) if "traj_cont" in a else self.layered(prod, a[key], a["off"] | a["micro"])
+        return self.state_rule(prod, tc, a["off"], a["micro"]), pre
 
     @staticmethod
     def rnd(c, nd=6):
@@ -239,6 +333,8 @@ class Collector:
             rec["near_zero"] = self._near_zero(P, prod, baselines)
         if face == "cambridge":
             rec["example_window"] = self._example(P, prod, ens, baselines)
+        if prod.get("cont") is not None:
+            rec["continuation"] = self._continuation(face, P, prod, flag)
         if "ens" in cache and cache["ens"][0] is not None:
             self._deciles_collect(face, P, prod, ens, cache["ens"][0])
         self.rec[face] = rec
@@ -249,10 +345,11 @@ class Collector:
         not read from here when the products mapping lists stored single-seed products."""
         import lite_reanchor as LR
         out = {}
-        for mode in LR.MODES:
-            if (mode in LR.SEED_MODES and entry.get("seed_paths")) or mode in LR.FIELD_MODES:    # fields: read by added()
+        stored = bool(entry.get("seed_paths") or entry.get("group_paths"))
+        for mode in LR.modes_for(entry):
+            if (LR.is_seed_mode(mode) and stored) or LR.is_group_mode(mode) or mode in LR.FIELD_MODES:    # fields: read by added()
                 continue
-            z, m = LR.load_mode(self.prods["label"], face, mode)
+            z, m = LR.load_mode(LR.cache_key(self.prods), face, mode)
             if z is None:
                 continue
             if m.get("product_sha256") != LR._sha(entry["npz_path"]) or (m.get("limit") is not None):
@@ -262,7 +359,11 @@ class Collector:
                 self.notes[face].append(f"re-anchoring {mode}: {m['error_count']} windows failed in the anchoring layer; mode not used")
                 continue
             arr = {}
-            for key in ("traj", "level", "peak", "off", "micro", "stats"):
+            keys = ("traj", "level", "peak", "off", "micro", "stats") + (("traj_cont",) if prod.get("cont") is not None else ())
+            if prod.get("cont") is not None and "traj_cont" not in z:
+                self.notes[face].append(f"re-anchoring cache {mode} has no layered trajectory; mode not used")
+                continue
+            for key in keys:
                 a = self.align(z, P, pad=prod["pad"], key=key)
                 if a is None:
                     break
@@ -291,7 +392,7 @@ class Collector:
                     return {}, rec
                 out[s] = arr
             gates = {}
-            cdir = LR.cache_file(self.prods["label"], face, "s0").parent
+            cdir = LR.cache_file(LR.cache_key(self.prods), face, "s0").parent
             for f in (sorted(cdir.glob("s*_first*.json")) if cdir.exists() else []):
                 m = json.loads(f.read_text(encoding="utf-8"))
                 if m.get("product_sha256") == LR._sha(entry["npz_path"]) and m.get("gate"):
@@ -301,30 +402,76 @@ class Collector:
                 self.notes[face].append("no single-seed gate in the re-anchoring cache (run with --reanchor)")
             elif not all(g.get("pass") for g in gates.values()):
                 self.notes[face].append("single-seed gate failed: re-anchoring does not reproduce the stored single-seed product")
-        elif all(f"s{s}" in cache for s in (0, 1, 2)):
+        elif entry.get("group_paths"):                                    # six seeds: the two stored three-seed groups
+            layer = prod.get("cont") is not None
+            rec["source"] = "stored three-seed group products" + (" (with the continuation layer)" if layer else "")
+            paths = entry["group_continued_paths"] if layer else entry["group_paths"]
+            rec["files"] = [CB.show(p) for p in paths]
+            for j, (f, g) in enumerate(zip(paths, LR.groups_of(entry))):
+                z = np.load(f, allow_pickle=False)
+                zp = np.load(entry["group_paths"][j], allow_pickle=False)
+                arr = {k: self.align(z, P, pad=prod["pad"], key=k) for k in ("traj", "level", "peak", "off", "micro")}
+                arr["traj_pre"] = self.align(zp, P, pad=prod["pad"], key="traj")
+                if any(v is None for v in arr.values()):
+                    self.notes[face].append(f"stored group product {j} does not cover the test windows; not used")
+                    return {}, rec
+                arr["seeds"] = g
+                out[f"g{j}"] = arr
+            gates = {}
+            cdir = LR.cache_file(LR.cache_key(self.prods), face, "g0").parent
+            for f in (sorted(cdir.glob("g*_first*.json")) if cdir.exists() else []):
+                m = json.loads(f.read_text(encoding="utf-8"))
+                if m.get("product_sha256") == LR._sha(entry["npz_path"]) and m.get("gate"):
+                    gates[f.stem] = m["gate"]
+            rec["gate"] = gates or None
+            if not gates:
+                self.notes[face].append("no seed-group gate in the re-anchoring cache (run lite_reanchor.py)")
+            elif not all(g.get("pass") for g in gates.values()):
+                self.notes[face].append("seed-group gate failed: re-anchoring does not reproduce a stored group product")
+        elif all(f"s{s}" in cache for s in LR.seeds_of(entry)):
             rec["source"] = "re-anchored single seeds"
-            out = {s: cache[f"s{s}"][0] for s in (0, 1, 2)}
+            out = {s: cache[f"s{s}"][0] for s in LR.seeds_of(entry)}
         return out, rec
 
     def _ablation(self, face, entry, P, prod, ens, cache, seedp, flag):
         y, unit, month = P["yL"], P["uL"], P["mL"]
         lite = prod["traj"]
-        L0 = self.losses(y, lite)
-        variants = {"carrier alone (no anchoring layer)": (ens, "the three-seed carrier forecast at the origin, without the anchoring layer and without the state rule"),
+        layer = prod.get("cont") is not None
+        L0 = self.losses(y, lite, prod["traj_pre"] if layer else None)
+        nseeds = len(entry.get("seeds") or (0, 1, 2))
+        variants = {"carrier alone (no anchoring layer)": (ens, f"the {n_words(nseeds)}-seed carrier forecast at the origin, without the anchoring layer and "
+                                                                "without the state rule"),
                     "state rule off (the anchoring layer's own return on state windows)": (prod["raw"], f"{int(prod['state'].sum())} state windows")}
+        if layer:
+            variants[NO_LAYER] = (prod["traj_pre"], "the product before the origin-continuity layer (seasonal naive on state windows)")
         for s, a in seedp.items():
+            if isinstance(s, str):                                         # a three-seed group of a six-seed configuration
+                g = a["seeds"]
+                pre = self.state_rule(prod, a["traj_pre"].astype(np.float64), a["off"], a["micro"]) if layer else None
+                hourly = self.state_rule(prod, a["traj"].astype(np.float64), a["off"], a["micro"])
+                variants[f"three-seed group {s[1:]} (seeds {g[0]}-{g[-1]}, anchored alone)"] = (
+                    (hourly, pre) if layer else hourly, "stored group product" + (" with the continuation layer" if layer else ""))
+                continue
             variants[f"single seed {s} (its carrier anchored alone)"] = (self.state_rule(prod, a["traj"].astype(np.float64), a["off"], a["micro"]),
                                                                          "stored single-seed product" if entry.get("seed_paths") else "re-anchored")
         for mode, lab in MODE_ABLATION.items():
             if mode in cache:
                 a = cache[mode][0]
                 note = "identical by construction (no micro-load window)" if cache[mode][1].get("identical_to") else "re-anchored"
-                variants[lab] = (self.state_rule(prod, a["traj"].astype(np.float64), a["off"], a["micro"]), note)
+                if layer:
+                    variants[lab] = (self.deliver(prod, a), note + ", with the continuation layer")
+                else:
+                    variants[lab] = (self.state_rule(prod, a["traj"].astype(np.float64), a["off"], a["micro"]), note)
         ho = self._deep(face, entry, "history_only.npz", P)
         if ho is not None:
             variants["history-only configuration (anchoring layer without a carrier)"] = (ho, "the anchoring layer called without a carrier (saved study forecasts)")
-        for arm, lab in RECIPE_VARIANTS.items():                       # the study's other recipe arms, same windows and store
-            f = entry.get("variant_paths", {}).get(arm)
+        for arm, f in entry.get("variant_paths", {}).items():              # the study's other recipe arms and configurations, same windows and store
+            if arm in RECIPE_VARIANTS:
+                lab = RECIPE_VARIANTS[arm]
+            elif config_of(arm) is not None:
+                lab = config_label(arm)
+            else:
+                continue
             if f is None or not f.exists():
                 continue
             z = np.load(f, allow_pickle=False)
@@ -333,7 +480,18 @@ class Collector:
                 self.notes[face].append(f"recipe arm {arm} does not cover the test windows; not compared")
                 continue
             off, mic = self.align(z, P, pad=prod["pad"], key="off"), self.align(z, P, pad=prod["pad"], key="micro")
-            variants[lab] = (self.state_rule(prod, tr.astype(np.float64), off, mic), "saved study forecasts (three seeds), seasonal naive on state windows")
+            v = self.state_rule(prod, tr.astype(np.float64), off, mic)
+            note = "saved study forecasts (three seeds), seasonal naive on state windows"
+            cfg = config_of(arm)
+            if cfg is not None:
+                note = f"saved study product ({n_words(cfg[1])} seeds{', with the continuation layer' if cfg[2] else ''}), seasonal naive on state windows"
+                if cfg[2] and "traj_anchored" in z.files:                    # energy read before the layer (readout rule A), as for ankyra-lite
+                    ta = self.align(z, P, pad=prod["pad"], key="traj_anchored")
+                    v = (v, self.state_rule(prod, ta.astype(np.float64), off, mic))
+                comp = config_component(arm, self.parts)
+                if comp:
+                    COMPONENT.setdefault(lab, comp)
+            variants[lab] = (v, note)
         if not CB.on_corrected_cineldi(face, entry):
             if prod.get("S3s") is not None:
                 variants[S3S_LABEL] = (prod["S3s"]["traj"], "saved study forecasts, seasonal naive on state windows")
@@ -356,7 +514,7 @@ class Collector:
             self.notes[face].append("the earlier carriers (from-scratch recipe and its earlier continuations) exist on the original CINELDI store only; not compared with a corrected-store product")
         out = {}
         for lab, (v, note) in variants.items():
-            Lv = self.losses(y, v)
+            Lv = self.losses(y, *v) if isinstance(v, tuple) else self.losses(y, v)
             for err, off in (("hourly", 9), ("energy", 11)):
                 c = self.ctr(L0[err], Lv[err], unit, month, off)
                 out[f"{lab}|{err}"] = c
@@ -368,21 +526,32 @@ class Collector:
                     self.rows["component_contributions"].append({"set": P["name"], "component": COMPONENT[lab], "improvement_pct": r["improvement_pct"],
                                                                  "log_ratio": r["log_ratio"], "um_low": r["um_low"], "um_high": r["um_high"],
                                                                  "kind": "direct contrast", "error": err, "resolved": c["resolved"], "flag": flag})
-        sk = [out.get(f"single seed {s} (its carrier anchored alone)|hourly") for s in (0, 1, 2)]
-        if all(sk) and all(x["log_ratio"] is not None for x in sk):
+        single = [k for k in seedp if not isinstance(k, str)]
+        sk = [out.get(f"single seed {s} (its carrier anchored alone)|hourly") for s in single]
+        if single and all(sk) and all(x["log_ratio"] is not None for x in sk):
+            w = n_words(len(single))
             for err in ("hourly", "energy"):
-                v = [out[f"single seed {s} (its carrier anchored alone)|{err}"]["log_ratio"] for s in (0, 1, 2)]
+                v = [out[f"single seed {s} (its carrier anchored alone)|{err}"]["log_ratio"] for s in single]
                 lr = float(np.mean(v))
-                self.rows["component_contributions"].append({"set": P["name"], "component": "three-seed ensemble (against one seed, mean over the three seeds)",
+                self.rows["component_contributions"].append({"set": P["name"], "component": f"{w}-seed ensemble (against one seed, mean over the {w} seeds)",
                                                              "improvement_pct": round(100 * (1 - math.exp(lr)), 3), "log_ratio": round(lr, 6), "um_low": "", "um_high": "",
-                                                             "kind": "mean of three direct contrasts (point estimate)", "error": err, "resolved": "", "flag": flag})
+                                                             "kind": f"mean of {w} direct contrasts (point estimate)", "error": err, "resolved": "", "flag": flag})
+        gl = [f"three-seed group {s[1:]} (seeds {a['seeds'][0]}-{a['seeds'][-1]}, anchored alone)" for s, a in seedp.items() if isinstance(s, str)]
+        if len(gl) >= 2 and all((out.get(f"{g}|hourly") or {}).get("log_ratio") is not None for g in gl):
+            for err in ("hourly", "energy"):
+                lr = float(np.mean([out[f"{g}|{err}"]["log_ratio"] for g in gl]))
+                self.rows["component_contributions"].append({"set": P["name"], "component": f"{n_words(nseeds)}-seed ensemble (against a three-seed group, mean over "
+                                                                                             f"the {n_words(len(gl))} groups)",
+                                                             "improvement_pct": round(100 * (1 - math.exp(lr)), 3), "log_ratio": round(lr, 6), "um_low": "", "um_high": "",
+                                                             "kind": f"mean of {n_words(len(gl))} direct contrasts (point estimate)", "error": err, "resolved": "", "flag": flag})
         return out
 
     def _scorer_check(self, face, abl):
         """The product reading against the study's own scorer: the per-population points of the released recipe against
         the plain continuation (hourly, monthly energy) and against the from-scratch stage (hourly) in
-        smallnet_sr_formal_v1/score_all.json must equal this run's ablation contrasts (same estimator, same losses)."""
-        if not (str(self.prods.get("recipe", "")).startswith("span return") and CB.SR_SCORE.exists()):
+        smallnet_sr_formal_v1/score_all.json must equal this run's ablation contrasts (same estimator, same losses).
+        Only for the 0.1.x product that record scored (not for a 0.2.0 configuration)."""
+        if self.prods.get("configuration") or not (str(self.prods.get("recipe", "")).startswith("span return") and CB.SR_SCORE.exists()):
             return None
         S = json.loads(CB.SR_SCORE.read_text(encoding="utf-8"))
         want = {(RECIPE_VARIANTS["F"], "hourly"): S["nine"]["R vs F"]["hourly"]["by_population_pct"].get(face),
@@ -403,40 +572,58 @@ class Collector:
         return {"compared": got, "max_abs_diff_pct_points": max(diffs), "pass": ok}
 
     def _seeds(self, face, P, prod, seeds, ens, baselines, seedp, flag):
-        """Each seed alone against the three-seed ensemble of the same stage, and each seed's and the ensemble's hourly
-        contrast against TimesFM and Chronos-2-X.  BDG2 also without the three near-zero meters: there the carrier alone
-        has a nonzero error while some baselines' errors are near zero, which dominates the unit-equal mean."""
+        """Each seed alone against the ensemble of the same stage, and each seed's and the ensemble's hourly contrast
+        against TimesFM and Chronos-2-X.  BDG2 also without the three near-zero meters: there the carrier alone has a
+        nonzero error while some baselines' errors are near zero, which dominates the unit-equal mean.  A six-seed
+        configuration has no single-seed anchored product: its anchored stage compares the two stored three-seed groups
+        with the six-seed ensemble (with the continuation layer when the product has it; energy before the layer)."""
         out = {}
-        stages = [("carrier alone", ens, {s: p for s, p in enumerate(seeds)})]
-        if all(s in seedp for s in (0, 1, 2)):
-            stages.append(("anchored (ankyra-lite)", prod["traj"],
-                           {s: self.state_rule(prod, seedp[s]["traj"].astype(np.float64), seedp[s]["off"], seedp[s]["micro"]) for s in (0, 1, 2)}))
+        ens_lab = f"{n_words(len(seeds))}-seed ensemble"
+        layer = prod.get("cont") is not None
+        stages = [("carrier alone", (ens, None), {s: (p, None) for s, p in enumerate(seeds)})]
+        single = [k for k in seedp if not isinstance(k, str)]
+        groups = [k for k in seedp if isinstance(k, str)]
+        if single and len(single) == len(seeds):
+            stages.append(("anchored (ankyra-lite)", (prod["traj"], None),
+                           {s: (self.state_rule(prod, seedp[s]["traj"].astype(np.float64), seedp[s]["off"], seedp[s]["micro"]), None) for s in single}))
+        elif groups:
+            per = {}
+            for k in groups:
+                a = seedp[k]
+                pre = self.state_rule(prod, a["traj_pre"].astype(np.float64), a["off"], a["micro"]) if layer else None
+                per[f"group {k[1:]}"] = (self.state_rule(prod, a["traj"].astype(np.float64), a["off"], a["micro"]), pre, a["seeds"])
+            stages.append(("anchored (ankyra-lite)", (prod["traj"], prod["traj_pre"] if layer else None), per))
         sets = [("all units", np.ones(len(P["yL"]), bool))]
         if face == "bdg2":
             sets.append(("without the three near-zero meters", ~np.isin(P["uL"], self.T.near_zero)))
         for uset, keep in sets:
             y, unit, month = P["yL"][keep], P["uL"][keep], P["mL"][keep]
             pre = "" if uset == "all units" else f"{uset}|"
-            for stage, ens_p, per in stages:
-                Le = self.losses(y, ens_p[keep])
+            for stage, (ens_p, ens_e), per in stages:
+                Le = self.losses(y, ens_p[keep], None if ens_e is None else ens_e[keep])
                 Lb = {comp: self.losses(y, baselines[comp][keep]) for comp in ("TimesFM", "Chronos-2-X")}
                 for comp in Lb:
                     c = self.ctr(Le["hourly"], Lb[comp]["hourly"], unit, month, 9)
                     out[f"{pre}{stage}|ensemble|{comp}"] = c
-                    self._seed_row(P, uset, keep, stage, "three-seed ensemble", "hourly", comp, c, flag)
-                for s_, p in per.items():
-                    Ls = self.losses(y, p[keep])
+                    self._seed_row(P, uset, keep, stage, ens_lab, "hourly", comp, c, flag)
+                for s_, item in per.items():
+                    p, pe = item[0], item[1]
+                    name = f"seed {s_}" if not isinstance(s_, str) else s_
+                    shown = name if not isinstance(s_, str) else f"seeds {item[2][0]}-{item[2][-1]} (three-seed group)"
+                    Ls = self.losses(y, p[keep], None if pe is None else pe[keep])
                     for err, off in (("hourly", 9), ("energy", 11)):
                         c = self.ctr(Ls[err], Le[err], unit, month, off)
-                        out[f"{pre}{stage}|seed {s_}|three-seed ensemble|{err}"] = c
-                        self._seed_row(P, uset, keep, stage, f"seed {s_}", err, "three-seed ensemble", c, flag)
+                        out[f"{pre}{stage}|{name}|{ens_lab}|{err}"] = c
+                        self._seed_row(P, uset, keep, stage, shown, err, ens_lab, c, flag)
                     for comp in Lb:
                         c = self.ctr(Ls["hourly"], Lb[comp]["hourly"], unit, month, 9)
-                        out[f"{pre}{stage}|seed {s_}|{comp}"] = c
-                        self._seed_row(P, uset, keep, stage, f"seed {s_}", "hourly", comp, c, flag)
+                        out[f"{pre}{stage}|{name}|{comp}"] = c
+                        self._seed_row(P, uset, keep, stage, shown, "hourly", comp, c, flag)
                 for comp in Lb:
-                    v = [out[f"{pre}{stage}|seed {s_}|{comp}"]["improvement_pct"] for s_ in per]
-                    out[f"{pre}{stage}|spread|{comp}"] = {"min": float(min(v)), "max": float(max(v)), "sd": float(np.std(v, ddof=1))}
+                    names = [f"seed {s_}" if not isinstance(s_, str) else s_ for s_ in per]
+                    v = [out[f"{pre}{stage}|{nm}|{comp}"]["improvement_pct"] for nm in names]
+                    out[f"{pre}{stage}|spread|{comp}"] = {"min": float(min(v)), "max": float(max(v)), "sd": float(np.std(v, ddof=1))} | (
+                        {"members": names} if list(per) != [0, 1, 2] else {})
         return out
 
     def _seed_row(self, P, uset, keep, stage, seed, err, comp, c, flag):
@@ -540,7 +727,8 @@ class Collector:
         """trained_carriers.csv of the release, with the small carrier network as one of the carriers: each carrier inside
         the same anchoring layer (the deep carriers' saved anchored forecasts; their training cut is the small net's)."""
         y, unit, month = P["yL"], P["uL"], P["mL"]
-        lite = prod["traj"]
+        lite = prod["traj_pre"]                                             # before the continuation layer (= prod["traj"] without one)
+        layer = prod.get("cont") is not None
         ho = self._deep(face, entry, "history_only.npz", P)
         out = {}
         rows = []
@@ -558,6 +746,8 @@ class Collector:
         add(LITE_CARRIER, "anchored vs carrier alone", lite, ens)
         if ho is not None:
             add(LITE_CARRIER, "anchored vs history only", lite, ho)
+        if layer:
+            add(LITE_CARRIER, f"anchored{LAYER_ROW} vs carrier alone", prod["traj"], ens)
         cuts = {}
         for X in DEEP_CARRIERS:
             an = self._deep(face, entry, f"anchored_{X}.npz", P)
@@ -566,6 +756,8 @@ class Collector:
                 self.notes[face].append(f"trained carrier {X}: no saved anchored forecast on the test windows")
                 continue
             add(X, "ankyra-lite vs anchored carrier", lite, an)
+            if layer:
+                add(X, f"ankyra-lite{LAYER_ROW} vs anchored carrier", prod["traj"], an)
             add(X, "anchored vs carrier alone", an, ca)
             if ho is not None:
                 add(X, "anchored vs history only", an, ho)
@@ -610,7 +802,9 @@ class Collector:
         if ho is None:
             self.notes[face].append("no saved history-only forecast on the test windows; contrast (ii) by block not computed")
             return None
-        P_ = {"A": prod["traj"], "C": ens, "H": ho}
+        P_ = {"A": prod["traj_pre"], "C": ens, "H": ho}
+        if prod.get("cont") is not None:
+            P_["Ac"] = prod["traj"]
         cf = self._control_path(face, entry)
         if cf.exists():
             z = np.load(cf, allow_pickle=False)
@@ -629,6 +823,8 @@ class Collector:
         specs = [("contrast_ii_blocks", LITE_CARRIER, "anchored vs history only", "A", "H"),
                  ("contrast_ii_blocks", LITE_CARRIER, "anchored vs carrier alone", "A", "C"),
                  ("contrast_ii_blocks", LITE_CARRIER, "carrier alone vs history only", "C", "H")]
+        if "Ac" in P_:
+            specs.append(("contrast_ii_blocks", LITE_CARRIER, f"anchored{LAYER_ROW} vs history only", "Ac", "H"))
         if "AH" in P_:
             specs += [("contrast_ii_control", "none", "carrier-free control vs history only", "AH", "H"),
                       ("contrast_ii_control", LITE_CARRIER, "anchored vs carrier-free control", "A", "AH"),
@@ -655,9 +851,9 @@ class Collector:
                                              "log_ratio": round(float(r_), 6) + 0.0 if finite else "", "um_low": round(float(lo), 6) + 0.0 if finite else "",
                                              "um_high": round(float(hi), 6) + 0.0 if finite else "",
                                              "improvement_pct": round(100 * (1 - math.exp(r_)), 4) + 0.0 if finite else "", "resolved": res, "flag": flag})
-                    if sub == "all late windows" and blk in ("hourly", "level") and table == "contrast_ii_blocks" and contrast != "carrier alone vs history only":
-                        k = {"anchored vs history only": "anchored vs history only", "anchored vs carrier alone": "anchored vs carrier alone"}[contrast]
-                        cc = carriers.get(f"{LITE_CARRIER}|{k}|{'hourly' if blk == 'hourly' else 'energy'}")
+                    # the pre-layer hourly / level rows reproduce carriers_in_anchoring_layer.csv (the layer row has no counterpart there)
+                    if sub == "all late windows" and blk in ("hourly", "level") and table == "contrast_ii_blocks"                             and contrast in ("anchored vs history only", "anchored vs carrier alone"):
+                        cc = carriers.get(f"{LITE_CARRIER}|{contrast}|{'hourly' if blk == 'hourly' else 'energy'}")
                         if cc is not None and cc.get("log_ratio") is not None:
                             checks.append(abs(cc["log_ratio"] - r_) < 1e-12 and abs(cc["um_low"] - lo) < 1e-12 and abs(cc["um_high"] - hi) < 1e-12)
         out["reproduces_carriers_in_anchoring_layer"] = all(checks) if checks else None
@@ -729,6 +925,9 @@ class Collector:
         rows = [{"hour": h - CONTEXT, "load_kw": round(float(P["ctxL"][j, h]), 4), "timesfm_kw": "", "ankyra_kw": "", "carrier_kw": ""} for h in range(CONTEXT)]
         rows += [{"hour": h, "load_kw": round(float(P["yL"][j, h]), 4), "timesfm_kw": round(float(baselines["TimesFM"][j, h]), 4),
                   "ankyra_kw": round(float(prod["traj"][j, h]), 4), "carrier_kw": round(float(ens[j, h]), 4)} for h in range(HORIZON)]
+        if prod.get("cont") is not None:                                    # the trajectory before the continuation layer
+            for h, r_ in enumerate(rows):
+                r_["ankyra_before_layer_kw"] = "" if h < CONTEXT else round(float(prod["traj_pre"][j, h - CONTEXT]), 4)
         self.rows["example_window_cambridge"] = rows
         js = {"set": "Cambridge", "building": str(P["uL"][j]), "target_month_midpoint": str(P["mL"][j]),
               "forecast_period": f"{o_date.date()} to {(o_date + timedelta(hours=HORIZON)).date()}",
@@ -736,8 +935,10 @@ class Collector:
               "day_type_codes": "Monday 0 ... Sunday 6, holiday 7",
               "source": "University of Cambridge estate building energy archive (Langtry & Choudhary 2024, Zenodo 10.5281/zenodo.10955332), CC BY 4.0",
               "note": ("hour 0 is the forecast origin; negative hours are the 1,344-hour context. ankyra_kw is ankyra-lite (the column keeps the "
-                       "release's name), carrier_kw the small carrier network alone (three-seed forecast at the origin, before the anchoring layer), "
-                       "timesfm_kw zero-shot TimesFM 2.5"),
+                       f"release's name), carrier_kw the small carrier network alone ({n_words(len(self.prods.get('seeds', (0, 1, 2))))}-seed forecast at "
+                       "the origin, before the anchoring layer), timesfm_kw zero-shot TimesFM 2.5"
+                       + ("; ankyra_before_layer_kw ankyra-lite before the origin-continuity layer (energy, level and peak are read from it)"
+                          if prod.get("cont") is not None else "")),
               "selection": (f"the release's example window ({EXAMPLE_UNIT}, origin {EXAMPLE_ORIGIN_DATE}) lies before the Cambridge test set; "
                             "this is the test window of the same building whose origin is nearest to it")}
         self.extra_json["example_window_cambridge.json"] = js
@@ -798,12 +999,24 @@ class Collector:
         sp = json.loads(Path(entry["span_path"]).read_text(encoding="utf-8")) if entry.get("span_path") and Path(entry["span_path"]).exists() else None
         epochs = ""
         if entry.get("start_paths"):
-            hist = json.loads((Path(entry["run_paths"][0]) / "COMPLETE.json").read_text(encoding="utf-8")).get("history", [])
+            hist = self._stage2_history(entry["run_paths"][0])
             epochs = max((int(h["epoch"]) for h in hist), default="")
         row.update({"own_training_windows": sp["own_pool_rows"] if sp else "", "returned_validation_windows": sp["span_rows_target"] if sp else "",
                     "returned_label_end": d(sp["label_end_max"]) if sp else "", "continuation_epochs": epochs})
+        if self.prods.get("configuration"):                                   # version 0.2.0: the seeds of the configuration
+            row["carrier_seeds"] = " ".join(str(x) for x in self.prods.get("seeds", []))
         self.rows["datasets"].append(row)
         return {k: row[k] for k in row} | {"first_training_origin_source": src}
+
+    @staticmethod
+    def _stage2_history(rd):
+        """The stage-2 epochs of a run: COMPLETE.json (0.1.0 runs) or TRAINED.json (the 0.2.0 study's runs, whose
+        COMPLETE.json keeps the last epoch only)."""
+        c = json.loads((Path(rd) / "COMPLETE.json").read_text(encoding="utf-8"))
+        hist = c.get("history")
+        if not hist and (Path(rd) / "TRAINED.json").exists():
+            hist = json.loads((Path(rd) / "TRAINED.json").read_text(encoding="utf-8")).get("history", [])
+        return hist or []
 
     def _curves(self, face, entry, P):
         """Both training stages per seed: the from-scratch stage (validation criterion per epoch on the held-out validation
@@ -827,11 +1040,12 @@ class Collector:
                                                      "best_epoch": best, "epochs_run": runs, "selected": h["epoch"] == best, "returned_span_draws": "", "flag": flag})
             o = {"best_epoch": best, "epochs_run": runs, "best_validation_criterion": r.get("best_val")}
             if cont:
-                c = json.loads((Path(rd) / "COMPLETE.json").read_text(encoding="utf-8"))
-                hist = c.get("history", [])
+                hist = self._stage2_history(rd)
                 last = max(int(h["epoch"]) for h in hist)
                 st = json.loads((Path(rd) / "STARTED.json").read_text(encoding="utf-8")) if (Path(rd) / "STARTED.json").exists() else {}
                 stage = "span return (fixed epochs)" if st.get("span_rows_returned", 1) else "continuation (fixed epochs)"
+                if st.get("stage") == "Rw":
+                    stage = "span return with inverse-noise loss weighting (fixed epochs)"
                 for h in hist:
                     self.rows["training_curves"].append({"set": P["name"], "tier": P["tier"], "seed": s, "stage": stage, "epoch": h["epoch"],
                                                          "training_loss": round(float(h["train_loss"]), 6) if "train_loss" in h else "",
@@ -844,6 +1058,101 @@ class Collector:
                           "start_criterion_reproduced": (abs(e0["C1"] - r["best_val"]) / abs(r["best_val"]) < 1e-5) if e0 and r.get("best_val") else None,
                           "final_training_loss": hist[-1].get("train_loss"), "final_criterion": hist[-1].get("C1")})
             out[s] = o
+        return out
+
+    def _continuation(self, face, P, prod, flag):
+        """continuation_layer.csv: the origin-continuity layer on against off on the same carrier and anchoring layer (the
+        product after against before the layer, seasonal naive on state windows in both), hourly error by lead time and the
+        delivered trajectory's energy, unit x month interval (fresh stream SEED + 9, energy + 11).  continuation_record.csv:
+        what the layer did on the test windows (from the release layer's own record of every window, read with no target)
+        and the gap between the delivered trajectory's mean and the energy readout 744 x level (readout rule A)."""
+        y, unit, month = P["yL"], P["uL"], P["mL"]
+        on, off, st = prod["traj"], prod["traj_pre"], prod["state"]
+        base = {"set": P["name"], "tier": P["tier"], "windows": int(len(y)), "units": int(len(np.unique(unit))), "state_windows": int(st.sum()), "flag": flag or ""}
+        out, losses = {"segments": {}}, {}
+        for lab, a, b in CONT_SEGMENTS:
+            la, lb = ((on[:, a:b] - y[:, a:b]) ** 2).mean(1), ((off[:, a:b] - y[:, a:b]) ** 2).mean(1)
+            c = self.ctr(la, lb, unit, month, 9)
+            losses[lab] = (la, lb)
+            out["segments"][f"{lab}|hourly"] = c
+            r = self.rnd(c)
+            self.rows["continuation_layer"].append(base | {"segment": lab, "hours": f"{a}-{b - 1}", "error": "hourly",
+                                                           **{k: r[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct")}, "resolved": c["resolved"]})
+        ea, eb = (on.mean(1) - y.mean(1)) ** 2, (off.mean(1) - y.mean(1)) ** 2
+        c = self.ctr(ea, eb, unit, month, 11)
+        losses["whole window|energy"] = (ea, eb)
+        out["segments"]["whole window|energy (delivered trajectory)"] = c
+        r = self.rnd(c)
+        self.rows["continuation_layer"].append(base | {"segment": "whole window", "hours": "0-743",
+                                                       "error": "energy of the delivered trajectory (the energy readout is read before the layer)",
+                                                       **{k: r[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct")}, "resolved": c["resolved"]})
+        self.cont_pool.append({"face": face, "unit": np.array([f"{face}:{u}" for u in unit]), "month": month, "losses": losses})
+        info = prod["cont"]["info"]
+        ns = ~st
+        CTm = CB._package()
+        D = CTm.delta(info["xf"], info["xd"], CTm.CONSTANTS)
+        lvl = prod["level"]
+        dm = (np.abs(on.mean(1) - lvl) / np.maximum(np.abs(lvl), 1e-9))[ns]
+        pos = ns & (off.mean(1) > 0)
+        ech = 100 * (on.mean(1)[pos] / off.mean(1)[pos] - 1)
+        q = lambda v, x: round(float(np.percentile(v, x)), 6) if len(v) else ""                    # noqa: E731
+        row = {"set": P["name"], "tier": P["tier"], "windows": int(len(y)), "state_windows_bypassed": int(info["bypass_state"].sum()),
+               "missing_fast_span": int(info["missing_f"].sum()), "missing_day_span": int(info["missing_d"].sum()),
+               "nonpositive_fast_span": int(info["nonpositive_f"].sum()), "nonpositive_day_span": int(info["nonpositive_d"].sum()),
+               "clipped_fast_share": round(float(info["clipped_f"][ns].mean()), 6) if ns.any() else "",
+               "clipped_day_share": round(float(info["clipped_d"][ns].mean()), 6) if ns.any() else "",
+               "no_match_reference_day": int((~info["matched"] & ~info["bypass_state"]).sum()),
+               "x_fast_median": q(info["xf"][ns], 50), "x_day_median": q(info["xd"][ns], 50),
+               "x_fast_mean_abs": round(float(np.abs(info["xf"][ns]).mean()), 6) if ns.any() else "",
+               "x_day_mean_abs": round(float(np.abs(info["xd"][ns]).mean()), 6) if ns.any() else "",
+               "max_abs_delta": round(float(np.abs(D[ns]).max()), 6) if ns.any() else 0.0,
+               "delivered_mean_vs_energy_readout_rel_p50": q(dm, 50), "delivered_mean_vs_energy_readout_rel_p99": q(dm, 99),
+               "delivered_mean_vs_energy_readout_rel_max": round(float(dm.max()), 6) if len(dm) else "",
+               "layer_energy_change_pct_min": round(float(ech.min()), 4) if len(ech) else "", "layer_energy_change_pct_max": round(float(ech.max()), 4) if len(ech) else "",
+               "flag": flag or ""}
+        self.rows["continuation_record"].append(row)
+        self.cont_pool[-1]["record"] = {"dm": dm, "ech": ech, "D": np.abs(D[ns]).max(1) if ns.any() else np.zeros(0), "info": {k: v[ns] for k, v in info.items()},
+                                        "bypass": int(info["bypass_state"].sum()), "no_match": row["no_match_reference_day"]}
+        out["record"] = {k: v for k, v in row.items() if k not in ("set", "tier", "flag")}
+        return out
+
+    def _continuation_pooled(self):
+        """The pooled rows of both continuation files over the populations of the run (units of every population resampled)."""
+        if len(self.cont_pool) < 2:
+            return None
+        name = "all nine populations" if sorted(x["face"] for x in self.cont_pool) == sorted(CB.NINE) else "all populations of this run"
+        U = np.concatenate([x["unit"] for x in self.cont_pool])
+        M = np.concatenate([x["month"] for x in self.cont_pool])
+        out = {"set": name, "segments": {}}
+        base = {"set": name, "tier": "", "windows": int(len(U)), "units": int(len(np.unique(U))), "state_windows": "", "flag": ""}
+        for lab, a, b in CONT_SEGMENTS + (("whole window|energy", 0, 744),):
+            la = np.concatenate([x["losses"][lab][0] for x in self.cont_pool])
+            lb = np.concatenate([x["losses"][lab][1] for x in self.cont_pool])
+            c = self.ctr(la, lb, U, M, 11 if lab.endswith("energy") else 9)
+            out["segments"][lab] = c
+            r = self.rnd(c)
+            seg, err = (("whole window", "energy of the delivered trajectory (the energy readout is read before the layer)") if lab.endswith("energy")
+                        else (lab, "hourly"))
+            self.rows["continuation_layer"].append(base | {"segment": seg, "hours": f"{a}-{b - 1}", "error": err,
+                                                           **{k: r[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct")}, "resolved": c["resolved"]})
+        dm = np.concatenate([x["record"]["dm"] for x in self.cont_pool])
+        ech = np.concatenate([x["record"]["ech"] for x in self.cont_pool])
+        Dm = np.concatenate([x["record"]["D"] for x in self.cont_pool])
+        inf = {k: np.concatenate([x["record"]["info"][k] for x in self.cont_pool]) for k in self.cont_pool[0]["record"]["info"]}
+        row = {"set": name, "tier": "", "windows": int(len(U)), "state_windows_bypassed": sum(x["record"]["bypass"] for x in self.cont_pool),
+               "missing_fast_span": int(inf["missing_f"].sum()), "missing_day_span": int(inf["missing_d"].sum()),
+               "nonpositive_fast_span": int(inf["nonpositive_f"].sum()), "nonpositive_day_span": int(inf["nonpositive_d"].sum()),
+               "clipped_fast_share": round(float(inf["clipped_f"].mean()), 6), "clipped_day_share": round(float(inf["clipped_d"].mean()), 6),
+               "no_match_reference_day": sum(x["record"]["no_match"] for x in self.cont_pool),
+               "x_fast_median": round(float(np.median(inf["xf"])), 6), "x_day_median": round(float(np.median(inf["xd"])), 6),
+               "x_fast_mean_abs": round(float(np.abs(inf["xf"]).mean()), 6), "x_day_mean_abs": round(float(np.abs(inf["xd"]).mean()), 6),
+               "max_abs_delta": round(float(Dm.max()), 6) if len(Dm) else 0.0,
+               "delivered_mean_vs_energy_readout_rel_p50": round(float(np.percentile(dm, 50)), 6),
+               "delivered_mean_vs_energy_readout_rel_p99": round(float(np.percentile(dm, 99)), 6),
+               "delivered_mean_vs_energy_readout_rel_max": round(float(dm.max()), 6),
+               "layer_energy_change_pct_min": round(float(ech.min()), 4), "layer_energy_change_pct_max": round(float(ech.max()), 4), "flag": ""}
+        self.rows["continuation_record"].append(row)
+        out["record"] = {k: v for k, v in row.items() if k not in ("set", "tier", "flag")}
         return out
 
     def _deciles_collect(self, face, P, prod, ens, ensc):
@@ -898,7 +1207,7 @@ class Collector:
         """The fields cache (lite_reanchor mode ``fields``) aligned to the panel order, or None when it is missing, stale,
         partial or did not pass its gate."""
         import lite_reanchor as LR
-        z, m = LR.load_mode(self.prods["label"], face, "fields")
+        z, m = LR.load_mode(LR.cache_key(self.prods), face, "fields")
         if z is None:
             return None
         if m.get("product_sha256") != LR._sha(entry["npz_path"]) or m.get("limit") is not None or m.get("error_count"):
@@ -918,7 +1227,7 @@ class Collector:
         if not (np.array_equal(F["off"] | F["micro"], st) and np.array_equal(F["fields_ok"], ~st) and F["rebuild_ok"][~st].all()):
             self.notes[face].append("fields cache: state flags or fields do not match the product; not used")
             return None
-        if not np.array_equal(F["traj"].astype(np.float32), prod["raw"].astype(np.float32)):
+        if not np.array_equal(F["traj"].astype(np.float32), prod["raw_pre"].astype(np.float32)):
             self.notes[face].append("fields cache: trajectory differs from the product; not used")
             return None
         F["_gate"] = {k: m["gate"].get(k) for k in ("traj_equal", "level_equal", "state_flags_equal", "fields_pass", "pass")} | {"fields": m.get("fields")}
@@ -927,9 +1236,9 @@ class Collector:
     def _rows_ablation(self, P, flag, variants, out):
         """ablation.csv / component_contributions.csv rows of added variants: {label: (forecast, note)}, as _ablation."""
         y, unit, month = P["yL"], P["uL"], P["mL"]
-        L0 = self.losses(y, self._lite)
+        L0 = self.losses(y, self._lite, getattr(self, "_lite_e", None))
         for lab, (v, note) in variants.items():
-            Lv = self.losses(y, v)
+            Lv = self.losses(y, *v) if isinstance(v, tuple) else self.losses(y, v)
             for err, off in (("hourly", 9), ("energy", 11)):
                 c = self.ctr(L0[err], Lv[err], unit, month, off)
                 out[f"{lab}|{err}"] = c
@@ -971,9 +1280,16 @@ class Collector:
             raw = np.maximum(np.repeat(np.where(ns[:, None], daily[a], 0.0), HR, axis=1) + np.where(ns[:, None], W, 0.0), 0.0)
             tr[a] = np.where(st[:, None], SN, self._f32(raw))
         fixed = np.where(st[:, None], SN, self._f32(np.maximum(np.repeat(np.where(ns[:, None], F["fixed"], 0.0), HR, axis=1) + np.where(ns[:, None], F["fwithin"], 0.0), 0.0)))
-        gate = {"aw_equals_the_product": bool(np.array_equal(tr["AW"], prod["traj"])), "m_h_identity_max_rel_diff": float(rel),
+        gate = {"aw_equals_the_product": bool(np.array_equal(tr["AW"], prod["traj_pre"])), "m_h_identity_max_rel_diff": float(rel),
                 "daily_means_reproduced": bool(np.array_equal(np.where(ns[:, None], daily["AW"], 0.0), np.where(ns[:, None], F["daily"], 0.0)))}
-        if not (gate["aw_equals_the_product"] and gate["daily_means_reproduced"] and rel < 1e-9):
+        pre_arms = None
+        if prod.get("cont") is not None:                                  # every arm through the continuation layer, as ankyra-lite
+            pre_arms = dict(tr) | {"fixed division": fixed}
+            tr = {a: np.where(st[:, None], SN, self.layered(prod, np.where(st[:, None], 0.0, v), st)) for a, v in tr.items()}
+            fixed = np.where(st[:, None], SN, self.layered(prod, np.where(st[:, None], 0.0, fixed), st))
+            gate["aw_with_the_layer_equals_the_product"] = bool(np.array_equal(tr["AW"], prod["traj"]))
+            gate["arms"] = "with the continuation layer (energy read before it)"
+        if not (gate["aw_equals_the_product"] and gate["daily_means_reproduced"] and rel < 1e-9 and gate.get("aw_with_the_layer_equals_the_product", True)):
             self.notes[face].append(f"handover arms: AW does not reproduce ankyra-lite ({gate}); not written")
             return {"gate": gate}
         tr["AW"] = prod["traj"]
@@ -1020,12 +1336,15 @@ class Collector:
             self.rows["lead_weeks"].append(row)
         out["lead_weeks"] = lw
         out["mean_weight_on_carrier_by_week"] = out["alpha_week_mean"]
-        self._lite = prod["traj"]
+        self._lite, self._lite_e = prod["traj"], (prod["traj_pre"] if pre_arms is not None else None)
         abl = {}
-        self._rows_ablation(P, flag, {FIXED_DIVISION: (fixed, "fixed-division daily means (historical level and daily path, no carrier candidate) plus the carrier's "
-                                                              "within-day block, projected; seasonal naive on state windows; from the anchoring layer's own fields"),
-                                      HALF_HANDOVER: (tr["Ah"], "the carrier's daily means mixed in at a fixed weight of one half instead of the weekly weights; "
-                                                                "everything else as ankyra-lite; seasonal naive on state windows")}, abl)
+        wl = "; with the continuation layer" if pre_arms is not None else ""
+        self._rows_ablation(P, flag, {FIXED_DIVISION: ((fixed, pre_arms["fixed division"]) if pre_arms is not None else fixed,
+                                                       "fixed-division daily means (historical level and daily path, no carrier candidate) plus the carrier's "
+                                                       "within-day block, projected; seasonal naive on state windows; from the anchoring layer's own fields" + wl),
+                                      HALF_HANDOVER: ((tr["Ah"], pre_arms["Ah"]) if pre_arms is not None else tr["Ah"],
+                                                      "the carrier's daily means mixed in at a fixed weight of one half instead of the weekly weights; "
+                                                      "everything else as ankyra-lite; seasonal naive on state windows" + wl)}, abl)
         out["ablation"] = abl
         return out
 
@@ -1057,12 +1376,20 @@ class Collector:
         def comb(a, X):
             return np.where(st[:, None], SN, self._f32(np.maximum((1 - np.where(ns, a, 0.5))[:, None] * X + np.where(ns, a, 0.5)[:, None] * ens, 0.0)))
         B2, B1 = comb(aH, H), comb(np.full(n, 0.5), H)
-        self._lite = prod["traj"]
+        layer = prod.get("cont") is not None
+        self._lite, self._lite_e = prod["traj"], (prod["traj_pre"] if layer else None)
         abl = {}
-        self._rows_ablation(P, flag, {WHOLE_WINDOW: (B2, "one least-squares weight per window between the history side (fixed-division daily means plus the "
+        if layer:                                                          # the ablation rows through the continuation layer, as ankyra-lite
+            wl = "; with the continuation layer"
+            B2c = np.where(st[:, None], SN, self.layered(prod, np.where(st[:, None], 0.0, B2), st))
+            B1c = np.where(st[:, None], SN, self.layered(prod, np.where(st[:, None], 0.0, B1), st))
+            v2, v1 = (B2c, B2), (B1c, B1)
+        else:
+            wl, v2, v1 = "", B2, B1
+        self._rows_ablation(P, flag, {WHOLE_WINDOW: (v2, "one least-squares weight per window between the history side (fixed-division daily means plus the "
                                                          "analog-day shape) and the carrier, from the unit's handover pairs and trust triples, shrunk to 1/2; "
-                                                         "seasonal naive on state windows"),
-                                      HALF_AVERAGE: (B1, "the history side and the carrier averaged with weight 1/2 each; seasonal naive on state windows")}, abl)
+                                                         "seasonal naive on state windows" + wl),
+                                      HALF_AVERAGE: (v1, "the history side and the carrier averaged with weight 1/2 each; seasonal naive on state windows" + wl)}, abl)
         out = {"ablation": abl, "weight_on_carrier": {"mean": float(np.nanmean(aH)), "quantiles_5_25_50_75_95": np.nanpercentile(aH, [5, 25, 50, 75, 95]).tolist()}}
         # generic partners
         gate = {}
@@ -1078,7 +1405,7 @@ class Collector:
             if x in baselines:
                 cand[f"EW({x})"] = np.where(st[:, None], SN, np.maximum(0.5 * baselines[x] + 0.5 * ens, 0.0))
         L = {k: self.losses(y, v) for k, v in cand.items()}
-        L["ankyra-lite"] = self.losses(y, prod["traj"])
+        L["ankyra-lite"] = self.losses(y, prod["traj_pre"])                  # before the continuation layer, like the partners
         base = {"set": P["name"], "tier": P["tier"], "subset": "late", "windows": int(n), "units": int(len(np.unique(unit))), "availability_note": "", "flag": flag or ""}
         res = {}
         for err, off in (("hourly", 9), ("energy", 11)):
@@ -1306,12 +1633,17 @@ class Collector:
         return written, files, x
 
     # ------------------------------------------------------------------ after the last population
-    def finish(self, out_dir, rec, cost=True, robustness=True, robustness_face=None, robustness_windows=None):
+    def finish(self, out_dir, rec, cost=True, robustness=True, robustness_face=None, robustness_windows=None, cost_record=None):
         written, files = [], {}
         hist_pooled = self._history_pooled(rec)
         dec = self._deciles()
+        cont_pooled = self._continuation_pooled()
         cost_rec = rob_rec = None
-        if cost:
+        if cost and cost_record:                                         # a saved timing record (cost_timing.py --out)
+            import cost_timing as CT
+            cost_rec, crows = CT.load_record(cost_record, self.prods)
+            self.rows["cost_per_window"] = crows
+        elif cost:
             import cost_timing as CT
             face = "oslo" if "oslo" in self.faces else (self.faces[0] if self.faces else None)
             if face:
@@ -1326,7 +1658,7 @@ class Collector:
                 rob_rec, rrows = RB.measure(self.T, face, self.prods["faces"][face], n=robustness_windows or RB.N, log=CB.log)
                 self.rows["robustness"] = rrows
         import recipe_tables as RT
-        rt_written, rt_rec, rt_files = RT.write(out_dir, log=CB.log)
+        rt_written, rt_rec, rt_files = RT.write(out_dir, log=CB.log, prods=self.prods)
         written += rt_written
         files.update(rt_files)
         specs = {
@@ -1354,7 +1686,7 @@ class Collector:
             "component_contributions.csv": ("component_contributions", ["set", "component", "improvement_pct", "log_ratio", "um_low", "um_high", "kind", "error", "resolved", "flag"],
                                             "what each part of ankyra-lite adds (direct contrasts)"),
             "seed_spread.csv": ("seed_spread", ["set", "tier", "unit_set", "stage", "seed", "error", "comparator", "windows", "units", "log_ratio", "um_low", "um_high", "improvement_pct", "resolved", "flag"],
-                                "each seed alone against the three-seed ensemble, and each seed's contrast against TimesFM and Chronos-2-X"),
+                                "each seed's carrier alone (and, with six seeds, each anchored three-seed group) against the seed ensemble, and their contrasts against TimesFM and Chronos-2-X"),
             "carriers_in_anchoring_layer.csv": ("carriers_in_anchoring_layer", ["set", "tier", "subset", "windows", "units", "carrier", "contrast", "error", "log_ratio", "um_low", "um_high",
                                                                                 "improvement_pct", "resolved", "flag"],
                                                 "ankyra-lite against other trained carriers inside the same anchoring layer"),
@@ -1369,6 +1701,17 @@ class Collector:
                                                         "best_epoch", "epochs_run", "selected", "returned_span_draws", "flag"],
                                     "both training stages per population and seed: validation criterion (and training loss) by epoch, best epoch"),
         }
+        if self.rows.get("continuation_layer"):                          # version 0.2.0: the continuation files
+            specs["continuation_layer.csv"] = ("continuation_layer", CONT_LAYER_FIELDS,
+                                               "the origin-continuity layer on against off on the same carrier, by lead time (hourly) and the delivered energy")
+            specs["continuation_record.csv"] = ("continuation_record", CONT_RECORD_FIELDS,
+                                                "what the layer did on the test windows, and the delivered mean against the energy readout (readout rule A)")
+        if any("ankyra_before_layer_kw" in r for r in self.rows.get("example_window_cambridge", [])):
+            k, f, d = specs["example_window_cambridge.csv"]
+            specs["example_window_cambridge.csv"] = (k, f + ["ankyra_before_layer_kw"], d + " and ankyra-lite before the continuation layer")
+        if any("carrier_seeds" in r for r in self.rows.get("datasets", [])):
+            k, f, d = specs["datasets.csv"]
+            specs["datasets.csv"] = (k, f + ["carrier_seeds"], d + ", and the carrier seeds")
         if dec is not None:
             self.rows["anchoring_gain_deciles"] = dec["rows"]
         for name, (key, fields, desc) in specs.items():
@@ -1393,6 +1736,8 @@ class Collector:
         files.update(f2)
         rec_out = {"populations": self.rec, "history_length_pooled": hist_pooled, "anchoring_gain_deciles": dec and dec["rec"],
                    "cost": cost_rec, "robustness": rob_rec, **rt_rec, **x2, "notes": dict(self.notes), "absent_files": ABSENT}
+        if cont_pooled is not None:
+            rec_out["continuation_pooled"] = cont_pooled
         return written, rec_out, self.summary(rec, rec_out), files
 
     def _history_pooled(self, rec):
@@ -1487,8 +1832,10 @@ class Collector:
               "windows returned at its own sampling density, labels ending at least 24 h before the cut).", ""]
         if any(self.rec[f]["training_curves"] for f in order):
             cont = any("continuation_epochs" in v for f in order for v in self.rec[f]["training_curves"].values())
+            sd = sorted({int(k) for f in order for k in self.rec[f]["training_curves"]})
+            sdl = ", ".join(str(k) for k in sd) if len(sd) <= 3 else f"{sd[0]}-{sd[-1]}"
             L += ["## Training (`training_curves.csv`)", "",
-                  "| Population | From-scratch stage: best epoch (seeds 0, 1, 2) | Epochs run | "
+                  f"| Population | From-scratch stage: best epoch (seeds {sdl}) | Epochs run | "
                   + ("Span return: epochs | Returned windows | Start criterion reproduced |" if cont else ""),
                   "|---|---|---|" + ("---|---|---|" if cont else "")]
             for f in order:
@@ -1528,15 +1875,33 @@ class Collector:
               "seeds are the stored single-seed products; the history-only configuration, the recipe arms and the earlier carriers are",
               "saved study forecasts. The earlier carriers (without the copy pointer, the earlier continuation study, the structured",
               "network) were trained with the from-scratch recipe or its earlier continuations, not with the span return.", ""]
-        L += ["## Seeds (`seed_spread.csv`)", "", "Hourly improvement against TimesFM, per seed and for the three-seed ensemble (carrier alone, and anchored):", "",
-              "| Population | Stage | Seed 0 | Seed 1 | Seed 2 | Ensemble |", "|---|---|---|---|---|---|"]
+        members = {}
+        for f in order:
+            for k, v in self.rec[f]["seed_spread"].items():
+                if k.endswith("|spread|TimesFM"):
+                    members[k] = v.get("members") or [f"seed {j}" for j in range(3)]
+        generic = any(m != ["seed 0", "seed 1", "seed 2"] for m in members.values())
+        if not generic:
+            L += ["## Seeds (`seed_spread.csv`)", "", "Hourly improvement against TimesFM, per seed and for the three-seed ensemble (carrier alone, and anchored):", "",
+                  "| Population | Stage | Seed 0 | Seed 1 | Seed 2 | Ensemble |", "|---|---|---|---|---|---|"]
+        else:                                                              # six seeds: the carrier per seed, anchored per three-seed group
+            nsd = len(self.prods.get("seeds", (0, 1, 2))) if hasattr(self, "prods") else 6
+            L += ["## Seeds (`seed_spread.csv`)", "",
+                  f"Hourly improvement against TimesFM: the carrier alone per seed and the {n_words(nsd)}-seed ensemble, and anchored per three-seed group",
+                  "(the stored group products) and the ensemble:", "",
+                  "| Population | Stage | Members (in order) | Ensemble |", "|---|---|---|---|"]
         for f in order:
             s = self.rec[f]["seed_spread"]
             for pre, lab in (("", ""), ("without the three near-zero meters|", " (without the three near-zero meters)")):
                 for stage in ("carrier alone", "anchored (ankyra-lite)"):
                     if f"{pre}{stage}|ensemble|TimesFM" in s:
-                        L.append(f"| {name(f)}{lab} | {stage} | " + " | ".join(cell(s.get(f"{pre}{stage}|seed {k}|TimesFM")) for k in (0, 1, 2))
-                                 + f" | {cell(s[f'{pre}{stage}|ensemble|TimesFM'])} |")
+                        if not generic:
+                            L.append(f"| {name(f)}{lab} | {stage} | " + " | ".join(cell(s.get(f"{pre}{stage}|seed {k}|TimesFM")) for k in (0, 1, 2))
+                                     + f" | {cell(s[f'{pre}{stage}|ensemble|TimesFM'])} |")
+                        else:
+                            ms = members.get(f"{pre}{stage}|spread|TimesFM", [])
+                            L.append(f"| {name(f)}{lab} | {stage} | " + " / ".join(f"{m}: {cell(s.get(f'{pre}{stage}|{m}|TimesFM'))}" for m in ms)
+                                     + f" | {cell(s[f'{pre}{stage}|ensemble|TimesFM'])} |")
         L += ["", "The carrier alone has no state rule: on the three near-zero BDG2 meters its error is not zero while some baselines' errors",
               "are near zero, which dominates the unit-equal mean (hence the BDG2 row without those meters).", "",
               "## Prediction intervals (`intervals_by_population.csv`, `intervals_winkler_contrasts.csv`, `intervals_households.json`)", "",
@@ -1615,7 +1980,7 @@ class Collector:
         if x.get("cost"):
             c = x["cost"]
             L += ["## Cost (`cost_per_window.csv`)", "",
-                  f"Measured on {c['windows']} {c['face_name']} test windows, CPU, one thread: carrier forecasts at 7 issue times x 3 seeds "
+                  f"Measured on {c['windows']} {c['face_name']} test windows, CPU, one thread: carrier forecasts at 7 issue times x {c.get('seeds', 3)} seeds "
                   f"{c['carrier_s_per_window']:.3f} s/window, anchoring layer {c['anchor_s_per_window']:.3f} s/window, total {c['total_s_per_window']:.3f} s/window. "
                   f"The carrier forecasts match the stored evaluation forecasts to a relative difference of {c['carrier_vs_stored_max_rel']:.1e}.", ""]
         if x.get("robustness"):
@@ -1626,6 +1991,31 @@ class Collector:
                   f"{x['constants']['carrier_rows']} carrier rows (training recipe, span return, network; read from the package defaults) and "
                   f"{x['constants']['anchoring_rows']} anchoring-layer rows (group, constant, value and where_fixed as in the first release; the layer",
                   "is a byte-identical copy). The `sensitivity` column holds the study's recipe readouts where a recipe constant was varied.", ""]
+        cp = [(f, self.rec[f]["continuation"]) for f in order if self.rec[f].get("continuation")]
+        if cp:
+            pooled = x.get("continuation_pooled")
+            heads = [lab for lab, _, _ in CONT_SEGMENTS]
+            L += ["## Continuation layer (`continuation_layer.csv`, `continuation_record.csv`)", "",
+                  "The origin-continuity layer on against off on the same carrier and anchoring layer (ankyra-lite after against before the",
+                  "layer, seasonal naive on state windows in both), hourly error by lead time, improvement in % (`*` resolved better, `(-)`",
+                  "resolved worse; unit x month interval, no seed layer: the same carrier on both sides):", "",
+                  "| Population | " + " | ".join(heads) + " |", "|---|" + "---|" * len(heads)]
+            for f, c in cp:
+                L.append(f"| {name(f)} | " + " | ".join(cell(c["segments"].get(f"{h}|hourly")) for h in heads) + " |")
+            if pooled:
+                L.append(f"| {pooled['set']} | " + " | ".join(cell(pooled["segments"].get(h)) for h in heads) + " |")
+            L += ["", "Readout rule A: energy, level and peak are read before the layer, so the delivered trajectory's mean differs from the",
+                  "energy readout (744 x level). Relative difference on the windows the layer acts on, and what the layer did:", "",
+                  "| Population | Delivered mean vs energy readout, p50 / p99 / max | State windows bypassed | Clipped spans (fast / day) | No-match reference day | max abs Delta |",
+                  "|---|---|---:|---|---:|---:|"]
+            recs = [(name(f), c["record"]) for f, c in cp] + ([(pooled["set"], pooled["record"])] if pooled else [])
+            for nm, r in recs:
+                pct3 = " / ".join(f"{100 * float(r[k]):.2f}%" if r[k] != "" else "-" for k in ("delivered_mean_vs_energy_readout_rel_p50",
+                                                                                                 "delivered_mean_vs_energy_readout_rel_p99",
+                                                                                                 "delivered_mean_vs_energy_readout_rel_max"))
+                cl = " / ".join(f"{100 * float(r[k]):.1f}%" if r[k] != "" else "-" for k in ("clipped_fast_share", "clipped_day_share"))
+                L.append(f"| {nm} | {pct3} | {r['state_windows_bypassed']} | {cl} | {r['no_match_reference_day']} | {float(r['max_abs_delta']):.3f} |")
+            L += [""]
         L += self._summary_added(x, order, name, cell)
         notes = [f"{name(f)}: {plain(n)}" for f, ns in x["notes"].items() for n in ns if f in pops]
         L += ["## Files of the first release without a counterpart here", "", "| File | Why there is none |", "|---|---|"]
@@ -1659,7 +2049,7 @@ def summary_from_record(rec):
 
 def energy_level_rows(rec, T=None):
     """energy_level_readout.csv from the saved record: the sensitivity ``energy_level_readout`` of compare_baselines.json
-    (ankyra-lite's level readout, 744 x level, in place of its delivered trajectory's mean; same estimator, random stream
+    (ankyra-lite's level readout, 744 x level, in place of its trajectory's mean before the continuation layer; same estimator, random stream
     and model order as energy_error.csv).  ``energy_error.csv`` keeps the release definition."""
     rows = []
     for f, p in rec.get("populations", {}).items():

@@ -1,0 +1,251 @@
+{
+ "label": "ankyra-lite 0.1.0",
+ "version": "0.1.0",
+ "recipe": "span return (R)",
+ "recipe_description": "the study's R recipe (span return): the copy-pointer carrier network (61,613 parameters) trained from scratch per population on a pooled training set (windows whose labels end before the population's validation set), early stopping on the population's last 93 days before the training cut (at most 30 epochs, patience 5); then the 93-day validation span returned to the training set at the population's own sampling density (labels ending within 24 h of the cut not returned) and training continued from the selected weights with a fresh AdamW for exactly 8 epochs, final weights kept; seeds 0, 1 and 2 averaged, anchored by the unchanged ANKYRA 2.2.1 anchoring layer, weekly seasonal naive on off-state and micro-load windows",
+ "note": "Paths are relative to the research root (environment variable ANKYRA_LITE_RESEARCH_ROOT, default <repo>/../HKAD_V3). 'npz' is the anchored product of the three-seed ensemble (arrays building, origin, traj (n, 744), level, peak, off, micro; origins on the store named by 'store'); 'seed_npz' the anchored products of each seed's carrier alone (same layout, same anchoring step); 'run_dirs' the three seeds' span-return runs (carrier.npz: the carrier forecasts at the origin and the six pseudo-origins and the training cut; COMPLETE.json: the per-epoch record; the weights file named by 'checkpoint'); 'start_run_dirs' the from-scratch stage the span return continued (TRAINED.json / COMPLETE.json: validation criterion per epoch, best epoch; best.pt); 'span_plan' the returned validation span; 'prep' the anchoring layer's temp_sigma_std ('sigma') and the split record; 'recipe_variants' the anchored three-seed products of the study's other recipe arms on the same windows (P3s: from-scratch stage alone, F: 8 continuation epochs without the span return, V: proportional validation set with early stopping). 'store': 'original' = the population's store as first built; 'corrected' = trained with the corrected CINELDI store (CINELDI's first hour labelled 59 days too early in the original store): for CINELDI its own data (CINELDI origins = original origins + 1,416 h), for Drammen the CINELDI windows of its pooled training set.",
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "checkpoint": "final.pt",
+ "start_checkpoint": "best.pt",
+ "faces": {
+  "bdg2": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/bdg2/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/bdg2/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/bdg2/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/bdg2/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/bdg2/arms_V_ens.npz"
+   }
+  },
+  "cambridge": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/cambridge/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/cambridge/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/cambridge/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/cambridge/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/cambridge/arms_V_ens.npz"
+   }
+  },
+  "heew": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/heew/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/heew/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/heew/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/heew/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/heew/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/heew/arms_V_ens.npz"
+   }
+  },
+  "eweld": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/eweld/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/eweld/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/eweld/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/eweld/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/eweld/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/eweld/arms_V_ens.npz"
+   }
+  },
+  "goiener_confirm": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/goiener_confirm/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/goiener_confirm/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/goiener_confirm/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/goiener_confirm/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/goiener_confirm/arms_V_ens.npz"
+   }
+  },
+  "households": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/households/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/households/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/households/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/households/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/households/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/households/arms_V_ens.npz"
+   }
+  },
+  "oslo": {
+   "store": "original",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/B/oslo/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s0",
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s1",
+    "analysis_outputs/smallnet_formal3_v1/oslo/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/oslo/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/oslo/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_formal3_v1/oslo/arms_P3s.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/B/oslo/arms_V_ens.npz"
+   }
+  },
+  "drammen": {
+   "store": "corrected",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/drammen/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/dc/drammen/span_plan.json",
+   "prep": "analysis_outputs/smallnet_carrier_v1/drammen/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_P3s_ens.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/dc/B/drammen/arms_V_ens.npz"
+   }
+  },
+  "cineldi": {
+   "store": "corrected",
+   "npz": "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_ens.npz",
+   "seed_npz": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_s0.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_s1.npz",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_R_s2.npz"
+   ],
+   "run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/R_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/R_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/R_s2"
+   ],
+   "start_run_dirs": [
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s0",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s1",
+    "analysis_outputs/smallnet_sr_formal_v1/dc/P3s/cineldi/P3s_s2"
+   ],
+   "span_plan": "analysis_outputs/smallnet_sr_formal_v1/dc/cineldi/span_plan.json",
+   "prep": "analysis_outputs/smallnet_sr_formal_v1/dc/v1rec/cineldi/prep_formal.json",
+   "recipe_variants": {
+    "P3s": "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_P3s_ens.npz",
+    "F": "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_F_ens.npz",
+    "V": "analysis_outputs/smallnet_sr_formal_v1/dc/B/cineldi/arms_V_ens.npz"
+   }
+  }
+ },
+ "replacements": {}
+}

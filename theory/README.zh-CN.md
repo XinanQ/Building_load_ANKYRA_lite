@@ -1,19 +1,30 @@
 # 理论：ankyra-lite 背后的精确性质
 
-[English](README.md) · [证明](PROOFS.md) · [算子](operators.py) · [数值检验](test_operators.py) · [载体检验](test_carrier_properties.py) · [返回预测器](../README.zh-CN.md)
+[English](README.md) · [证明](PROOFS.md) · [算子](operators.py) · [数值检验](test_operators.py) · [载体检验](test_carrier_properties.py) · [加权检验](test_weighting_properties.py) · [接续层检验](test_continuation_properties.py) · [返回预测器](../README.zh-CN.md)
 
-本文件夹收录放在预测器旁边的数学性质。预测器是 [`ankyra_lite/`](../ankyra_lite/) 这个包，包里没有任何代码引用本文件夹。这些性质让预测器可以逐步检查；它们不是精度的证据，精度是测出来的（[results/SUMMARY.md](../results/SUMMARY.md)）。性质分两组，对应 ankyra-lite 的两个部分：
+本文件夹收录放在预测器旁边的数学性质。预测器是 [`ankyra_lite/`](../ankyra_lite/) 这个包，包里没有任何代码引用本文件夹。这些性质让预测器可以逐步检查；它们不是精度的证据，精度是测出来的（[results/SUMMARY.md](../results/SUMMARY.md)）。性质分三组，对应 ankyra-lite 的三个部分：
 
 - **P1–P20，锚定层。** `ankyra_lite.anchor` 是 ANKYRA 2.2.1 包的逐字节副本，所以这些就是 ANKYRA 2.2.1 理论部分的性质、算子和检验，只改了导入路径。它们解释并限定锚定层：
   - 为什么把月前预测拆成水平、日路径和日内形状；
   - 权重需要多少历史，最多能离开等权多远；
   - 电量读出和峰值读出能保证什么、不能保证什么；
   - 评估为什么并列报告几种估计目标。
-- **C1–C10，载体网络。** ankyra-lite 新增：载体网络的构造对任意权重（训练过或没训练过）保证什么：
+- **C1–C14，载体。** ankyra-lite 新增。C1–C10：载体网络的构造对任意权重（训练过或没训练过）保证什么：
   - 它的预测是一份非负的电量预算，均值等于水平；
   - 它只用起报时刻之前的数据，没有单位标识输入，并随负荷同比例缩放；
   - 它的复制指针从零开始，而且从不改变水平；
   - 训练截止点与测试集之间留出 186 天，锚定层评分的每一个伪起报点预测对载体都是样本外的。
+
+  C11–C14（0.2.0 新增）：配方 Rw 第二阶段的逆噪声损失加权对任意训练池保证什么：
+  - 权重全部相等时，它与配方 R 逐位相同；
+  - 每个人群在抽样中所占的份额不变；
+  - 每个权重都有限、为正，并受下限约束；
+  - 权重只从该窗口自己起报前最后 28 天的上下文读出。
+- **O1–O9，起报接续层。** 0.2.0 新增：放在锚定层之后的起报接续层对锚定层交付的任意轨迹保证什么：
+  - 它把每个小时乘以一个有明确界的正因子，所以符号和精确的零都保持不变；
+  - 它只读起报前 672 小时和日历中的八个小时；
+  - 状态窗口不受影响；关闭时不改变该载体对应的预测流程；复现 0.1 产品还须用原配方 R 的种子 0–2 检查点、相同输入和原流程；
+  - 电量读数（`energy_kwh`）、水平和峰值在它之前读出。交付曲线之和一般与 电量读数（`energy_kwh`）不同，差额由接续前曲线与水平读数的原有差额及接续层变化组成，也可能为零。
 
 每条性质有三种支撑：
 
@@ -23,12 +34,14 @@
 | [operators.py](operators.py) | 把 P1–P20 写成函数，适用于任何预测器的 744 小时轨迹 |
 | [test_operators.py](test_operators.py) | P1–P20 的数值检验，含反例（31 项） |
 | [test_carrier_properties.py](test_carrier_properties.py) | C1–C10 在随机与扰动后的载体权重上的数值检验，含反例（27 项） |
+| [test_weighting_properties.py](test_weighting_properties.py) | C11–C14 在合成训练池和未训练载体上的数值检验，含反例（15 项） |
+| [test_continuation_properties.py](test_continuation_properties.py) | O1–O9 在合成窗口上、以及在一栋人造建筑上端到端的数值检验，含反例（36 项） |
 
 ```bash
 python -m unittest discover -s theory -t .
 ```
 
-这条命令运行两个检验文件（共 58 项；只用 CPU，单线程约 15 秒），不需要检查点，也不需要研究数据。请在仓库根目录下运行。
+这条命令运行四个检验文件（共 109 项；只用 CPU，单线程约 35 秒），不需要检查点，也不需要研究数据。请在仓库根目录下运行。
 
 ![一个测试窗口上的精确性质](../figures/fig7_operators.png)
 
@@ -63,9 +76,9 @@ python -m unittest discover -s theory -t .
 
 `operators.*` 指本文件夹里的 [operators.py](operators.py)；`anchor.*` 是锚定层 `ankyra_lite.anchor`，P1、P3、P15 和 P19 由它自身的函数承载。检验名是 [test_operators.py](test_operators.py) 里的测试类，注明了文件夹的除外。
 
-## 载体网络的十条性质
+## 载体的十四条性质
 
-十条都由 `ankyra_lite.carrier` 的代码推出，对任意权重（训练过或没训练过）成立；只有 C9(a) 讲的是初始化。证明里注明了代码行号。关于实数运算的陈述用 float64 检验，关于交付的载体预测的陈述用包自身的 float32 路径检验。
+十四条都由 `ankyra_lite.carrier` 的代码推出。C1–C10 对任意权重（训练过或没训练过）成立；只有 C9(a) 讲的是初始化。证明里注明了代码行号。关于实数运算的陈述用 float64 检验，关于交付的载体预测的陈述用包自身的 float32 路径检验。C11–C14（0.2.0 新增）对任意训练池成立；它们讲的是配方 Rw 第二阶段的损失加权（`train.noise_weights`、`train.weighted_log1p_loss`），证明里注明了函数名。
 
 | | 性质 | 成立条件 | 对 ankyra-lite 的意义 | 代码 | 检验 |
 |---|---|---|---|---|---|
@@ -79,8 +92,30 @@ python -m unittest discover -s theory -t .
 | C8 | [没有单位标识输入](PROOFS.md#exact-properties-of-the-carrier-network) | 总是；类别是输入 | 同一类别中同样的历史得到同样的预测 | `features.features`、`model.build_carrier` | `UnitIdentityTests` |
 | C9 | [复制指针：初始化时为零、不改变水平、近期没有完整日时不起作用](PROOFS.md#exact-properties-of-the-carrier-network) | (a) 初始化时；(b)–(d) 任意权重 | 指针只重新分配一个月的电量，不移动电量本身 | `model.CopyPointerNetwork` | `PointerTests` |
 | C10 | [伪起报点的样本外保证](PROOFS.md#exact-properties-of-the-carrier-network) | 测试起报点至少在训练截止点之后 4,464 小时（186 天） | 锚定层评分的每一个已完成伪预测对载体都是样本外的 | `inference.pseudo_origins`、`train.make_windows` | `PseudoOriginTests` |
+| C11 | [权重全为 1 就是配方 R](PROOFS.md#the-loss-weighting-of-recipe-rw-c11c14) | CPU 上逐位成立；任意常数权重在实数运算中成立 | 配方 Rw 可以退化为配方 R；0.1 的各配方及其记录不变 | `train.weighted_log1p_loss`、`train.train_step`、`train.recipe` | `UnitWeightTests` |
+| C12 | [每个人群保持它在抽样中的份额](PROOFS.md#the-loss-weighting-of-recipe-rw-c11c14) | 对抽样取期望（精确） | 加权只在一个人群内部移动权重，不在目标人群和借来的窗口之间移动 | `train.draw_probabilities`、`train.noise_weights` | `SourceBalanceTests` |
+| C13 | [权重有界，以及下限](PROOFS.md#the-loss-weighting-of-recipe-rw-c11c14) | 下限为正（一个反例给出下限为零的情形） | 训练池里每个窗口的权重都有限、为正、不超过下限对应的权重；至少四分之一的抽样概率落在下限上 | `train.noise_weights`、`train.weighted_quantile` | `WeightBoundTests` |
+| C14 | [权重只读窗口自己最近的上下文](PROOFS.md#the-loss-weighting-of-recipe-rw-c11c14) | 总是；float16 词元会让估计有舍入 | 标签、评估窗口和随机数都进不了权重；权重不依赖负荷的计量单位 | `train.noise_sigma2`、`train.pool_sigma2` | `WeightInputTests` |
 
-`model.*`、`features.*`、`inference.*` 和 `train.*` 是 `ankyra_lite.carrier` 的模块；检验名是 [test_carrier_properties.py](test_carrier_properties.py) 里的测试类。
+`model.*`、`features.*`、`inference.*` 和 `train.*` 是 `ankyra_lite.carrier` 的模块；检验名是 [test_carrier_properties.py](test_carrier_properties.py)（C1–C10）和 [test_weighting_properties.py](test_weighting_properties.py)（C11–C14）里的测试类。
+
+## 起报接续层的九条性质
+
+九条都由 `ankyra_lite.continuation`（0.2.0 新增）和 `ankyra_lite.forecast` 的代码推出，对锚定层交付的任意轨迹成立；除非给出具体数字，对任意常数 κ₁、κ₂ ≥ 0，ρ₁、ρ₂ > 0 也成立。接续层把锚定后的轨迹 F 乘以 e^{Δ(h)}，Δ(h) = κ₁x_f e^{−h/12} + κ₂x_d e^{−h/168}，其中 x_f 和 x_d 是起报前最后 3 小时和最后 24 小时相对于预测自己参照日的对数比（截在 [−1, 1]）；界 E(h) = κ₁e^{−h/12} + κ₂e^{−h/168} 在 h = 0 时为 0.809，从第 8 天起不超过 0.1215，最后一小时为 0.004。
+
+| | 性质 | 成立条件 | 对 ankyra-lite 的意义 | 代码 | 检验 |
+|---|---|---|---|---|---|
+| O1 | [非负、符号与零](PROOFS.md#exact-properties-of-the-continuation-layer) | 总是；次正规数的小时可能变成零（反例）；最后几小时均值不高于 −ε（负负荷）时该异常取 0 | 交付的逐时预测保持非负，精确的零保持为零 | `continuation.apply_batch` | `NonnegativityTests` |
+| O2 | [修正有界](PROOFS.md#exact-properties-of-the-continuation-layer) | 总是（对包络逐位成立） | 每个小时乘以 [e^{−E(h)}, e^{E(h)}] 内的因子：起报时为 [0.445, 2.246]，从第 8 天起为 [0.885, 1.130] | `continuation.delta`、`continuation.envelope` | `BoundTests` |
+| O3 | [因果](PROOFS.md#exact-properties-of-the-continuation-layer) | 总是；会读取第一个预测周的日历 | 接续层只读起报前 672 小时和日历中的八个小时 | `continuation.window_inputs` | `CausalityTests` |
+| O4 | [旁路](PROOFS.md#exact-properties-of-the-continuation-layer) | 状态窗口；最后几小时有缺测（经 `forecast` 不会出现）；最后几小时均值不高于 −ε（负负荷，发布版规则） | 状态规则的预测原样交付；最后几小时缺测时接续层不起作用；某段均值非正时该段异常取 0（并记录标记），两段都非正时接续层不起作用 | `continuation.apply_batch`、`forecast.forecast` | `BypassTests`、`ForecastBypassTests` |
+| O5 | [可退化](PROOFS.md#exact-properties-of-the-continuation-layer) | 常数为零，或关闭接续层 | 关闭时该载体对应的 0.1 流程不变；复现 0.1 产品还要求原配方 R 的种子 0–2 检查点、相同输入和原流程 | `continuation.ZERO`、`forecast.forecast` | `DegeneracyTests` |
+| O6 | [读数在接续层之前读出](PROOFS.md#exact-properties-of-the-continuation-layer) | 总是（读出规则） | 固定载体时，开关层不改变水平、电量读数（`energy_kwh`）和峰值；交付曲线之和一般与 电量读数（`energy_kwh`）相差接续前曲线/水平的原有差额及接续变化，也可能为零 | `forecast.forecast`、`readouts.continuation_energy_change` | `ReadoutTests` |
+| O7 | [一致性与单调性](PROOFS.md#exact-properties-of-the-continuation-layer) | (a) 浮点数精确相等；(b) 两个异常同号（异号时符号改变一次），最后几小时均值高于 −ε | 已经接着最后几小时往下走的预测保持不变；修正方向与异常方向一致 | `continuation.anomalies`、`continuation.delta` | `ConsistencyTests` |
+| O8 | [尺度等变](PROOFS.md#exact-properties-of-the-continuation-layer) | $c>0$ 且尺度高于 10⁻³ kW 的下限；2 的幂次逐位成立；否则有反例 | 接续层不依赖负荷的计量单位 | `continuation.anomalies` | `ScaleTests` |
+| O9 | [参照日与身份](PROOFS.md#exact-properties-of-the-continuation-layer) | 总是；没有同类日时取 d* = 6，与开发代码不同 | 两个异常比较的是相同钟点、相同工作日类别；常数和规则由一个摘要唯一标识 | `continuation.reference_day`、`continuation.digest` | `ReferenceDayTests` |
+
+`continuation.*` 是 `ankyra_lite.continuation`，`forecast.*` 和 `readouts.*` 是 `ankyra_lite` 的模块；检验名是 [test_continuation_properties.py](test_continuation_properties.py) 里的测试类。
 
 ## 这些性质怎样进入预测器
 
@@ -92,6 +127,8 @@ python -m unittest discover -s theory -t .
 - **估计目标（P19）。** 合并汇总和单位等权汇总可能因代数原因符号相反，所以结果文件并列报告单位等权 log 比、合并 MSE 比、平均单位排名和常规指标。
 - **证据界（P20）。** 聚合的极小极大速率是最坏情形的结果：七个水平候选、至多六个伪起报点误差时，它按量级占误差方差的可观比例。它为强收缩权重提供统计背景；它不是在这批数据上的测量，单凭它也不能说明这里的候选无法区分（[PROOFS.md](PROOFS.md#evidence-bound)）。在测试窗口上，权重最大的候选在起报时刻是最好候选的频率高于随机水平，但大约只有五个窗口中的一个（`results/level_candidate_hit_rate.csv`）。锚定层报告的记录统计量（`anchoring_record`）是描述性指标；预测器不声称选出了最好的候选。
 - **载体（C1–C10）。** 载体交给锚定层的是一条非负、均值等于其水平的轨迹（C1–C3），只用每个起报时刻之前的数据，并且不受占位值影响（C4–C6），按负荷自身的尺度、没有单位标识（C7、C8）。它的复制指针重塑一个月的形状但不移动水平，并从基础网络出发（C9）。训练截止点与测试集之间留出 186 天，锚定层拿单位自己的历史给伪起报点预测评分时，每一个都对载体是样本外的（C10）；锚定层按单位定权正是以此为前提。
+- **配方 Rw 的损失加权（C11–C14）。** 在第二阶段，配方 Rw 给每个训练窗口一个权重：它最近三周相对周季节朴素预测的噪声的负二分之一次方，噪声以训练池的第 25 百分位为下限。权重全部相等时，它与配方 R 逐位相同（C11）；加权只在一个人群内部移动侧重，不在目标人群和借来的窗口之间移动（C12）；权重有限、为正、有界（C13）；它们从每个窗口起报前自己的上下文读出，不用标签，也不用随机数（C14）。
+- **起报接续层（O1–O9）。** 在锚定层和状态规则之后，接续层把轨迹的每个小时乘以 e^{Δ(h)}，Δ 由起报前最后 3 小时和最后 24 小时离预测自己的参照日有多远决定。这个因子为正且有界，从第一小时的 [0.445, 2.246] 收窄到最后一小时的 [0.996, 1.004]（O1、O2）；它只读起报前 672 小时和第一周的日历（O3）；状态窗口绕过它，关闭时不改变该载体对应的预测流程（O4、O5）。电量读数（`energy_kwh`）、水平和峰值在它之前读出；交付曲线之和一般与 电量读数（`energy_kwh`）不同，差额由接续前曲线与水平读数的原有差额和接续层变化组成，也可能为零（O6）。已经接着最后几小时往下走的预测保持不变，两个异常同号时整个窗口朝同一方向移动（O7）；它不依赖负荷的计量单位（O8）；它比较的是同类的量：相同的钟点、相同的工作日类别（O9）。
 
 ## 本仓库测量的后果
 
@@ -108,5 +145,8 @@ python -m unittest discover -s theory -t .
 | P16 | 单独载体上的同一读出：锚定后的日均值是否传到峰值 | [`results/peak_readout.csv`](../results/peak_readout.csv)（`same readout on the carrier alone`） |
 | P19 | 并列报告单位等权 log 比、合并 MSE 比、平均单位排名和常规指标 | `results/benchmark_pairwise.csv`、`benchmark_mean_unit_rank.csv`、`conventional_metrics_late.csv` |
 | P20 | 权重最大的水平候选的命中率对随机水平；锚定记录对实现收益 | [`results/level_candidate_hit_rate.csv`](../results/level_candidate_hit_rate.csv)、[`results/anchoring_gain_deciles.csv`](../results/anchoring_gain_deciles.csv) |
+| C12、C13 | 按人群：损失权重的下限、归一化系数、各人群的抽样份额、Kish 有效样本量比，以及最大权重与中位权重之比 | [`checkpoints/MANIFEST.json`](../checkpoints/MANIFEST.json) 中每个 Rw 检查点的 `weights_record` |
+| O2、O7 | 同一载体上开启与关闭接续层的对比，分第 0 小时、第 0–2 小时（文件中的 `lead hours 0-3`）、第 1 天、第 2–7 天、第 8–31 天和整个窗口 | [`results/continuation_layer.csv`](../results/continuation_layer.csv) |
+| O4、O6、O9 | 被旁路的状态窗口、被截断的异常所占的份额、用了参照日后备值的窗口、最大的 \|Δ\|，以及交付曲线均值与电量读数的相对差 | [`results/continuation_record.csv`](../results/continuation_record.csv) |
 
-P1–P20 及其文件来自 ANKYRA 2.2.1 的理论文件夹，只把导入从 `ankyra` 改为 `ankyra_lite.anchor`。该理论里的数据证据（来自方法早期开发和 ANKYRA 研究，载体是 TimesFM 2.5）不是本仓库的结果，已删去；本仓库结果文件测过后果的，PROOFS.md 注明该文件。C1–C10 和 `test_carrier_properties.py` 是新增的。
+P1–P20 及其文件来自 ANKYRA 2.2.1 的理论文件夹，只把导入从 `ankyra` 改为 `ankyra_lite.anchor`。该理论里的数据证据（来自方法早期开发和 ANKYRA 研究，载体是 TimesFM 2.5）不是本仓库的结果，已删去；本仓库结果文件测过后果的，PROOFS.md 注明该文件。C1–C10 和 `test_carrier_properties.py` 是 ankyra-lite 新增的；C11–C14 及 `test_weighting_properties.py`、O1–O9 及 `test_continuation_properties.py` 是 0.2.0 新增的。

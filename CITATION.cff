@@ -5,20 +5,26 @@ title: "Building_load_ANKYRA_lite (ankyra-lite): month-ahead hourly load forecas
 abstract: >-
   ankyra-lite is a self-contained month-ahead (744-hour) hourly load forecaster for buildings, industrial meters and
   households that needs no foundation model. A small self-developed carrier network (a copy-pointer structured load
-  network with 61,613 parameters, trained from scratch per population) forecasts the month after a forecast origin
-  from the unit's own history and the known calendar. Its forecasts at the origin and at up to six earlier
-  pseudo-origins are passed to an unchanged copy of the ANKYRA 2.2.1 anchoring layer, which estimates per-unit
-  combination weights from the unit's own completed pseudo-forecasts and returns the hourly trajectory, the month's
-  energy and the monthly peak readout. The repository contains the package, its training recipe, equivalence tests
-  against the research code and the original ANKYRA package, the evaluation code, and a re-evaluation against 21
-  baselines (22 forecasters) on nine populations (hourly, energy, peak, conventional metrics, forecast-day,
-  error-block, scaled-error and rank-test tables).
+  network with 61,613 parameters, trained per population) forecasts the month after a forecast origin from the unit's
+  own history and the known calendar. Version 0.2.0 averages six seeds of the carrier, each trained with every
+  training window's loss weighted by a frozen inverse-noise rule (recipe Rw), at every issue time. Its forecasts at
+  the origin and at up to six earlier pseudo-origins are passed to an unchanged copy of the ANKYRA 2.2.1 anchoring
+  layer, which estimates per-unit combination weights from the unit's own completed pseudo-forecasts; a
+  seasonal-naive state rule handles off-state windows, and a new origin-continuity layer (four frozen constants)
+  corrects the first hours and days of the anchored trajectory toward the last observed hours. The month's energy,
+  level and monthly peak readout are read before the continuation layer (readout rule A). The 0.1.x configuration
+  (recipe R, its three shipped seeds, the continuation layer off) stays available for reproducing the forecasts of 0.1.1.
+  The repository contains the
+  package, its training recipes, equivalence tests against the research code and the original ANKYRA
+  package, the evaluation code, a re-evaluation against 21 baselines (22 forecasters) on nine populations (hourly,
+  energy, peak, conventional metrics, forecast-day, error-block, scaled-error and rank-test tables; test windows read
+  before, so a description, not a first test), and external tests re-run once on four previously read test sets.
 authors:
   - family-names: Qin
     given-names: Xinan
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # add if available
-version: "0.1.1"
-date-released: "2026-10-19"
+version: "0.2.0"
+date-released: "2026-10-21"
 license: MIT
 repository-code: "https://github.com/XinanQ/Building_load_ANKYRA_lite"
 # doi: "10.5281/zenodo.XXXXXXX"   # add the Zenodo DOI after the first archived release

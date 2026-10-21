@@ -23,6 +23,15 @@ baselines, the descriptive contrasts and the subgroups, plus the mean unit ranks
 stops the script (``Unexpected``), so a record that held any other forecaster would not be copied. The records' text
 fields are copied only where listed (identity, readout, pretraining note), with the paths and the names of left-out
 forecasters removed (``clean``); no other free text is copied.
+
+Version 0.2.0 (``--version 0.2``; ``auto``, the default, follows evaluation/products.json).  The 0.2.0 candidate was
+re-run on the same four test sets after the frozen external test (carriers of recipe Rw from the same stage-1 runs, six
+seeds, the continuation layer, readout rule A): one score record per test set,
+``<research root>/analysis_outputs/lite_upgrade_v2/external/score/score_<set>.json``, and the record of the design's
+day-1 rule (``.../external/DAY1_RULE_<utc>.json``, the latest).  The same copying rules hold, with the first forecasters
+of ``FIRST_V2`` and the own configurations of ``OWN_ARMS_V2``; the test-set names and the comparators' pretraining notes
+come from the frozen records above (same windows and comparators).  ``--version 0.1`` (or ``--recipe r010``) writes the
+0.1.x table.
 """
 from __future__ import annotations
 
@@ -92,6 +101,29 @@ DESCRIPTIVE_HEAD = {"span return vs plain continuation": "span return vs plain c
                     "vs history-only configuration": "ankyra-lite vs history-only configuration (6 seeds)",
                     "vs carrier-free control": "ankyra-lite vs carrier-free control (6 seeds)"}
 RANK_KEY = "mean unit rank"                                # a section key of the records that starts with these words
+
+# ---- version 0.2.0: the re-run of the 0.2.0 candidate on the same test sets
+FIRST_V2 = {"Rw_ens6_c": "ankyra-lite 0.2.0 (recipe Rw, 6 seeds, continuation layer)",
+            "R_ens6_c": "recipe R, 6 seeds, continuation layer",
+            "Rw_ens6": "recipe Rw, 6 seeds, no continuation layer",
+            "R_ens6": "recipe R, 6 seeds (the frozen external candidate)",
+            "R_ens3": "0.1.0 configuration (recipe R, 3 seeds)"}
+OWN_ARMS_V2 = {**OWN_ARMS, "Rw_ens6_c": FIRST_V2["Rw_ens6_c"], "Rw_ens6": FIRST_V2["Rw_ens6"], "R_ens6": FIRST_V2["R_ens6"],
+               "R_ens6_c": FIRST_V2["R_ens6_c"], "R_ens3": FIRST_V2["R_ens3"], "Rw_ens3_c": "recipe Rw, 3 seeds, continuation layer"}
+LABEL_V2 = {**BASELINES, **OWN_ARMS_V2, **FIRST_V2}
+READOUT_V2 = {**READOUT, "lead hours 0-3": "forecast hours 0-2 (lead hours 0-3)"}
+SECTIONS_V2 = {"primary: 0.2.0 (Rw6 + layer, 6 seeds) | hourly": ("primary", "primary"),
+               "0.2.0 | other readouts": ("secondary", "other readouts"),
+               "0.2.0 vs the frozen external candidate R6": ("secondary", "vs the frozen external candidate (recipe R, 6 seeds)"),
+               "0.2.0 vs the 0.1.0 configuration R3": ("secondary", "vs the 0.1.0 configuration (3 seeds)"),
+               "R6 + layer": ("secondary", "recipe R with the continuation layer"),
+               "subgroup: units without own training windows": ("descriptive", "subgroup")}
+DECOMPOSITION_V2 = {"weighting: Rw6 vs R6": "weighting (Rw vs R, 6 seeds, no layer)",
+                    "layer on / off on Rw6": "layer on / off (recipe Rw, 6 seeds)",
+                    "layer on / off on R6": "layer on / off (recipe R, 6 seeds)",
+                    "six vs three seeds within Rw": "six vs three seeds (recipe Rw, with the layer)"}
+DAY1_KEY = "day-1 gap to TimesFM 2.5 (design 3.3)"
+V2_SKIP = ("reproduction of the frozen external reading", "_recomputed")
 
 COLUMNS = ("test_set", "test_set_id", "identity", "role", "block", "subgroup", "first", "model", "model_label", "readout",
            "windows", "units", "months", "improvement_pct", "interval_low_pct", "interval_high_pct", "interval",
@@ -277,6 +309,193 @@ def build(root: Path | None = None) -> list[dict]:
     return rows
 
 
+# ----------------------------------------------------------------------------- version 0.2.0
+def score_dir_v2(root: Path | None = None) -> Path:
+    return (root or research_root()) / "analysis_outputs" / "lite_upgrade_v2" / "external" / "score"
+
+
+def load_v2(face: str, root: Path | None = None) -> dict:
+    if face in SEALED:
+        raise Unexpected(f"{face} is sealed and not scored; it is never read here")
+    if face not in FACES:
+        raise Unexpected(f"unknown test set {face!r}")
+    p = score_dir_v2(root) / f"score_{face}.json"
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    if rec.get("face") != face or rec.get("status") != "complete":
+        raise Unexpected(f"{p.name}: face {rec.get('face')!r}, status {rec.get('status')!r}")
+    return rec
+
+
+def available_v2(root: Path | None = None) -> bool:
+    d = score_dir_v2(root)
+    return all((d / f"score_{f}.json").exists() for f in FACES) and available(root)
+
+
+def day1_rule(root: Path | None = None) -> tuple[dict | None, str]:
+    """The latest record of the design's day-1 rule (DAY1_RULE_<utc>.json), or None."""
+    d = score_dir_v2(root).parent
+    hits = sorted(d.glob("DAY1_RULE_*.json"))
+    if not hits:
+        return None, ""
+    return json.loads(hits[-1].read_text(encoding="utf-8")), hits[-1].name
+
+
+def _model_v2(b: str) -> str:
+    if b in BASELINES or b in OWN_ARMS_V2:
+        return b
+    raise Unexpected(f"forecaster {b!r} is not a baseline of the comparison or one of ankyra-lite's own configurations")
+
+
+def _where_v2(path):
+    """(role, block, subgroup) of a 0.2.0 contrast from its place in the record."""
+    top = path[0]
+    if top == "decomposition":
+        block = next((v for k, v in DECOMPOSITION_V2.items() if path[1].startswith(k)), None)
+        if block is None:
+            raise Unexpected(f"decomposition section {path[1]!r}")
+        return "descriptive", block, ""
+    hit = next((v for k, v in SECTIONS_V2.items() if top.startswith(k)), None)
+    if hit is None:
+        raise Unexpected(f"section {top!r}")
+    return hit[0], hit[1], ("units without own training windows" if hit[1] == "subgroup" else "")
+
+
+def rows_of_v2(face: str, rec: dict, rec1: dict) -> list[dict]:
+    """The rows of one 0.2.0 score record; ``rec1`` is the frozen record of the same test set (name, comparators)."""
+    out = []
+    ident = clean(rec["identity"])
+    name = rec1["label"]
+    secs = {k: v for k, v in rec.items() if isinstance(v, dict) and (k == "decomposition" or any(k.startswith(x) for x in SECTIONS_V2))}
+    for k in rec:
+        if isinstance(rec[k], dict) and k not in secs and not k.startswith(V2_SKIP) and k not in (DAY1_KEY, "windows", "split", "test_set_check", "failures",
+                                                                                                    "target_completeness", "frozen_v2", "products_v2",
+                                                                                                    "layer_checks", "reanchor_check", "multiplicity",
+                                                                                                    "wording") and not k.startswith(RANK_KEY):
+            raise Unexpected(f"section {k!r}")
+    for path, x in _contrasts(secs, []):
+        role, block, sub = _where_v2(path)
+        a, b = x["a"], _model_v2(x["b"])
+        if a not in FIRST_V2:
+            raise Unexpected(f"first forecaster {a!r}")
+        rd = READOUT_V2.get(x["readout"])
+        if rd is None:
+            raise Unexpected(f"readout {x['readout']!r}")
+        over, trained = _comparator_info(rec1, b)
+        welch = x.get("welch_95_pct")
+        um = x.get("unit_month_interval_pct") or [None, None]
+        note = []
+        if "status" in x:
+            note.append(clean(x["status"]))
+        if "pct" in x and (welch or um) and not all(isinstance(v, float) and math.isfinite(v) for v in (welch or um)):
+            note.append("interval undefined in the record (too few clusters)")
+        if welch:
+            lo, hi, kind = welch[0], welch[1], f"Welch 95%: unit x month bootstrap and the spread over seeds (M = {x['M']})"
+        elif "pct" in x:
+            lo, hi, kind = um[0], um[1], "unit x month bootstrap 95% (no seed layer)"
+        else:
+            lo, hi, kind = None, None, ""
+        out.append({"test_set": name, "test_set_id": face, "identity": ident, "role": role, "block": block, "subgroup": sub,
+                    "first": FIRST_V2[a], "model": b, "model_label": LABEL_V2[b], "readout": rd,
+                    "windows": num(x.get("windows")), "units": num(x.get("units")), "months": num(x.get("months")),
+                    "improvement_pct": num(x.get("pct")), "interval_low_pct": num(lo), "interval_high_pct": num(hi),
+                    "interval": kind, "seeds": num(x.get("M")) if welch else "", "seeds_positive": num(x.get("seeds_positive")),
+                    "welch_df": num(x.get("welch_df")), "label": x.get("label", "not computed"),
+                    "unit_month_low_pct": num(um[0]), "unit_month_high_pct": num(um[1]),
+                    "mean_unit_rank": "", "candidate_position": "", "models_ranked": "",
+                    "pretraining_overlap": over, "trained_labels_to_C": num(trained), "note": "; ".join(note),
+                    "source": f"score_{face}.json (0.2.0): " + " / ".join(cite(k) for k in path)})
+    g = rec.get(DAY1_KEY)
+    if g:
+        for k, a in (("after: 0.2.0 vs TimesFM, lead day 1", "Rw_ens6_c"), ("before: 0.1.0 configuration R3 vs TimesFM, lead day 1", "R_ens3"),
+                     ("before: frozen external candidate R6 vs TimesFM, lead day 1", "R_ens6")):
+            v = g.get(k) or {}
+            w = v.get("welch_95_pct") or [None, None]
+            out.append({"test_set": name, "test_set_id": face, "identity": ident, "role": "descriptive", "block": "day-1 gap to TimesFM 2.5", "subgroup": k.split(":")[0],
+                        "first": FIRST_V2[a], "model": "TimesFM", "model_label": LABEL_V2["TimesFM"], "readout": READOUT_V2["lead day 1"],
+                        "windows": num(v.get("windows")), "units": "", "months": "", "improvement_pct": num(v.get("pct")),
+                        "interval_low_pct": num(w[0]), "interval_high_pct": num(w[1]), "interval": "Welch 95%: unit x month bootstrap and the spread over seeds" if v.get("welch_95_pct") else "",
+                        "seeds": "", "seeds_positive": "", "welch_df": "", "label": v.get("label", "not computed"), "unit_month_low_pct": "", "unit_month_high_pct": "",
+                        "mean_unit_rank": "", "candidate_position": "", "models_ranked": "", "pretraining_overlap": "", "trained_labels_to_C": "",
+                        "note": (f"shrink of the log gap (0.2.0 against the 0.1.0 configuration, d_after - d_before) {num(g.get('shrink_log (primary; vs R3) = d_after - d_before'))}"
+                                 if k.startswith("after") else ""),
+                        "source": f"score_{face}.json (0.2.0): {DAY1_KEY} / {k}"})
+    rank_sec = next((k for k in rec if k.startswith(RANK_KEY)), None)
+    for variant, v in (rec.get(rank_sec) or {}).items():
+        if "mean_unit_rank" not in v:
+            continue
+        for m, r in v["mean_unit_rank"].items():
+            first = m in FIRST_V2
+            if not first:
+                _model_v2(m)
+            out.append({"test_set": name, "test_set_id": face, "identity": ident, "role": "secondary", "block": "mean unit rank",
+                        "subgroup": variant, "first": FIRST_V2[m] if first else "", "model": "" if first else m,
+                        "model_label": "" if first else LABEL_V2[m], "readout": "hourly",
+                        "windows": num(v["windows"]), "units": num(v["units"]), "months": "",
+                        **{k: "" for k in ("improvement_pct", "interval_low_pct", "interval_high_pct", "interval", "seeds",
+                                           "seeds_positive", "welch_df", "label", "unit_month_low_pct", "unit_month_high_pct")},
+                        "mean_unit_rank": num(r), "candidate_position": num(v["candidate_position"]) if first else "",
+                        "models_ranked": num(v["models"]), "pretraining_overlap": "", "trained_labels_to_C": "", "note": "",
+                        "source": f"score_{face}.json (0.2.0): {RANK_KEY} / {variant} / mean_unit_rank / {m}"})
+    return out
+
+
+def build_v2(root: Path | None = None) -> list[dict]:
+    rows = []
+    for f in FACES:
+        rows += rows_of_v2(f, load_v2(f, root), load(f, root))
+    rule, rule_file = day1_rule(root)
+    if rule is not None:
+        allowed = rule.get("short_term_gap_reduction_claim_allowed")
+        rows.append({"test_set": "all four test sets", "test_set_id": "", "identity": "", "role": "descriptive", "block": "day-1 rule (design 3.3)",
+                     "subgroup": "", "first": FIRST_V2["Rw_ens6_c"], "model": "TimesFM", "model_label": LABEL_V2["TimesFM"], "readout": READOUT_V2["lead day 1"],
+                     "windows": "", "units": "", "months": "", "improvement_pct": "", "interval_low_pct": "", "interval_high_pct": "", "interval": "",
+                     "seeds": "", "seeds_positive": "", "welch_df": "",
+                     "label": ("not evaluated" if allowed is None else "claim allowed" if allowed else "no short-term gap reduction claim"),
+                     "unit_month_low_pct": "", "unit_month_high_pct": "", "mean_unit_rank": "", "candidate_position": "", "models_ranked": "",
+                     "pretraining_overlap": "", "trained_labels_to_C": "",
+                     "note": clean(f"mean external shrink (log) {num(rule.get('mean_external_shrink_log'))}; line (1/3 of the development shrink) "
+                                   f"{num(rule.get('line_log (1/3 of the development shrink)'))}; " + str(rule.get("wording") or rule.get("status", ""))),
+                     "source": f"{rule_file}: short_term_gap_reduction_claim_allowed"})
+    return rows
+
+
+def markdown_v2(rows) -> str:
+    """The 0.2.0 tables of docs/EXTERNAL_TESTS.md."""
+    prim = [m for m in PRIMARY]
+    L = ["### 0.2.0: primary readouts (hourly, six seeds, continuation layer)", "",
+         "| Test set | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |",
+         "|---|---|---|---|---|"]
+    for f in FACES:
+        ps = [_pick(rows, test_set_id=f, block="primary", model=m) for m in prim]
+        if not all(ps):
+            continue
+        L.append(f"| {ps[0]['test_set']} | {_n(ps[0]['windows'])} / {_n(ps[0]['units'])} / {_n(ps[0]['months'])} | " + " | ".join(cell(p) for p in ps) + " |")
+    L += ["", "### 0.2.0 against the frozen external candidate and the 0.1.0 configuration; decomposition", "",
+          "| Test set | Readout | " + " | ".join(("vs frozen candidate (R, 6 seeds)", "vs 0.1.0 configuration")) + " | "
+          + " | ".join(DECOMPOSITION_V2.values()) + " |", "|---|---|" + "---|" * (2 + len(DECOMPOSITION_V2))]
+    for f in FACES:
+        for rd in ("hourly", READOUT_V2["lead hours 0-3"], "forecast day 1"):
+            cs = [_pick(rows, test_set_id=f, block=b, readout=rd) for b in ("vs the frozen external candidate (recipe R, 6 seeds)", "vs the 0.1.0 configuration (3 seeds)")]
+            ds = [_pick(rows, test_set_id=f, block=b, readout=rd) for b in DECOMPOSITION_V2.values()]
+            if any(cs + ds):
+                name = next(r["test_set"] for r in rows if r["test_set_id"] == f)
+                L.append(f"| {name} | {rd} | " + " | ".join(cell(c) if c else "—" for c in cs + ds) + " |")
+    rule = [r for r in rows if r["block"] == "day-1 rule (design 3.3)"]
+    if rule:
+        L += ["", f"Day-1 rule (design 3.3): {rule[0]['label']} ({rule[0]['note']})."]
+    L += [""]
+    return "\n".join(L)
+
+
+def version_of_products() -> str:
+    """'0.2' when evaluation/products.json is a 0.2.0 mapping, else '0.1'."""
+    try:
+        v = json.loads((HERE / "products.json").read_text(encoding="utf-8")).get("version", "")
+    except (OSError, ValueError):
+        v = ""
+    return "0.2" if str(v).startswith("0.2") else "0.1"
+
+
 def to_csv(rows) -> str:
     buf = io.StringIO()
     w = csv.DictWriter(buf, fieldnames=COLUMNS, lineterminator="\n")
@@ -384,12 +603,16 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true", help="compare results/external_tests.csv with the records")
     ap.add_argument("--markdown", action="store_true", help="print the tables of docs/EXTERNAL_TESTS.md")
     ap.add_argument("--out", default=None, help="output folder (default: results/)")
+    ap.add_argument("--version", default="auto", choices=("auto", "0.1", "0.2"),
+                    help="0.1: the frozen external test of 0.1.x; 0.2: the re-run of the 0.2.0 candidate; auto: as evaluation/products.json")
+    ap.add_argument("--recipe", default=None, choices=("r010",), help="r010: the 0.1.x table (= --version 0.1)")
     a = ap.parse_args(argv)
     root = research_root()
-    if not available(root):
+    ver = "0.1" if a.recipe == "r010" else (version_of_products() if a.version == "auto" else a.version)
+    if not (available_v2(root) if ver == "0.2" else available(root)):
         print("the score records of the external tests are not available (set ANKYRA_LITE_RESEARCH_ROOT)")
         return 2
-    rows = build(root)
+    rows = build_v2(root) if ver == "0.2" else build(root)
     text = to_csv(rows)
     out = Path(a.out).resolve() if a.out else RESULTS
     try:
@@ -399,7 +622,7 @@ def main(argv=None) -> int:
         pass
     if a.markdown:
         sys.stdout.flush()
-        sys.stdout.buffer.write((markdown(rows) + "\n").encode("utf-8"))      # UTF-8 whatever the console's code page
+        sys.stdout.buffer.write(((markdown_v2(rows) if ver == "0.2" else markdown(rows)) + "\n").encode("utf-8"))   # UTF-8 whatever the console's code page
         sys.stdout.buffer.flush()
         return 0
     target = out / OUT_NAME

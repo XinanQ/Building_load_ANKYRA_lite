@@ -216,8 +216,12 @@ class TestForecast(unittest.TestCase):
         self.assertEqual(sorted(r.carrier), list(range(7)))
         self.assertEqual(r.pseudo_pairs, r.anchored.pseudo_pairs)              # attributes of the anchoring result
         ref = A.forecast(h, foundation=r.carrier, group="Office", temp_sigma_std=0.25)
-        self.assertTrue(np.array_equal(ref.trajectory_kw, r.trajectory_kw))
+        # the anchoring layer's output is the trajectory before the continuation layer (on by default from 0.2.0)
+        self.assertTrue(np.array_equal(ref.trajectory_kw, r.trajectory_before_continuation_kw))
         self.assertEqual(ref.level_kw, r.level_kw)
+        off = forecast(h, r.carrier, group="Office", temp_sigma_std=0.25, continuation=False)
+        self.assertTrue(np.array_equal(ref.trajectory_kw, off.trajectory_kw))
+        self.assertIsNone(off.continuation)
         again = forecast(h, r.carrier, group="Office", temp_sigma_std=0.25)          # precomputed carrier forecasts
         self.assertTrue(np.array_equal(again.trajectory_kw, r.trajectory_kw))
         cut = 16000 - 3 * 744                                                       # cut= applies to a precomputed mapping too

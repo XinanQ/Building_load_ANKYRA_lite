@@ -14,6 +14,16 @@ constants.csv       The carrier's constants (the defaults of ankyra_lite.carrier
                     recipe, the network configuration of ankyra_lite.carrier.model) and the anchoring layer's constants,
                     which are those of the first release's constants.csv (the layer is a byte-identical copy of ANKYRA
                     2.2.1); the anchoring rows keep the first release's group, constant, value and where_fixed.
+
+Version 0.2.0 (a products mapping with a configuration).  recipe_history.csv also holds the 0.2.0 study's two readings,
+copied unrounded from their records: the development check (analysis_outputs/lite_upgrade_v2/dev_check/dev_check_v1.json,
+development windows of six populations) and the one test read (analysis_outputs/lite_upgrade_v2/test_score/score.json,
+the test windows of the nine populations; read many times before, so it sets directions only).  Only contrasts between
+ankyra-lite's own configurations are copied (a record key or value naming another forecaster stops the copy); the
+release-table comparison with the baselines inside score.json is not copied (the main tables hold it).  Two columns are
+added: ``reading`` and ``seed_group_pcts``.  constants.csv gets the rows of the origin-continuity layer
+(ankyra_lite.continuation) and of the inverse-noise loss weighting (ankyra_lite.carrier.train.NoiseWeights), and the seeds
+of the configuration.
 """
 from __future__ import annotations
 
@@ -21,6 +31,7 @@ import csv
 import io
 import json
 import sys
+from pathlib import Path
 
 import compare_baselines as CB
 
@@ -39,6 +50,108 @@ FIELDS = ["comparison", "first_arm", "second_arm", "population_group", "populati
           "interval_low_pct", "interval_high_pct", "interval", "label", "seed0_pct", "seed1_pct", "seed2_pct", "unit_month_low_pct",
           "unit_month_high_pct", "welch_df", "by_population_pct", "first_arm_recipe", "second_arm_recipe"]
 WELCH = "Welch 95%: unit x target-month bootstrap of the three-seed ensembles and the spread of the three single-seed contrasts"
+V2 = CB.AO / "lite_upgrade_v2"
+V2_SCORE = V2 / "test_score" / "score.json"                      # the 0.2.0 study's one test read
+V2_DEV = V2 / "dev_check" / "dev_check_v1.json"                  # the 0.2.0 study's development check
+V2_FIELDS = FIELDS + ["reading", "seed_group_pcts"]
+V2_CODES = {"R3": "0.1.0 configuration: recipe R, seeds 0-2", "R3b": "recipe R, seeds 3-5", "R6": "recipe R, six seeds",
+            "Rw3a": "recipe Rw, seeds 0-2", "Rw3b": "recipe Rw, seeds 3-5", "Rw6": "recipe Rw, six seeds"}
+V2_DEV_CODES = {"R_g0": "R3", "R_g1": "R3b", "R_ens6": "R6", "Rw_g0": "Rw3a", "Rw_g1": "Rw3b", "Rw_ens6": "Rw6"}
+V2_GROUPS = {"nine": "all nine populations, each with equal weight", "three without a development set": "BDG2 2017, GoiEner non-household, GoiEner households",
+             "households": "GoiEner households", "six development populations": "Cambridge, HEEW Arizona, EWELD, Oslo, Drammen, CINELDI"}
+V2_SKIP = ("decision", "implementation checks", "per population vs", "release table reproduction", "descriptive: the layer conditions")
+READ_TEST = "0.2.0 test read (once; the test windows were read before: directions only)"
+READ_DEV = "0.2.0 development check (development set two of six populations; one reading)"
+
+
+def v2_code_words(code):
+    """Plain words of a 0.2.0 study product code (R3, Rw6_c, ...)."""
+    base, layer = (code[:-2], True) if code.endswith("_c") else (code, False)
+    w = V2_CODES.get(base)
+    if w is None:
+        raise ValueError(f"unknown product code {code!r}")
+    return w + (", with the continuation layer" if layer else "")
+
+
+def _named_other(x):
+    """True when a record node names a forecaster that is not one of ankyra-lite's configurations (the copy stops)."""
+    t = json.dumps(x, ensure_ascii=False)
+    return "ANKYRA" in t.upper().replace("ANKYRA-LITE", "").replace("ANKYRA 2.2.1", "")
+
+
+def v2_rows(score=None, dev=None):
+    """Rows of the 0.2.0 study's readings (development check, test read), copied unrounded, and a short record."""
+    rows, rec = [], {}
+    sp = Path(score) if score else V2_SCORE
+    dp = Path(dev) if dev else V2_DEV
+    if dp.exists():
+        D = json.loads(dp.read_text(encoding="utf-8"))
+        for key, segs in (D.get("B3d") or {}).items():
+            if _named_other(key):
+                continue
+            if key.startswith("layer on "):
+                c0 = V2_DEV_CODES.get(key[len("layer on "):].strip())
+                key_a, key_b = (c0 + "_c", c0) if c0 else (None, None)
+            elif " vs " in key:
+                def code(x):
+                    c1 = V2_DEV_CODES.get(x.replace(" + layer", "").replace(" (config)", "").strip())
+                    return (c1 + "_c" if " + layer" in x else c1) if c1 else None
+                a, b = key.split(" vs ", 1)
+                key_a, key_b = code(a), code(b)
+            else:
+                continue
+            if key_a is None or key_b is None:
+                continue
+            comp = f"{key_a} vs {key_b}" + (" (config)" if "(config)" in key else "")
+            for q, v in segs.items():
+                if not isinstance(v, dict) or "pct" not in v or _named_other(v):
+                    continue
+                lo, hi = v.get("lo_pct"), v.get("hi_pct")
+                rows.append({"comparison": comp, "first_arm": key_a, "second_arm": key_b, "population_group": V2_GROUPS["six development populations"],
+                             "populations": len(v.get("by_population_pct") or {}) or 6, "layer": "development windows", "quantity": q, "improvement_pct": v["pct"],
+                             "interval_low_pct": lo, "interval_high_pct": hi, "interval": "unit x target-month bootstrap 95% (development check)",
+                             "label": _label(lo, hi) if lo is not None else "", "seed0_pct": "", "seed1_pct": "", "seed2_pct": "", "unit_month_low_pct": lo,
+                             "unit_month_high_pct": hi, "welch_df": "", "by_population_pct": _bypop(v.get("by_population_pct") or {}),
+                             "first_arm_recipe": v2_code_words(key_a), "second_arm_recipe": v2_code_words(key_b), "reading": READ_DEV, "seed_group_pcts": ""})
+        rec["development_check"] = {"source": CB.show(dp), "status": D.get("status"), "adopted": (D.get("decision") or {}).get("adopted")}
+    if sp.exists():
+        S = json.loads(sp.read_text(encoding="utf-8"))
+        if S.get("status") != "complete":
+            raise SystemExit(f"{sp.name}: the test read is not complete ({S.get('status')})")
+        for block, groups in S.items():
+            if not isinstance(groups, dict) or block.startswith(V2_SKIP) or _named_other(block) or not (
+                    block.startswith(("primary", "decomposition", "layer on / off", "descriptive", "final configuration"))):
+                continue
+            for g, qs in groups.items():
+                if not isinstance(qs, dict):
+                    continue
+                for q, v in qs.items():
+                    if not isinstance(v, dict) or "a" not in v or _named_other(v):
+                        continue
+                    seeded = "z_95_pct" in v
+                    lo, hi = (v["z_95_pct"] if seeded else v["unit_month_interval_pct"])
+                    um = v.get("unit_month_interval_pct") or [None, None]
+                    rows.append({"comparison": block, "first_arm": v["a"], "second_arm": v["b"], "population_group": V2_GROUPS.get(g, g),
+                                 "populations": len(v.get("populations") or []), "layer": "all test windows", "quantity": q, "improvement_pct": v["pct"],
+                                 "interval_low_pct": lo, "interval_high_pct": hi,
+                                 "interval": ("z 95%: unit x target-month bootstrap and the spread of the two three-seed groups (decision interval of the reading)"
+                                              if seeded else "unit x target-month bootstrap 95% (no seed layer)"),
+                                 "label": v.get("label", ""), "seed0_pct": "", "seed1_pct": "", "seed2_pct": "", "unit_month_low_pct": um[0],
+                                 "unit_month_high_pct": um[1], "welch_df": v.get("welch_df", ""), "by_population_pct": _bypop(v.get("by_population_pct") or {}),
+                                 "first_arm_recipe": v2_code_words(v["a"]), "second_arm_recipe": v2_code_words(v["b"]), "reading": READ_TEST,
+                                 "seed_group_pcts": "; ".join(repr(x) for x in v.get("group_pct", []))})
+        dec = S.get("decision") or {}
+        rec["test_read"] = {"source": CB.show(sp), "identity": S.get("identity"), "final": dec.get("final"),
+                            "layer_rule_triggered": (dec.get("layer") or {}).get("triggered"),
+                            "headline": {k: S[b_][g_][q_] for k, (b_, g_, q_) in {
+                                "0.2.0 vs 0.1.0, nine, hourly": ("primary: 0.2.0 vs 0.1.0", "nine", "hourly"),
+                                "0.2.0 vs 0.1.0, nine, lead day 1": ("primary: 0.2.0 vs 0.1.0", "nine", "lead day 1"),
+                                "layer on / off, nine, hourly": ("layer on / off (Rw6 + layer vs Rw6; unit layer only)", "nine", "hourly"),
+                                "weighting Rw6 vs R6, nine, hourly": ("decomposition: weighting (Rw6 vs R6)", "nine", "hourly"),
+                                "seeds R6 vs R3, nine, hourly": ("decomposition: seeds (R6 vs R3)", "nine", "hourly")}.items()
+                                if b_ in S and g_ in S[b_] and q_ in S[b_][g_]}}
+    rec["rows"] = len(rows)
+    return rows, rec
 UM_ONLY = "unit x target-month bootstrap 95% of the three-seed ensembles only (no seed layer; descriptive)"
 
 
@@ -121,8 +234,9 @@ def _fmt(v):
     return str(v)
 
 
-def carrier_constants(score_rec=None):
-    """The carrier's rows, read from the package (so that they follow its defaults)."""
+def carrier_constants(score_rec=None, prods=None):
+    """The carrier's rows, read from the package (so that they follow its defaults); with a 0.2.0 mapping also the
+    loss-weighting rows of recipe Rw and the configuration's seeds."""
     if str(CB.REPO) not in sys.path:
         sys.path.append(str(CB.REPO))
     from ankyra_lite.carrier import train as TR
@@ -165,7 +279,10 @@ def carrier_constants(score_rec=None):
         ("carrier: span return", "continuation: fixed epochs, final weights kept (no selection), fresh AdamW", f"{rcfg.fixed_epochs}", PLAN,
          sens_um("R_ens vs P3s | nine", "released recipe against the un-continued from-scratch stage, nine populations")),
         ("carrier: span return", "continuation sampler stream", f"default_rng({rcfg.sampler_seed_offset} + seed)", PLAN, ""),
-        ("carrier: seeds", "seeds (forecast = plain average of the seeds' forecasts)", _fmt(cfg.seeds), DEV, ""),
+        ("carrier: seeds", "seeds (forecast = plain average of the seeds' forecasts)",
+         _fmt(tuple((prods or {}).get("seeds") or cfg.seeds)) if (prods or {}).get("configuration") else _fmt(cfg.seeds),
+         ("the 0.2.0 study (six seeds averaged at every issue time; fixed before its development check)" if len((prods or {}).get("seeds") or ()) == 6 else DEV)
+         if (prods or {}).get("configuration") else DEV, ""),
         ("carrier network", "parameters", f"{MD.parameter_count(mc):,}", NET, ""),
         ("carrier network", "daily / monthly / future-day tokens", f"{366} x {m.day_features} / 24 x {m.month_features} / {m.days} x {m.future_features}", NET, ""),
         ("carrier network", "width / attention heads / dropout", f"{m.width} / {m.heads} / {m.dropout:g}", NET, ""),
@@ -174,7 +291,44 @@ def carrier_constants(score_rec=None):
         ("carrier network", "copy pointer: complete days attended / key dimension", f"{mc.copy_days} / {mc.key_dim}", NET, ""),
         ("carrier network", "scale: max(mean of the last 744 observed hours, mean of the last 8,760 observed hours)", "1 if not positive", NET, ""),
     ]
+    if ((prods or {}).get("configuration_parts") or {}).get("recipe") == "Rw":
+        nw = TR.NoiseWeights()
+        RW = "the frozen inverse-noise rule of recipe Rw (the 0.2.0 study's record, fixed before its development check)"
+        rows += [("carrier: loss weighting (recipe Rw)", "stage-2 loss weight per training window: max(sigma^2, floor)^-gamma, normalised to a draw-weighted mean of 1 within each source",
+                  f"gamma {nw.gamma:g}", RW, ""),
+                 ("carrier: loss weighting (recipe Rw)", "floor: draw-probability-weighted quantile of sigma^2 over the stage-2 pool", f"{nw.floor_quantile:g}", RW, ""),
+                 ("carrier: loss weighting (recipe Rw)", "sigma^2: the window's own context day tokens (days, lag against the same hours earlier)",
+                  f"days {nw.context_days[0]}..{nw.context_days[1] - 1}, lag {nw.lag_days} days", RW, ""),
+                 ("carrier: loss weighting (recipe Rw)", "minimum observed pairs for sigma^2 (else the draw-weighted median raw weight)", f"{nw.min_pairs}", RW, ""),
+                 ("carrier: loss weighting (recipe Rw)", "observation flag threshold", f"{nw.observed_threshold:g}", RW, "")]
     return [{"group": g, "constant": c, "value": val, "where_fixed": w, "sensitivity": s, "component": "carrier"} for g, c, val, w, s in rows]
+
+
+def continuation_constants(v2rec=None):
+    """The origin-continuity layer's rows (ankyra_lite.continuation), with the test read's layer on / off as sensitivity."""
+    if str(CB.REPO) not in sys.path:
+        sys.path.append(str(CB.REPO))
+    from ankyra_lite import continuation as CT
+    c = CT.CONSTANTS
+    FIX = ("the 0.2.0 study's design on development windows (rho from the grids 2..12 h and 72, 120, 168 h; kappa fitted and rounded), "
+           "frozen before its development check and test read")
+    RULE = "the layer's rule (ankyra_lite.continuation.RULE, digest " + CT.DIGEST[:12] + "...), frozen with the constants"
+    h = ((v2rec or {}).get("test_read") or {}).get("headline", {}).get("layer on / off, nine, hourly")
+    sens = (f"layer on / off on the same carrier (test read, nine populations): {h['pct']:+.2f}% hourly, unit x month 95% "
+            f"{h['unit_month_interval_pct'][0]:+.2f} to {h['unit_month_interval_pct'][1]:+.2f} ({h['label']}; recipe_history.csv)") if h else ""
+    rows = [("continuation layer", "Delta(h) = kappa1 x_fast exp(-h / rho1) + kappa2 x_day exp(-h / rho2); F' = F exp(Delta)",
+             f"kappa1 {c.kappa1:g}, rho1 {c.rho1:g} h, kappa2 {c.kappa2:g}, rho2 {c.rho2:g} h", FIX, sens),
+            ("continuation layer", "x_fast: log ratio of the last observed hours to the same hours of the reference forecast day", f"{CT.FAST_HOURS} h", RULE, ""),
+            ("continuation layer", "x_day: log ratio of the last observed day to the reference forecast day", f"{CT.DAY_HOURS} h", RULE, ""),
+            ("continuation layer", "scale s (mean of the last hours, at least the floor) and e = fraction x s added to both sides of each ratio",
+             f"{CT.SCALE_HOURS} h, floor {CT.SCALE_FLOOR:g} kW, fraction {CT.EPS_FRACTION:g}", RULE, ""),
+            ("continuation layer", "clip of x_fast and x_day", f"+/- {CT.CLIP:g}", RULE, ""),
+            ("continuation layer", "reference day: the first of forecast days 1-7 in the last observed day's workday class (day type < 5), else day",
+             f"{CT.REFERENCE_DAYS} days, else day {CT.NO_MATCH_DAY + 1}; day types read at hour {CT.TYPE_HOUR}", RULE, ""),
+            ("continuation layer", "bypass: off-state and micro-load windows (unchanged); an unobserved span, or a span whose mean + e is at or below 0, gets x = 0",
+             "yes", RULE + "; the nonpositive-load rule is a release rule (no study window reached it)", ""),
+            ("continuation layer", "readouts: energy, level and peak read before the layer (readout rule A)", "yes", RULE, "")]
+    return [{"group": g, "constant": cc, "value": val, "where_fixed": w, "sensitivity": s_, "component": "continuation layer"} for g, cc, val, w, s_ in rows]
 
 
 def anchoring_constants():
@@ -190,19 +344,29 @@ def anchoring_constants():
 CONSTANT_FIELDS = ["group", "constant", "value", "where_fixed", "sensitivity", "component"]
 
 
-def write(out_dir, log=print):
-    """Write both files; returns (written names, record, descriptions)."""
+def write(out_dir, log=print, prods=None):
+    """Write both files; returns (written names, record, descriptions).  ``prods``: the products mapping (a 0.2.0 mapping
+    adds the 0.2.0 study's readings and the layer's and the weighting's constants)."""
     written, files, rec = [], {}, {}
+    v2 = bool((prods or {}).get("configuration"))
+    v2rows, v2rec = (v2_rows() if v2 else ([], None))
     if CB.SR_SCORE.exists():
         rows, rrec = recipe_history()
-        CB.write_rows("recipe_history.csv", [{k: ("" if r[k] is None else r[k]) for k in FIELDS} for r in rows], FIELDS)
+        fields = V2_FIELDS if v2rows else FIELDS
+        rows = [r | {"reading": "0.1.0 study reading of the recipe arms", "seed_group_pcts": ""} for r in rows] if v2rows else rows
+        CB.write_rows("recipe_history.csv", [{k: ("" if r[k] is None else r[k]) for k in fields} for r in rows + v2rows], fields)
         written.append("recipe_history.csv")
-        files["recipe_history.csv"] = "the study's one reading of the recipe arms (from-scratch stage, F, R, V): ankyra-lite's version history"
+        files["recipe_history.csv"] = ("the study's one reading of the recipe arms (from-scratch stage, F, R, V): ankyra-lite's version history"
+                                       + ("; and the 0.2.0 study's development check and test read" if v2rows else ""))
         rec["recipe_history"] = rrec
+        if v2rec is not None:
+            rec["recipe_history_v020"] = v2rec
     else:
         rrec = None
         log("recipe history: the study's score record is missing; recipe_history.csv not written")
-    crow = carrier_constants(rrec)
+    crow = carrier_constants(rrec, prods)
+    if ((prods or {}).get("continuation") or {}).get("enabled"):
+        crow += continuation_constants(v2rec)
     try:
         arow = anchoring_constants()
     except (OSError, KeyError) as e:                                                  # no release state to read
@@ -255,4 +419,24 @@ def summary(rec):
          f"  {cont['R_ens vs P3s | nine']['pct']:+.2f}%, plain continuation {cont['F_ens vs P3s | nine']['pct']:+.2f}%, proportional validation "
          f"{cont['V_ens vs P3s | nine']['pct']:+.2f}%.",
          "- These test windows had been read before; the reading gives directions, not a confirmation.", ""]
+    v2 = ((rec or {}).get("recipe_history_v020") or {}).get("test_read")
+    if v2:
+        h = v2.get("headline", {})
+
+        def c2(k):
+            v = h.get(k)
+            if not v:
+                return "-"
+            lo, hi = v.get("z_95_pct") or v["unit_month_interval_pct"]
+            return f"{v['pct']:+.2f}% ({lo:+.2f} to {hi:+.2f}; {v['label']})"
+        fin = v2.get("final") or {}
+        L += ["### Version 0.2.0 (the 0.2.0 study's development check and one test read)", "",
+              f"Configuration after the test read: `{fin.get('product')}` (weighting {fin.get('weighting')}, six seeds {fin.get('six_seeds')}, continuation "
+              f"layer {fin.get('layer')}; after selection: {fin.get('after_selection')}). Positive favours the first-named configuration; the 0.2.0 against",
+              "0.1.0 and the weighting rows have the seed layer of the two three-seed groups.", "",
+              "| Readout (nine populations) | Result |", "|---|---|"]
+        for k in ("0.2.0 vs 0.1.0, nine, hourly", "0.2.0 vs 0.1.0, nine, lead day 1", "layer on / off, nine, hourly", "weighting Rw6 vs R6, nine, hourly",
+                  "seeds R6 vs R3, nine, hourly"):
+            L.append(f"| {k.replace(', nine', '')} | {c2(k)} |")
+        L += ["", "- The test windows had been read many times before; this reading sets directions only.", ""]
     return L

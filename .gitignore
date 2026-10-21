@@ -20,23 +20,35 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Model weights. Every weights file is ignored except the released carrier checkpoints of 0.1.0:
-# checkpoints/<population>/seed<s>.pt (9 populations x seeds 0-2, one rule each below) and checkpoints/MANIFEST.json,
-# written by tools/export_checkpoints.py --out checkpoints. Train your own carriers into runs/ (ignored below), not
+# Model weights. Every weights file is ignored except the released carrier checkpoints and checkpoints/MANIFEST.json,
+# written by tools/export_checkpoints.py --out checkpoints:
+#   checkpoints/<population>/seed<s>.pt     recipe R, seeds 0-2 (the 0.1.x configuration, byte-identical to 0.1.x);
+#                                           seed[0-5] so that a six-seed recipe-R export is not silently dropped
+#   checkpoints/<population>/rw/seed<s>.pt  recipe Rw, seeds 0-5 (the 0.2.0 release configuration)
+# one rule per population and folder below (9 populations). Train your own carriers into runs/ (ignored below), not
 # checkpoints/: any other weights file under checkpoints/ stays ignored.
 *.pt
 *.pth
 *.ckpt
 *.safetensors
-!checkpoints/bdg2/seed[0-2].pt
-!checkpoints/goiener_confirm/seed[0-2].pt
-!checkpoints/households/seed[0-2].pt
-!checkpoints/cambridge/seed[0-2].pt
-!checkpoints/heew/seed[0-2].pt
-!checkpoints/eweld/seed[0-2].pt
-!checkpoints/oslo/seed[0-2].pt
-!checkpoints/drammen/seed[0-2].pt
-!checkpoints/cineldi/seed[0-2].pt
+!checkpoints/bdg2/seed[0-5].pt
+!checkpoints/goiener_confirm/seed[0-5].pt
+!checkpoints/households/seed[0-5].pt
+!checkpoints/cambridge/seed[0-5].pt
+!checkpoints/heew/seed[0-5].pt
+!checkpoints/eweld/seed[0-5].pt
+!checkpoints/oslo/seed[0-5].pt
+!checkpoints/drammen/seed[0-5].pt
+!checkpoints/cineldi/seed[0-5].pt
+!checkpoints/bdg2/rw/seed[0-5].pt
+!checkpoints/goiener_confirm/rw/seed[0-5].pt
+!checkpoints/households/rw/seed[0-5].pt
+!checkpoints/cambridge/rw/seed[0-5].pt
+!checkpoints/heew/rw/seed[0-5].pt
+!checkpoints/eweld/rw/seed[0-5].pt
+!checkpoints/oslo/rw/seed[0-5].pt
+!checkpoints/drammen/rw/seed[0-5].pt
+!checkpoints/cineldi/rw/seed[0-5].pt
 !checkpoints/MANIFEST.json
 
 # Raw data, data stores, saved forecasts and arrays are never committed

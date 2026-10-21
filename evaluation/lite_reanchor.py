@@ -6,12 +6,16 @@ pseudo-origins (the run directories' carrier.npz, the same arrays the evaluated 
 ``ankyra_lite.anchor.forecast`` window by window, exactly as the study's anchoring step did
 (tools_smallnet_sr_formal_v1._anchor_work: same history record, temp_sigma_std, daylight-saving region, peak readout):
 
-  ens         the three-seed ensemble with the default anchoring layer: the evaluated product itself, re-run.  Gate: it
-              must reproduce the stored product bit for bit; it also records the anchoring record (``anchoring_record``)
-  s0, s1, s2  one seed's carrier alone, default anchoring layer.  Where the mapping lists the stored single-seed
-              products (``seed_npz``), the tables read those and these modes are not run in full; a run on the first
-              windows only (``--limit``, cache name ``s<k>_first<n>``) is then a gate: it must reproduce the stored
-              single-seed product bit for bit
+  ens         the ensemble of the mapping's seeds with the default anchoring layer: the evaluated product itself,
+              re-run.  Gate: it must reproduce the stored product bit for bit; it also records the anchoring record
+              (``anchoring_record``)
+  s<k>        one seed's carrier alone, default anchoring layer (k = each seed of the mapping).  Where the mapping lists
+              the stored single-seed products (``seed_npz``) or the two three-seed groups (``group_npz``, six seeds),
+              the tables read those and these modes are not run in full; a run on the first windows only (``--limit``,
+              cache name ``s<k>_first<n>``) is then a gate: it must reproduce the stored single-seed product bit for bit
+  g<j>        a six-seed mapping's three-seed group j (seeds 0-2, 3-5; ``seed_groups``), default anchoring layer.  Run
+              on the first windows only as a gate (cache name ``g<j>_first<n>``): it must reproduce the stored group
+              product, and with the continuation layer its continued product, bit for bit
   no_within   ensemble, ``within_anchor=False`` (the carrier's within-day block is kept)
   lead_trust  ensemble, ``single_trust=False`` (within-day trust per lead block instead of one value per window)
   no_gap      ensemble, ``gap_tolerance=False`` (no short-gap rule in the pseudo-origin bookkeeping)
@@ -31,11 +35,23 @@ pseudo-origins (the run directories' carrier.npz, the same arrays the evaluated 
               an ablation; the tables of ``extra_tables.py`` read it (handover, lead weeks, within-day trust, whole-window
               weight, generic combinations, level-candidate hit rate)
 
-The seasonal-naive state rule is applied when the tables are scored, not here.  The cache lives in
-ANKYRA_LITE_EVAL_CACHE (default: the system temporary directory), one npz per population and mode, keyed by the
-product's label and checked against the product file's SHA-256.
+Continuation layer (a mapping whose ``continuation`` is enabled, version 0.2.0).  Every mode also stores the layered
+trajectory ``traj_cont``: ``ankyra_lite.continuation.apply_batch`` on the mode's float32 trajectory, with the layer's
+inputs (the 672 load hours before the origin, the type of the last observed day, the types of forecast days 1-7) and the
+mode's own state flags, returned as float32 like the study's continued products; its record (``cont_*``) is stored too.
+The ``ens`` and ``fields`` gates then also require ``traj_cont`` to equal the mapping's continued product bit for bit and
+the layer's inputs to equal those embedded in the product.
+
+The seasonal-naive state rule is applied when the tables are scored, not here.  No target is read: the population's
+record is read from the store files alone (store_arrays: the arrays of the study's loader tools_smallnet_carrier_v1.raw, without
+the earlier study's window arrays, saved forecasts and results files that loader opens for some populations), every unit's load at
+and after its last test origin is set to NaN as soon as it is loaded, and each window reads ``load[b, :o]`` only (plus the
+day types of its forecast month, a calendar).  The cache lives in ANKYRA_LITE_EVAL_CACHE (default: the system temporary
+directory), one npz per population and mode, keyed by the mapping's label (and configuration) and checked against the
+product file's SHA-256.
 
 Usage:  python -B evaluation/lite_reanchor.py --faces oslo [--modes ens,s0] [--limit 8] [--workers 2] [--recipe p3s]
+        python -B evaluation/lite_reanchor.py --faces oslo --products <mapping.json>
 """
 from __future__ import annotations
 
@@ -62,9 +78,10 @@ import numpy as np                                                 # noqa: E402
 
 MODES = {"ens": (None, {}), "s0": ((0,), {}), "s1": ((1,), {}), "s2": ((2,), {}),
          "no_within": (None, {"within_anchor": False}), "lead_trust": (None, {"single_trust": False}),
-         "no_gap": (None, {"gap_tolerance": False}), "no_micro": (None, {"micro_load_rule": False})}
+         "no_gap": (None, {"gap_tolerance": False}), "no_micro": (None, {"micro_load_rule": False})}      # a three-seed mapping
+ABLATION_MODES = ("no_within", "lead_trust", "no_gap", "no_micro")
 FIELD_MODES = {"fields": (None, {})}             # not an ablation: read by the handover and combination tables only
-SPECS = MODES | FIELD_MODES                      # every mode run_mode accepts
+SPECS = MODES | FIELD_MODES                      # every mode of a three-seed mapping
 LABELS = {"ens": "three-seed ensemble (the product, re-run)", "s0": "carrier of seed 0 alone", "s1": "carrier of seed 1 alone",
           "s2": "carrier of seed 2 alone", "no_within": "anchoring layer without the within-day anchoring",
           "lead_trust": "within-day trust per lead block instead of one value", "no_gap": "anchoring layer without the short-gap rule",
@@ -77,6 +94,9 @@ DAYS = CB.DAYS
 CANDIDATES = ("s_u", "l_u", "a_u", "s_w", "l_w", "a_w", "fm")   # the seven level candidates (level_weights keys)
 GENERIC = ("SN-week", "WeekProf4", "LYR-profile")             # generic partners of the whole-window combination
 YEAR_LAG = 364 * 24                                            # the last-year profile's lag (the panel's definition)
+COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+CONT_INFO = ("xf", "xd", "s", "eps", "missing_f", "missing_d", "clipped_f", "clipped_d", "nonpositive_f", "nonpositive_d", "matched",
+             "bypass_state", "d_star")                          # the layer's per-window record, stored as cont_<key>
 # per-window arrays of the fields mode: name -> (shape after the window axis, dtype, fill)
 FIELD_ARRAYS = {
     "daily": ((DAYS,), np.float64, np.nan),              # daily_means_kw (after the handover)
@@ -105,14 +125,70 @@ def _sha(p):
     return h.hexdigest()
 
 
+def cache_key(prods):
+    """The cache folder's key of a products mapping: its label, and its configuration when it names one (0.2.0), so that
+    the configurations of one version keep separate caches."""
+    return prods["label"] + (f" {prods['configuration']}" if prods.get("configuration") else "")
+
+
 def cache_file(label, face, mode, limit=None):
     name = mode if limit is None else f"{mode}_first{int(limit)}"
     return CB.CACHE / re.sub(r"[^A-Za-z0-9._-]+", "_", label) / face / f"{name}.npz"
 
 
+def seeds_of(entry):
+    return [int(s) for s in entry.get("seeds", (0, 1, 2))]
+
+
+def groups_of(entry):
+    """The three-seed groups of a six-seed mapping (one list of seeds per stored group product), else []."""
+    return [list(g) for g in entry.get("seed_groups") or []] if entry.get("group_paths") else []
+
+
+def layer_on(entry):
+    return bool(entry.get("layer"))
+
+
+def modes_for(entry):
+    """{mode: (seeds or None, anchoring kwargs)} of every mode this mapping entry accepts."""
+    out = {"ens": (None, {})}
+    for s in seeds_of(entry):
+        out[f"s{s}"] = ((s,), {})
+    for j, g in enumerate(groups_of(entry)):
+        out[f"g{j}"] = (tuple(g), {})
+    for m in ABLATION_MODES:
+        out[m] = MODES[m]
+    return out | FIELD_MODES
+
+
+def is_seed_mode(mode):
+    return bool(re.fullmatch(r"s\d+", mode))
+
+
+def is_group_mode(mode):
+    return bool(re.fullmatch(r"g\d+", mode))
+
+
+def label_of(mode, entry):
+    n = len(seeds_of(entry))
+    words = COUNT_WORDS.get(n, str(n))
+    if mode == "ens":
+        return f"{words}-seed ensemble (the product, re-run)"
+    if mode == "fields":
+        return f"{words}-seed ensemble (the product, re-run) with the anchoring layer's fields and the rebuilt pseudo-origin quantities"
+    if is_seed_mode(mode):
+        return f"carrier of seed {mode[1:]} alone"
+    if is_group_mode(mode):
+        g = groups_of(entry)[int(mode[1:])]
+        return f"three-seed group {mode[1:]} (seeds {g[0]}-{g[-1]})"
+    return LABELS[mode]
+
+
 def default_modes(entry):
-    """All modes, except the single seeds when the mapping lists stored single-seed products (they are read instead)."""
-    return [m for m in MODES if not (m in SEED_MODES and entry.get("seed_paths"))]
+    """All modes, except the single seeds when the mapping lists stored single-seed products or the stored three-seed
+    groups (they are read instead), and the groups themselves (gates only)."""
+    stored = bool(entry.get("seed_paths") or entry.get("group_paths"))
+    return [m for m in modes_for(entry) if m not in FIELD_MODES and not is_group_mode(m) and not (is_seed_mode(m) and stored)]
 
 
 def _gate(traj, level, peak, off, micro, zx, n):
@@ -124,20 +200,108 @@ def _gate(traj, level, peak, off, micro, zx, n):
     return g
 
 
+def _gate_layer(traj_cont, zc, n, inputs_equal):
+    """The layered trajectory against a continued product (float32, bit for bit) and the layer's inputs against those the
+    product embeds."""
+    g = {"continued_traj_equal": bool(np.array_equal(traj_cont, zc["traj"][:n])),
+         "continued_traj_max_abs_diff": float(np.nanmax(np.abs(traj_cont.astype(np.float64) - zc["traj"][:n]))),
+         "layer_inputs_equal_embedded": inputs_equal}
+    g["layer_pass"] = bool(g["continued_traj_equal"] and inputs_equal is not False)
+    return g
+
+
 def _paths():
     for p in (str(CB.REPO), str(CB.REL), str(CB.HKAD)):
         if p not in sys.path:
             sys.path.insert(0, p)
 
 
-def face_data(face, entry):
-    """The anchoring inputs of one population, as the study's anchoring step loaded them (tools_ankyra_simplify_v1.face);
-    on the corrected CINELDI store, load, temperature, day types and start timestamp come from that store."""
+def store_arrays(face):
+    """The store arrays of one population (load, temp, types, names, groups, start_iso) exactly as the study's loader
+    tools_smallnet_carrier_v1.raw returns them, but opening the store files only.  For Cambridge, HEEW and CINELDI the
+    study's loader opens the store alone and is called as it is; for the other populations it goes through the panel's
+    loader (tools_hcr_f1_panel_v1.load_face), which also opens the earlier study's window arrays (with their targets
+    and losses), its saved forecasts and its results file, and for BDG2 selects windows from the observed hours
+    after each origin.  Those reads are left out here; the arrays kept are built by the same steps from the same store
+    files (tests/test_store_arrays.py: equal to the study's loader on the nine populations)."""
     _paths()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        import tools_ankyra_simplify_v1 as S
-        d = S.face(face, "timesfm")
+        import tools_smallnet_carrier_v1 as V
+        import tools_hcr_within_anchor_r3_v1 as R3
+    P = R3.P
+    if face in R3.PA.SETS:                                       # the study's loader reads the store alone
+        return V.raw(face)
+    if face in P.EXT:
+        sp, _, rule = P.EXT[face]
+        z = np.load(sp, allow_pickle=False)
+        types = z["types"].astype(np.int64)
+        if types.ndim == 2:
+            if not (types == types[:1]).all():
+                raise SystemExit(f"{face}: day types differ between units")
+            types = types[0]
+        names = [str(x) for x in z["buildings"]]
+        groups = ([P.GROUP_OF[str(c)] for c in z["categories"]] if rule == "cat" else [str(g) for g in z["groups"]] if rule == "groups"
+                  else [rule] * len(names))
+        start_iso = str(z["start_iso"]) if "start_iso" in z.files else P.START_ISO
+        d = {"load": z["load"].astype(np.float64), "temp": z["temp"].astype(np.float32), "types": types, "names": names, "groups": groups,
+             "start_iso": start_iso}
+    elif face in P.EARLY:
+        paths, start_iso, pad = P.EARLY[face]
+        zs = [np.load(p, allow_pickle=False) for p in paths]
+        load = np.concatenate([z["load"].astype(np.float64) for z in zs])
+        temp = np.concatenate([z["temp"].astype(np.float32) for z in zs])
+        types = np.concatenate([z["types"].astype(np.int64) for z in zs])
+        names = [str(x) for z in zs for x in z["buildings"]]
+        groups = [P.GROUPS[int(g)] for z in zs for g in z["groups"]]
+        if len(set(names)) != len(names):
+            raise SystemExit(f"{face}: duplicate unit names")
+        if pad:
+            t0 = P.iso_t0(start_iso)
+            wd = np.array([(t0 + P.timedelta(hours=h)).weekday() for h in range(0, pad, 24)]).repeat(24)
+            tpad = temp[:, 8760 - pad:8760]
+            load = np.concatenate([np.full((len(load), pad), np.nan), load], 1)
+            temp = np.concatenate([tpad, temp], 1)
+            types = np.concatenate([np.tile(wd, (len(types), 1)), types], 1)
+        d = {"load": load, "temp": temp, "types": types, "names": names, "groups": groups, "start_iso": start_iso}
+    else:                                                        # the GoiEner non-household store
+        z = np.load(P.GOI, allow_pickle=False)
+        d = {"load": z["load"].astype(np.float64), "temp": z["temp"].astype(np.float32), "types": z["types"].astype(np.int64),
+             "names": [str(x) for x in z["buildings"]], "groups": [P.GROUPS[int(g)] for g in z["groups"]], "start_iso": P.START_ISO}
+    d["load"] = np.asarray(d["load"], np.float64)                # the study's loader's last steps (tools_smallnet_carrier_v1.raw)
+    d["temp"] = np.asarray(d["temp"], np.float32)
+    d["types"] = np.asarray(d["types"], np.int64)
+    d["groups"] = list(d["groups"])
+    d["names"] = list(d["names"])
+    return d
+
+
+def history_only(load, wb, wo):
+    """Set every unit's load at and after its last test origin to NaN (in place) and the rows of units without a test
+    window to NaN: no hour that is a target of the last window, and no unit outside the test set, stays in memory."""
+    last = {}
+    for b, o in zip(np.asarray(wb, np.int64), np.asarray(wo, np.int64)):
+        last[int(b)] = max(last.get(int(b), 0), int(o))
+    for b in range(load.shape[0]):
+        if b in last:
+            load[b, last[b]:] = np.nan
+        else:
+            load[b, :] = np.nan
+    return load
+
+
+def face_data(face, entry, wb=None, wo=None):
+    """The anchoring inputs of one population (load, temperature, day types, names, groups, start timestamp, region), as
+    the study's anchoring step loaded them (tools_ankyra_simplify_v1.face), from the store files alone (store_arrays: the
+    arrays of the study's store loader tools_smallnet_carrier_v1.raw); on the corrected CINELDI store,
+    load, temperature, day types and start timestamp come from that store.  With the windows (wb, wo), the load at and
+    after each unit's last test origin is set to NaN (history_only)."""
+    _paths()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        import tools_smallnet_carrier_v1 as V
+    d = store_arrays(face)
+    d["region"] = V._region(face, d)
     if face == "cineldi" and entry["store"] == "corrected":
         store, _ = CB.corrected_store_info()
         z = np.load(Path(store) / "store.npz", allow_pickle=False)
@@ -146,6 +310,8 @@ def face_data(face, entry):
         d["temp"] = z["temp"].astype(np.float32)
         d["types"] = z["types"].astype(np.int64)
         d["start_iso"] = str(z["start_iso"])
+    if wb is not None:
+        d["load"] = history_only(d["load"], wb, wo)
     sigma = float(json.loads(Path(entry["prep_path"]).read_text(encoding="utf-8"))["sigma"])
     return d, sigma
 
@@ -154,7 +320,8 @@ def carriers(entry, seeds, wb, wo):
     """Sum in seed order in float64 over the chosen seeds, divided by their number (the study's ensemble), and the
     pseudo-origins every chosen seed has."""
     Sp, Sh = None, None
-    runs = entry["run_paths"] if seeds is None else [entry["run_paths"][s] for s in seeds]
+    order = seeds_of(entry)
+    runs = entry["run_paths"] if seeds is None else [entry["run_paths"][order.index(int(s))] for s in seeds]
     for rd in runs:
         q = np.load(Path(rd) / "carrier.npz", allow_pickle=False)
         if not (np.array_equal(q["building"], wb) and np.array_equal(q["origin"], wo)):
@@ -172,28 +339,31 @@ _D = {}
 
 
 def _work(args):
-    face, mode, idx, entry, wb, wo = args
+    face, mode, idx, entry, wb, wo, spec, layer = args
     _paths()
     import torch
     from ankyra_lite import anchor as A
     from ankyra_lite.anchor import readouts as RO
     torch.set_num_threads(1)
     warnings.filterwarnings("ignore")
+    CT = None
+    if layer:
+        from ankyra_lite import continuation as CT
     if (face, mode) not in _D:
         _D.clear()
-        d, sg = face_data(face, entry)
-        seeds, _ = SPECS[mode]
-        Sp, Sh = carriers(entry, seeds, wb, wo)
+        d, sg = face_data(face, entry, wb, wo)
+        Sp, Sh = carriers(entry, spec[0], wb, wo)
         _D[(face, mode)] = (d, sg, Sp, Sh)
     d, sg, Sp, Sh = _D[(face, mode)]
-    kw = SPECS[mode][1]
+    kw = spec[1]
     out = []
     for i in idx:
         b, o = int(wb[i]), int(wo[i])
+        pre_load = d["load"][b, :o]                                                # the only load this window reads
         ty = d["types"] if d["types"].ndim == 1 else d["types"][b]
         tmp = d["temp"][b] if d["temp"].ndim == 2 else d["temp"]
-        h = A.History(load_kw=d["load"][b, :o], temperature_c=tmp[:o], day_types=ty[:o + HORIZON], start_timestamp=d["start_iso"],
-                      observed=np.isfinite(d["load"][b, :o]))
+        h = A.History(load_kw=pre_load, temperature_c=tmp[:o], day_types=ty[:o + HORIZON], start_timestamp=d["start_iso"],
+                      observed=np.isfinite(pre_load))
         F = {k: Sp[i, k] for k in range(K + 1) if Sh[i, k]}
         row = {"i": i, "err": ""}
         try:
@@ -202,7 +372,7 @@ def _work(args):
             row["err"] = type(e).__name__
             out.append(row)
             continue
-        ctx = d["load"][b, o - CONTEXT:o]
+        ctx = pre_load[o - CONTEXT:o]
         ct = ty[o - CONTEXT:o:HR].astype(np.int64)
         tt = ty[o:o + HORIZON:HR].astype(np.int64)
         tr = np.asarray(r.trajectory_kw, np.float64)
@@ -214,6 +384,13 @@ def _work(args):
         rec = r.anchoring_record or {}
         row.update(traj=tr.astype(np.float32), level=float(r.level_kw), peak=pk, off=bool(r.off_state), micro=bool(r.micro_load),
                    stats=[float(rec.get(k, float("nan"))) for k in STATS])
+        if CT is not None:                                                         # the continuation layer on the float32 trajectory
+            pre, lt, dt = CT.window_inputs(pre_load, ty, o)
+            try:
+                Fp, info = CT.apply_batch(row["traj"][None], pre[None], [lt], [dt], [row["off"] or row["micro"]])
+                row.update(traj_cont=Fp[0].astype(np.float32), cont={k: info[k][0] for k in CONT_INFO}, cont_in=(pre, lt, tuple(dt)))
+            except Exception as e:                                                 # noqa: BLE001
+                row["err"] += f"layer:{type(e).__name__};"
         if mode in FIELD_MODES:
             try:
                 row["fields"] = window_fields(h, F, r, d["groups"][b], sg, d["region"](b))
@@ -339,33 +516,52 @@ def window_fields(h, F, r, group, sigma, region):
     return out
 
 
+def _inputs_equal(rows, zx, n):
+    """The layer's inputs of the re-run against those the product embeds (cont_pre672, cont_last_type, cont_day_types);
+    None when the product embeds none."""
+    if "cont_pre672" not in zx.files:
+        return None
+    for r in rows:
+        if "cont_in" not in r:
+            continue
+        i = r["i"]
+        pre, lt, dt = r["cont_in"]
+        if not (np.array_equal(pre, zx["cont_pre672"][i], equal_nan=True) and lt == int(zx["cont_last_type"][i])
+                and tuple(int(x) for x in zx["cont_day_types"][i]) == dt):
+            return False
+    return True
+
+
 def run_mode(face, mode, entry, label, workers=2, limit=None):
     """Anchor one population in one mode (cached).  Returns the record."""
     f = cache_file(label, face, mode, limit)
     meta = f.with_suffix(".json")
     psha = _sha(entry["npz_path"])
+    layer = layer_on(entry)
     if f.exists() and meta.exists():
         m = json.loads(meta.read_text(encoding="utf-8"))
         if m.get("product_sha256") == psha and m.get("limit") == limit:
             return m
     zx = np.load(entry["npz_path"], allow_pickle=False)
     wb, wo = zx["building"].astype(np.int64), zx["origin"].astype(np.int64)
+    specs = modes_for(entry)
+    spec = specs[mode]
     if mode == "no_micro" and not zx["micro"].any():
-        m = {"face": face, "mode": mode, "label": LABELS[mode], "identical_to": "ens", "reason": "no micro-load window in the product",
+        m = {"face": face, "mode": mode, "label": label_of(mode, entry), "identical_to": "ens", "reason": "no micro-load window in the product",
              "product_sha256": psha, "limit": limit}
         f.parent.mkdir(parents=True, exist_ok=True)
         meta.write_bytes(json.dumps(m, indent=1).encode("utf-8"))
         return m
     n = len(wb) if limit is None else min(int(limit), len(wb))
-    e = {k: v for k, v in entry.items() if k in ("store", "prep_path", "run_paths", "npz_path")}
+    e = {k: v for k, v in entry.items() if k in ("store", "prep_path", "run_paths", "npz_path", "seeds")}
     e = {k: (str(v) if isinstance(v, Path) else ([str(x) for x in v] if k == "run_paths" else v)) for k, v in e.items()}
-    t0, tc = time.time(), time.process_time()
+    t0 = time.time()
     res = [None] * n
     if workers <= 1:
-        parts = [_work((face, mode, list(range(n)), e, wb, wo))]
+        parts = [_work((face, mode, list(range(n)), e, wb, wo, spec, layer))]
     else:
         with ProcessPoolExecutor(max_workers=workers) as ex:
-            parts = list(ex.map(_work, [(face, mode, list(range(s, n, workers)), e, wb, wo) for s in range(workers)]))
+            parts = list(ex.map(_work, [(face, mode, list(range(s, n, workers)), e, wb, wo, spec, layer) for s in range(workers)]))
     for part in parts:
         for r in part:
             res[r["i"]] = r
@@ -379,8 +575,17 @@ def run_mode(face, mode, entry, label, workers=2, limit=None):
         i = r["i"]
         traj[i], level[i], peak[i], off[i], micro[i], stats[i] = r["traj"], r["level"], r["peak"], r["off"], r["micro"], r["stats"]
     extra, ferrs = {}, []
+    if layer:
+        extra["traj_cont"] = np.full((n, HORIZON), np.nan, np.float32)
+        proto = {"xf": np.nan, "xd": np.nan, "s": np.nan, "eps": np.nan, "d_star": -1}
+        for k in CONT_INFO:
+            extra[f"cont_{k}"] = (np.full(n, proto[k], np.int64 if k == "d_star" else np.float64) if k in proto else np.zeros(n, bool))
+        for r in ok:
+            extra["traj_cont"][r["i"]] = r["traj_cont"]
+            for k in CONT_INFO:
+                extra[f"cont_{k}"][r["i"]] = r["cont"][k]
     if mode in FIELD_MODES:
-        extra = {k: np.full((n,) + s, fill, dt) for k, (s, dt, fill) in FIELD_ARRAYS.items()}
+        extra |= {k: np.full((n,) + s, fill, dt) for k, (s, dt, fill) in FIELD_ARRAYS.items()}
         for r in ok:
             if r.get("ferr"):
                 ferrs.append((r["i"], r["ferr"]))
@@ -391,11 +596,18 @@ def run_mode(face, mode, entry, label, workers=2, limit=None):
     tmp = f.with_name(f.stem + ".part.npz")
     np.savez_compressed(tmp, building=wb[:n], origin=wo[:n], traj=traj, level=level, peak=peak, off=off, micro=micro, stats=stats, **extra)
     os.replace(tmp, f)
-    m = {"face": face, "mode": mode, "label": LABELS[mode], "kwargs": SPECS[mode][1], "seeds": SPECS[mode][0], "windows": n,
-         "errors": errs[:20], "error_count": len(errs), "wall_seconds": time.time() - t0, "workers": workers,
+    m = {"face": face, "mode": mode, "label": label_of(mode, entry), "kwargs": spec[1], "seeds": list(spec[0]) if spec[0] is not None else None,
+         "windows": n, "errors": errs[:20], "error_count": len(errs), "wall_seconds": time.time() - t0, "workers": workers,
          "product_sha256": psha, "limit": limit, "utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    if layer:
+        m["continuation"] = {"constants": "ankyra_lite.continuation.CONSTANTS", "stored": "traj_cont (float32) and cont_* per window"}
+    inputs_equal = _inputs_equal(ok, zx, n) if layer else None
     if mode == "ens" or mode in FIELD_MODES:                            # gate: the stored product, bit for bit
         m["gate"] = _gate(traj, level, peak, off, micro, zx, n)
+        if layer:
+            zc = np.load(entry["continued_path"], allow_pickle=False)
+            m["gate"].update(_gate_layer(extra["traj_cont"], zc, n, inputs_equal))
+            m["gate"]["pass"] = bool(m["gate"]["pass"] and m["gate"]["layer_pass"])
     if mode in FIELD_MODES:                                              # and the rebuilt quantities: the call's own fields
         st = off | micro
         fo, rb = extra["fields_ok"], extra["rebuild_ok"]
@@ -404,12 +616,24 @@ def run_mode(face, mode, entry, label, workers=2, limit=None):
                        "rebuilt_reproduce_the_call": int(rb.sum()), "rebuilt_mismatches": int((fo & ~rb).sum())}
         m["gate"]["fields_pass"] = bool(not ferrs and m["fields"]["fields_on_every_non_state_window"] and m["fields"]["rebuilt_mismatches"] == 0)
         m["gate"]["pass"] = bool(m["gate"]["pass"] and m["gate"]["fields_pass"])
-    elif mode in SEED_MODES and entry.get("seed_paths"):                 # gate: the stored single-seed product, bit for bit
-        zs = np.load(entry["seed_paths"][int(mode[1:])], allow_pickle=False)
+    elif is_seed_mode(mode) and entry.get("seed_paths"):                 # gate: the stored single-seed product, bit for bit
+        k = seeds_of(entry).index(int(mode[1:]))
+        zs = np.load(entry["seed_paths"][k], allow_pickle=False)
         if not (np.array_equal(zs["building"][:n], wb[:n]) and np.array_equal(zs["origin"][:n], wo[:n])):
             raise SystemExit(f"{face} {mode}: the stored single-seed product has other windows")
         m["gate"] = _gate(traj, level, peak, off, micro, zs, n)
-        m["gate"]["against"] = CB.show(entry["seed_paths"][int(mode[1:])])
+        m["gate"]["against"] = CB.show(entry["seed_paths"][k])
+    elif is_group_mode(mode) and entry.get("group_paths"):               # gate: the stored three-seed group product, bit for bit
+        j = int(mode[1:])
+        zg = np.load(entry["group_paths"][j], allow_pickle=False)
+        if not (np.array_equal(zg["building"][:n], wb[:n]) and np.array_equal(zg["origin"][:n], wo[:n])):
+            raise SystemExit(f"{face} {mode}: the stored group product has other windows")
+        m["gate"] = _gate(traj, level, peak, off, micro, zg, n)
+        m["gate"]["against"] = CB.show(entry["group_paths"][j])
+        if layer and entry.get("group_continued_paths"):
+            zgc = np.load(entry["group_continued_paths"][j], allow_pickle=False)
+            m["gate"].update(_gate_layer(extra["traj_cont"], zgc, n, _inputs_equal(ok, zg, n)))
+            m["gate"]["pass"] = bool(m["gate"]["pass"] and m["gate"]["layer_pass"])
     meta.write_bytes(json.dumps(m, indent=1).encode("utf-8"))
     return m
 
@@ -432,20 +656,26 @@ def load_mode(label, face, mode, limit=None):
 def run(faces, modes=None, workers=2, prods=None, limit=None, seed_gate=8, fields=True):
     """Re-anchor the populations in the given modes (default: default_modes, and with ``fields`` the fields mode).
     ``seed_gate`` > 0: where stored single-seed products are used, seed 0 is also re-anchored on the first
-    ``seed_gate`` windows and must reproduce its stored product bit for bit (one worker; cache name s0_first<n>)."""
+    ``seed_gate`` windows and must reproduce its stored product bit for bit (one worker; cache name s0_first<n>); where
+    the two stored three-seed groups are used, both groups are (g0_first<n>, g1_first<n>)."""
     prods = prods or CB.load_products()
+    key = cache_key(prods)
     rec = {}
     for face in faces:
         entry = prods["faces"].get(face)
         if entry is None or not entry["npz_path"].exists():
             continue
         jobs = [(m, limit, workers) for m in (modes or default_modes(entry) + (list(FIELD_MODES) if fields else []))]
-        if seed_gate and entry.get("seed_paths") and not any(m in SEED_MODES for m, _, _ in jobs):
+        if seed_gate and entry.get("group_paths"):
+            jobs += [(f"g{j}", int(seed_gate), 1) for j in range(len(groups_of(entry))) if not any(m == f"g{j}" for m, _, _ in jobs)]
+        elif seed_gate and entry.get("seed_paths") and not any(is_seed_mode(m) for m, _, _ in jobs):
             jobs.append(("s0", int(seed_gate), 1))
         for mode, lim, wk in jobs:
+            if mode not in modes_for(entry):
+                raise SystemExit(f"{face}: unknown mode {mode!r} for this mapping (modes: {', '.join(modes_for(entry))})")
             CB.wait_for_memory(f"re-anchor {face} {mode}")                     # ANKYRA_LITE_MIN_FREE_GB (default 5)
             t0 = time.time()
-            m = run_mode(face, mode, entry, prods["label"], workers=wk, limit=lim)
+            m = run_mode(face, mode, entry, key, workers=wk, limit=lim)
             rec[f"{face}|{mode}" + ("" if lim is None else f"|first{lim}")] = m
             CB.log(f"re-anchor {face} {mode}{'' if lim is None else f' (first {lim} windows)'}: windows {m.get('windows')} "
                    f"errors {m.get('error_count')} gate {m.get('gate')} "
@@ -459,9 +689,10 @@ if __name__ == "__main__":
     ap.add_argument("--modes", default=None)
     ap.add_argument("--workers", type=int, default=2)
     ap.add_argument("--limit", type=int, default=None, help="first N windows only (development, or the single-seed gate)")
-    ap.add_argument("--recipe", default="R", choices=sorted(CB.RECIPE_PRODUCTS), help="products mapping (R: the release)")
-    ap.add_argument("--seed-gate", type=int, default=8, help="windows of the single-seed gate (0: none)")
+    ap.add_argument("--recipe", default="R", choices=sorted(CB.RECIPE_PRODUCTS), help="products mapping (R: evaluation/products.json)")
+    ap.add_argument("--products", default=None, help="another products mapping (overrides --recipe)")
+    ap.add_argument("--seed-gate", type=int, default=8, help="windows of the single-seed / seed-group gate (0: none)")
     a = ap.parse_args()
     out = run([f for f in a.faces.split(",") if f], a.modes.split(",") if a.modes else None, a.workers,
-              prods=CB.load_products(CB.RECIPE_PRODUCTS[a.recipe]), limit=a.limit, seed_gate=a.seed_gate)
+              prods=CB.load_products(Path(a.products) if a.products else CB.RECIPE_PRODUCTS[a.recipe]), limit=a.limit, seed_gate=a.seed_gate)
     print(json.dumps({k: {x: v.get(x) for x in ("windows", "error_count", "gate", "wall_seconds", "identical_to")} for k, v in out.items()}, indent=1))

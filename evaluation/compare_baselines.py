@@ -31,6 +31,13 @@ months and seasonal naive from the corrected store.  LSTM-T-KAN-M on CINELDI is 
 and seeds; KAN_FIX_DIR, keyed by the original origin numbers like that re-scoring).  If that retrain is missing or its record
 does not pass, the original-store forecast is used and every CINELDI row carries CORRECTED_CINELDI_FLAG.
 
+Version 0.2.0.  A mapping written by tools/products_for_configuration.py names a configuration (recipe R or Rw, three or
+six seeds, the origin-continuity layer on or off).  With the layer on, ``continued_npz`` is the product after the layer:
+the hourly tables score its trajectory, while level, peak and the energy tables read the product before the layer
+(``npz``, readout rule A); every continued product is first checked, with no target read, to be the release layer
+(ankyra_lite.continuation) applied to the stored float32 trajectory, bit for bit.  ``--recipe r010`` (products_0_1.json)
+reproduces the tables of 0.1.x.
+
 Scoring-code check (step A).  Before the reference is replaced, the late-window rows of ten release tables are
 recomputed with the release's own reference forecaster and compared with the published CSV files, read from the
 release repository's commit 487e0d2 (ANKYRA_ORIGINAL_REV; ``git show``, read-only) so that later or uncommitted edits
@@ -39,7 +46,8 @@ scoring code only; its numbers are not written to any result table.  A table tha
 
 Paths.  ANKYRA_LITE_RESEARCH_ROOT (default <repo>/../HKAD_V3) is the research folder, ANKYRA_ORIGINAL_ROOT (default
 <repo>/../Building_load_ANKYRA) the first release repository; both are read-only (an audit hook refuses any write
-there).  ANKYRA_LITE_EVAL_CACHE (default: the system temporary directory) holds the re-anchoring cache.
+there; the cache and the folders named by ANKYRA_LITE_WRITABLE excepted).  ANKYRA_LITE_EVAL_CACHE (default: the system
+temporary directory) holds the re-anchoring cache.
 
 Usage (from the repository root, CPU only):
   python -B evaluation/compare_baselines.py                      every table, nine populations (+ Suzhou park in the check)
@@ -48,7 +56,9 @@ Usage (from the repository root, CPU only):
   python -B evaluation/compare_baselines.py --faces oslo,bdg2 --out <dir>      a development run into another directory
   python -B evaluation/compare_baselines.py --recipe p3s --out <dir>           the from-scratch stage instead of the release
   python -B evaluation/compare_baselines.py --summary-only       rebuild SUMMARY.md from the JSON record
-  python -B evaluation/compare_baselines.py --check-products     list the products and whether their files exist
+  python -B evaluation/compare_baselines.py --check-products     list the products and whether their files exist (and check the
+                                                                 continued products against the release layer)
+  python -B evaluation/compare_baselines.py --recipe r010 --out <dir>          the 0.1.x tables
   python -B evaluation/compare_baselines.py --budget             training_budget_sensitivity.csv alone (budget_tables.py),
                                                                  merged into an existing results directory
   python -B evaluation/compare_baselines.py --supplement         only the files added on 19 October 2026 (budget, handover,
@@ -117,8 +127,10 @@ HOURLY_XCHECK = AO / "smallnet_vs_baselines_v1" / "results.json"      # earlier 
 NEAR_ZERO = AO / "bdg2_nearzero_sensitivity_v1" / "results.json"      # the three near-zero BDG2 meters (release rule)
 SR_SCORE = AO / "smallnet_sr_formal_v1" / "score_all.json"            # the study's one reading of the recipe arms (recipe history)
 SPAN_CENSUS = HKAD / "smallnet_overnight_20261017" / "round_b" / "span_coverage_census.json"   # switch-layer window counts
-PRODUCTS = HERE / "products.json"                                     # the released recipe (span return)
-RECIPE_PRODUCTS = {"R": PRODUCTS, "p3s": HERE / "products_p3s.json"}  # --recipe
+PRODUCTS = HERE / "products.json"                                     # the released configuration
+RECIPE_PRODUCTS = {"R": PRODUCTS, "p3s": HERE / "products_p3s.json",  # --recipe
+                   "r010": HERE / "products_0_1.json",                # the mapping of the 0.1.x releases (recipe R, three seeds, no layer)
+                   "candidate": HERE / "products_v020_candidate.json"}  # tools/products_for_configuration.py's default output
 ORIGINAL_REV = os.environ.get("ANKYRA_ORIGINAL_REV", "487e0d2")        # the committed release state the anchoring layer was copied from
 
 REF_A, REF_B = "F1-off", "ankyra-lite"                                # panel key of the release reference; key of the product
@@ -156,6 +168,9 @@ def _norm(p):
 
 
 _RO_ROOTS = tuple(_norm(p) for p in (HKAD, REL))
+# folders that stay writable inside a read-only tree: the re-anchoring cache and the folders named by ANKYRA_LITE_WRITABLE
+# (os.pathsep-separated; e.g. a regeneration folder kept beside the research outputs)
+_WRITABLE = tuple(_norm(p) for p in [CACHE] + [Path(x).resolve() for x in os.environ.get("ANKYRA_LITE_WRITABLE", "").split(os.pathsep) if x])
 _WRITE_FLAGS = os.O_WRONLY | os.O_RDWR | os.O_APPEND | os.O_CREAT | os.O_TRUNC
 
 
@@ -163,6 +178,8 @@ def _in_read_only(path):
     try:
         p = _norm(path)
     except (TypeError, ValueError):
+        return False
+    if any(p == w or p.startswith(w + os.sep) for w in _WRITABLE):
         return False
     return any(p == r or p.startswith(r + os.sep) for r in _RO_ROOTS)
 
@@ -266,10 +283,20 @@ def load_products(path=PRODUCTS):
     started from), span_path (the returned validation span) and variant_paths (other recipe arms)."""
     rec = json.loads(Path(path).read_text(encoding="utf-8"))
     rec["path"] = Path(path)
+    layer = bool((rec.get("continuation") or {}).get("enabled"))
 
     def res(e):
         e = dict(e)
         e["npz_path"] = AO.parent / e["npz"]
+        # version 0.2.0 (tools/products_for_configuration.py): the product after the continuation layer, the three-seed groups,
+        # the loss weights' record; absent keys keep the 0.1.x reading unchanged
+        e["continued_path"] = AO.parent / e["continued_npz"] if (layer and e.get("continued_npz")) else None
+        e["group_paths"] = [AO.parent / r for r in e.get("group_npz", [])]
+        e["group_continued_paths"] = [AO.parent / r for r in e.get("group_continued_npz", [])] if layer else []
+        e["weights_path"] = AO.parent / e["weights_record"] if e.get("weights_record") else None
+        e["seeds"] = list(rec.get("seeds", (0, 1, 2)))
+        e["seed_groups"] = [list(g) for g in rec.get("seed_groups", [])]
+        e["layer"] = layer
         e["run_paths"] = [AO.parent / r for r in e.get("run_dirs", [])]
         e["prep_path"] = AO.parent / e["prep"] if e.get("prep") else None
         e["seed_paths"] = [AO.parent / r for r in e.get("seed_npz", [])]
@@ -301,6 +328,77 @@ def check_products(prods):
                                   "seed_products_exist": all(p.exists() for p in e["seed_paths"]) if e["seed_paths"] else None,
                                   "start_runs_exist": all(p.exists() for p in e["start_paths"]) if e["start_paths"] else None,
                                   "variants_exist": {k: p.exists() for k, p in e["variant_paths"].items()} or None}
+            if e.get("continued_path") is not None:
+                out[f"{kind}:{f}"]["continued_exists"] = e["continued_path"].exists()
+            if e.get("group_paths"):
+                out[f"{kind}:{f}"]["groups_exist"] = all(p.exists() for p in e["group_paths"] + e["group_continued_paths"])
+            if e.get("weights_path") is not None:
+                out[f"{kind}:{f}"]["weights_record_exists"] = e["weights_path"].exists()
+    return out
+
+
+# ----------------------------------------------------------------------------- the continuation layer (version 0.2.0)
+def _package():
+    if str(REPO) not in sys.path:
+        sys.path.append(str(REPO))                                    # this repository's package (ankyra_lite)
+    from ankyra_lite import continuation as CT
+    return CT
+
+
+def layer_constants(prods):
+    """The release layer's constants when the mapping switches the layer on, checked against the mapping's record
+    (constants and rule digest); None when the layer is off or the mapping has no continuation entry (0.1.x)."""
+    c = prods.get("continuation") or {}
+    if not c.get("enabled"):
+        return None
+    CT = _package()
+    want = {"kappa1": CT.CONSTANTS.kappa1, "rho1": CT.CONSTANTS.rho1, "kappa2": CT.CONSTANTS.kappa2, "rho2": CT.CONSTANTS.rho2}
+    if c.get("constants") != want or c.get("rule_digest") != CT.DIGEST:
+        raise SystemExit("products: the mapping's continuation constants or rule differ from ankyra_lite.continuation")
+    return CT.CONSTANTS
+
+
+def apply_layer(F, pre, last_type, day_types, state):
+    """The release layer on stored float32 trajectories, as the study's continued products were made: (F' as float32,
+    info).  pre (n, 672), last_type (n,), day_types (n, 7) are the layer's pre-origin inputs; state windows pass through."""
+    CT = _package()
+    F = np.asarray(F)
+    Fp, info = CT.apply_batch(F, pre, last_type, day_types, state, CT.CONSTANTS)
+    return Fp.astype(F.dtype), info
+
+
+def continued_check(zx, zc):
+    """The continued product zc against the product zx before the layer, read with no target: same windows, state flags,
+    level and peak (readout rule A), traj_anchored = zx's trajectory, and every trajectory equal to the release layer
+    applied to zx's stored float32 trajectory with zx's embedded inputs, bit for bit (state windows: unchanged).
+    Returns (record, F' of the release layer, its info)."""
+    st = np.asarray(zx["off"]) | np.asarray(zx["micro"])
+    Fp, info = apply_layer(zx["traj"], zx["cont_pre672"], zx["cont_last_type"], zx["cont_day_types"], st)
+    zst = np.asarray(zc["state"]) if "state" in zc.files else np.asarray(zc["off"]) | np.asarray(zc["micro"])
+    g = {"windows_equal": bool(np.array_equal(zc["building"], zx["building"]) and np.array_equal(zc["origin"], zx["origin"])),
+         "state_flags_equal": bool(np.array_equal(zst, st)),
+         "level_peak_equal (readout A)": bool(np.array_equal(zc["level"], zx["level"]) and np.array_equal(zc["peak"], zx["peak"])),
+         "traj_anchored_equal": bool("traj_anchored" in zc.files and np.array_equal(zc["traj_anchored"], zx["traj"])),
+         "release_layer_bitwise": bool(np.array_equal(zc["traj"], Fp)),
+         "state_windows_unchanged": bool(np.array_equal(zc["traj"][st], zx["traj"][st])),
+         "windows": int(len(st)), "state_windows": int(st.sum()), "max_abs_delta": float(info["max_abs_delta"]),
+         "nonpositive_spans": int(info["nonpositive_f"].sum() + info["nonpositive_d"].sum())}
+    g["pass"] = all(v for k, v in g.items() if isinstance(v, bool))
+    return g, Fp, info
+
+
+def check_continued_products(prods):
+    """continued_check for every population of a mapping with the layer on (no target is read)."""
+    out = {}
+    if layer_constants(prods) is None:
+        return out
+    for f, e in prods["faces"].items():
+        zx = np.load(e["npz_path"], allow_pickle=False)
+        zc = np.load(e["continued_path"], allow_pickle=False)
+        out[f] = continued_check(zx, zc)[0]
+        for j, (gp, gc) in enumerate(zip(e["group_paths"], e["group_continued_paths"])):
+            out[f][f"group {j}"] = continued_check(np.load(gp, allow_pickle=False), np.load(gc, allow_pickle=False))[0]["pass"]
+        del zx, zc
     return out
 
 
@@ -586,24 +684,43 @@ def product(T, face, P, entry):
     if not np.array_equal(D["y"][ix], P["yL"]):
         raise SystemExit(f"{face}: product targets differ from the panel's targets")
     raw = zx["traj"][ix].astype(np.float64)
+    raw_pre, cont, gate = raw, None, None
+    if entry.get("continued_path") is not None:                  # version 0.2.0: the hourly trajectory after the continuation layer
+        zc = np.load(entry["continued_path"], allow_pickle=False)
+        gate, Fp, cinfo = continued_check(zx, zc)
+        if not gate["pass"]:
+            raise SystemExit(f"{face}: the continued product is not the release layer applied to the product ({gate})")
+        raw = zc["traj"][ix].astype(np.float64)                  # level and peak stay those of the product (readout rule A)
+        cont = {"pre": np.asarray(zx["cont_pre672"])[ix], "last_type": np.asarray(zx["cont_last_type"])[ix],
+                "day_types": np.asarray(zx["cont_day_types"])[ix], "info": {k: np.asarray(v)[ix] for k, v in cinfo.items() if isinstance(v, np.ndarray)}}
+        del zc, Fp
     state = st[ix]
     SN, snp = D["SN"][ix], D["snp"][ix]
     traj = np.where(state[:, None], SN, raw)
+    traj_pre = np.where(state[:, None], SN, raw_pre) if cont is not None else traj
     level = np.where(state, SN.mean(1), zx["level"][ix].astype(np.float64))
     peak = np.where(state, snp, zx["peak"][ix].astype(np.float64))
     month_same = bool(np.array_equal(D["month"][ix], P["mL"]))
-    pk = T.PK.peak_readout_scalar(traj, P["ctxL"], P["ctL"], P["ttL"], 1.0)        # release readout on the stored trajectory
+    pk = T.PK.peak_readout_scalar(traj_pre, P["ctxL"], P["ctL"], P["ttL"], 1.0)    # release readout on the stored trajectory (before the layer)
     rel = np.abs(pk - peak) / np.maximum(np.abs(peak), 1e-9)
     info = {"file": show(entry["npz_path"]), "store": entry["store"], "origin_shift_h": int(pad), "windows": int(len(ix)),
             "state_windows_seasonal_naive": int(state.sum()), "months_equal_panel_months": month_same,
             "peak_readout_recomputed_vs_stored_max_rel": float(rel.max()),
-            "level_vs_trajectory_mean_max_rel": float((np.abs(level - traj.mean(1)) / np.maximum(np.abs(traj.mean(1)), 1e-9)).max()),
-            "level_vs_trajectory_mean_windows_over_1e-6": int((np.abs(level - traj.mean(1)) > 1e-6 * np.maximum(1.0, np.abs(traj.mean(1)))).sum())}
+            "level_vs_trajectory_mean_max_rel": float((np.abs(level - traj_pre.mean(1)) / np.maximum(np.abs(traj_pre.mean(1)), 1e-9)).max()),
+            "level_vs_trajectory_mean_windows_over_1e-6": int((np.abs(level - traj_pre.mean(1)) > 1e-6 * np.maximum(1.0, np.abs(traj_pre.mean(1)))).sum())}
+    if cont is not None:
+        ns = ~state
+        dm = np.abs(traj.mean(1) - level)[ns] / np.maximum(np.abs(level[ns]), 1e-9)
+        info |= {"continued_file": show(entry["continued_path"]), "continuation_gate": gate,
+                 "trajectory_before_the_layer": "level, peak and the projection check above are read before the layer (readout rule A)",
+                 "delivered_mean_vs_energy_readout_rel": ({"p50": float(np.percentile(dm, 50)), "p99": float(np.percentile(dm, 99)), "max": float(dm.max())}
+                                                          if ns.any() else None)}
     out = {"traj": traj, "level": level, "peak": peak, "raw": raw, "raw_level": zx["level"][ix].astype(np.float64),
            "raw_peak": zx["peak"][ix].astype(np.float64), "state": state, "SN": SN, "snp": snp, "pad": pad,
            "origins_product": D["wo"][ix], "month": D["month"][ix], "info": info,
            "C0": zx["C0"][ix].astype(np.float64) if "C0" in zx.files else None,
-           "S3s": {k: np.asarray(v)[ix].astype(np.float64) for k, v in D["S3s"].items()} if "S3s" in D else None}
+           "S3s": {k: np.asarray(v)[ix].astype(np.float64) for k, v in D["S3s"].items()} if "S3s" in D else None,
+           "raw_pre": raw_pre, "traj_pre": traj_pre, "cont": cont}
     del D, zx
     return out
 
@@ -1095,6 +1212,7 @@ def step_b(T, faces, proceed, prods, extra=True):
         if not prod["info"]["months_equal_panel_months"]:
             P["mL"] = prod["month"]                                  # corrected store: months of the corrected calendar
         preds = {REF_B: prod["traj"]} | baselines
+        preds_e = {REF_B: prod["traj_pre"]} | baselines if prod["cont"] is not None else preds   # energy readouts: before the layer (rule A)
         flag = face_flag(face, entry)
         fr = {"name": P["name"], "tier": P["tier"], "windows": int(len(P["yL"])), "units": int(len(np.unique(P["uL"]))), "flag": flag or None,
               "product": prod["info"], "baselines": sorted(baselines), "extra_baselines": kan_info,
@@ -1123,7 +1241,7 @@ def step_b(T, faces, proceed, prods, extra=True):
         if "conventional_metrics_late" in proceed:
             out["conventional_metrics_late"] += conv
         if "energy_error" in proceed:                                       # all nine populations (release: six test + park)
-            rows = energy_rows(T, P, preds, REF_B, REF_B, REF_B_LABEL)
+            rows = energy_rows(T, P, preds_e, REF_B, REF_B, REF_B_LABEL)
             out["energy_error"] += rows
             fr["energy"] = {r_["unit_set"] + "|" + r_["model"]: {k: r_[k] for k in ("log_ratio", "um_low", "um_high", "improvement_pct", "median_energy_ape_pct")} for r_ in rows}
             fr["energy_level_readout"] = energy_level_readout(T, P, preds, prod["level"], REF_B)
@@ -1133,7 +1251,7 @@ def step_b(T, faces, proceed, prods, extra=True):
                 out["lead_day_metrics"] += rows
                 fr["lead_day_gm_cv"] = {f"{r_['model']}|{r_['day']}": r_["GM_CV_RMSE_pct"] for r_ in rows}
             if "lead_day_energy" in proceed:
-                rows = lead_day_energy_rows(T, P, preds, REF_B, REF_B, REF_B_LABEL)
+                rows = lead_day_energy_rows(T, P, preds_e, REF_B, REF_B, REF_B_LABEL)
                 out["lead_day_energy"] += rows
                 fr["month_energy_gm_cv_day31"] = {r_["model"]: r_["GM_CV_cumulative_energy_pct"] for r_ in rows if r_["day"] == DAYS}
             if "block_shares" in proceed:
@@ -1165,7 +1283,7 @@ def step_b(T, faces, proceed, prods, extra=True):
         fr["seconds"] = round(time.time() - t0, 1)
         rec["populations"][face] = fr
         log(f"tables {face}: rank {fr['hourly']['rank']}/{fr['hourly']['of']} ({fr['hourly']['mean_unit_rank']:.3f}); product {prod['info']}; {fr['seconds']} s")
-        del P, preds, baselines, prod, r
+        del P, preds, preds_e, baselines, prod, r
         gc.collect()
     if "rank_tests" in proceed and all(f in pooled_R for f in TEST6):
         rows, rb = pooled_rank_rows(T, pooled_R, REF_B, REF_B_LABEL)
@@ -1250,6 +1368,16 @@ def _p_text(p):
 def _recipe_sentence(rec):
     """How the evaluated carrier was trained, from the products mapping's recipe."""
     r = str(rec.get("recipe", ""))
+    parts = rec.get("configuration_parts") or {}
+    if parts:                                                     # version 0.2.0 (tools/products_for_configuration.py)
+        n = int(parts.get("seeds", 3))
+        return ("For each population the network was trained from scratch on a pooled training set (windows of several populations "
+                "whose labels end before that population's validation set) with early stopping on the population's last 93 days "
+                "before the training cut; then that validation span was returned to the training set and training continued for 8 "
+                "epochs" + (" with each training window's loss weighted by the frozen inverse-noise rule (recipe Rw)" if parts.get("recipe") == "Rw"
+                            else " (recipe R)") + f"; {'six' if n == 6 else 'three'} seeds averaged at every issue time before anchoring"
+                + ("; the origin-continuity layer then acts on the anchored trajectory, while energy, level and peak are read before it "
+                   "(readout rule A)." if parts.get("continuation") else "."))
     if r.startswith("span return"):
         return ("For each population the network was trained from scratch on a pooled training set (windows of several populations "
                 "whose labels end before that population's validation set) with early stopping on the population's last 93 days "
@@ -1340,8 +1468,9 @@ def summary_md(checks, rec, written):
           "  (positive favours ankyra-lite). `*` = resolved better (the 95% unit x target-month bootstrap interval of r lies",
           "  below zero), `(-)` = resolved worse (the interval lies above zero), no mark = not resolved.",
           "- **Hourly**: hourly errors over the 744 hours. **Energy**: monthly energy error, 744 x the error of the window's",
-          "  mean load of the delivered trajectory (the release definition, applied to every forecaster).",
-          "- **Peak**: ankyra-lite's peak readout (the envelope operator on the daily means of its delivered trajectory) against",
+          "  mean load of the forecaster's trajectory (the release definition); for ankyra-lite the trajectory before the continuation",
+          "  layer (readout rule A; the same as the delivered trajectory when the layer is off).",
+          "- **Peak**: ankyra-lite's peak readout (the envelope operator on the daily means of its trajectory before the continuation layer) against",
           "  the same readout applied to the baseline's trajectory, which is the release rule (`same readout on X`); the files",
           "  also hold the baseline's own trajectory maximum (`trajectory maximum of X`).",
           f"- **Rank**: position among the {nb + 1} forecasters by mean per-unit rank (forecasters ranked within each unit by RMSE).",
@@ -1375,11 +1504,15 @@ def summary_md(checks, rec, written):
             if v["UM"][0] > 0:
                 losses.append(f"{pops[f]['name']}: {k} ({_cell(v['log_ratio'], *v['UM'])})")
     L += ["", "- **Hourly.** " + ("Resolved losses: " + "; ".join(losses) + "." if losses else "No resolved loss."),
-          "- **Energy** is the release definition (delivered trajectory). The release's energy table covers the six test",
+          "- **Energy** is the release definition (each forecaster's trajectory; ankyra-lite's before the continuation layer). The release's energy table covers the six test",
           "  populations and the Suzhou park; the Oslo, Drammen and CINELDI rows are additional, with the same estimator.",
           "- **Energy (level readout)** is a sensitivity: ankyra-lite's independent energy readout (744 x its level) in place",
-          "  of the delivered trajectory's mean. The two differ only on windows where the projection onto nonnegative load",
+          "  of its trajectory's mean (before the continuation layer). The two differ only on windows where the projection onto nonnegative load",
           "  binds: " + ", ".join(f"{pops[f]['name']} {n}" for f, n in nbind.items()) + " windows.",
+          *(["- **Continuation layer.** The hourly tables score the delivered trajectory (after the origin-continuity layer); the",
+             "  energy tables (`energy_error.csv`, `lead_day_energy.csv`), the level readout and the peak readout read ankyra-lite before",
+             "  the layer (readout rule A), so the delivered trajectory's mean differs from the energy readout (`continuation_record.csv`)."]
+            if (rec.get("continuation") or {}).get("enabled") else []),
           "- **Peak (trajectory max)** counts the contrasts against each baseline's own trajectory maximum.", "",
           "## By population", "",
           "Improvement of ankyra-lite in % (positive = ankyra-lite better). Energy (level) = with ankyra-lite's level",
@@ -1597,7 +1730,8 @@ def main():
     ap.add_argument("--faces", default=",".join(PANEL10), help="populations (the check also reads the Suzhou park)")
     ap.add_argument("--out", default=None, help="output directory (default: results/)")
     ap.add_argument("--recipe", default="R", choices=sorted(RECIPE_PRODUCTS),
-                    help="products mapping: R = the released recipe (products.json), p3s = its from-scratch stage alone (products_p3s.json)")
+                    help="products mapping: R = the released configuration (products.json), p3s = the from-scratch stage alone (products_p3s.json), "
+                         "r010 = the 0.1.x releases (products_0_1.json), candidate = products_v020_candidate.json")
     ap.add_argument("--products", default=None, help="another products mapping (overrides --recipe)")
     ap.add_argument("--reanchor", action="store_true", help="run the re-anchoring (lite_reanchor.py) for the faces first")
     ap.add_argument("--reanchor-modes", default=None, help="comma list of re-anchoring modes (default: lite_reanchor.default_modes)")
@@ -1612,7 +1746,9 @@ def main():
     ap.add_argument("--summary-only", action="store_true", help="rebuild SUMMARY.md from the saved JSON records (no data read)")
     ap.add_argument("--budget", action="store_true", help="only training_budget_sensitivity.csv, merged into the existing results directory")
     ap.add_argument("--supplement", action="store_true", help="only the files added on 19 October 2026, merged into the existing results directory")
-    ap.add_argument("--check-products", action="store_true")
+    ap.add_argument("--check-products", action="store_true", help="list the products and whether their files exist; with the continuation layer "
+                                                                   "also check every continued product against the release layer (no target read)")
+    ap.add_argument("--cost-record", default=None, help="cost_per_window.csv from a saved timing record (cost_timing.py --out) instead of timing here")
     a = ap.parse_args()
     if a.out:
         RESULTS = Path(a.out).resolve()
@@ -1624,7 +1760,13 @@ def main():
         sys.path.insert(0, str(HERE))
     prods = load_products(a.products or RECIPE_PRODUCTS[a.recipe])
     if a.check_products:
-        print(json.dumps(check_products(prods), indent=1))
+        chk = check_products(prods)
+        cont = check_continued_products(prods)
+        if cont:
+            chk["continued_products"] = cont
+        print(json.dumps(chk, indent=1))
+        if cont and not all(v["pass"] and all(v.get(f"group {j}", True) for j in range(2)) for v in cont.values()):
+            raise SystemExit("a continued product is not the release layer applied to its product")
         return
     if a.summary_only:
         chk = json.loads((RESULTS / "REPRODUCTION_CHECK.json").read_text(encoding="utf-8"))
@@ -1681,15 +1823,21 @@ def main():
                 "recipe_description": prods.get("recipe_description"), "products_mapping": show(prods["path"]),
                 "products": {f: {"store": e["store"], "npz": show(e["npz_path"]), "checkpoint": e["checkpoint"], "crosscheck": bool(e.get("crosscheck")),
                                  "seed_products": [show(x) for x in e["seed_paths"]], "start_runs": [show(x) for x in e["start_paths"]]}
+                                | ({"continued_npz": show(e["continued_path"])} if e.get("continued_path") is not None else {})
+                                | ({"group_products": [show(x) for x in e["group_paths"] + e["group_continued_paths"]]} if e.get("group_paths") else {})
                              for f, e in prods["faces"].items()},
                 "reference": f"ankyra-lite ({prods['path'].name}; seasonal naive on state windows)",
                 "forecasters_left_out": LEFT_OUT, "extra_baselines": list(KAN), "baselines": N_BASELINES,
                 "tables_written": written, "tables_not_written": [t for t in TABLES if t not in written],
                 "hourly_crosscheck": xok, "faces_run": [f for f in faces if f in rec["populations"]],
                 "partial_run": sorted(rec["populations"]) != sorted(NINE)})
+    if prods.get("configuration"):                                 # version 0.2.0: the configuration and the continuation layer
+        rec.update({"configuration": prods["configuration"], "configuration_parts": prods.get("configuration_parts"),
+                    "continuation": prods.get("continuation"), "seeds": prods.get("seeds")})
     if xt is not None:
         extra_written, extra_rec, extra_summary, extra_files = xt.finish(RESULTS, rec, cost=not a.no_cost, robustness=not a.no_robustness,
-                                                                         robustness_face=a.robustness_face, robustness_windows=a.robustness_windows)
+                                                                         robustness_face=a.robustness_face, robustness_windows=a.robustness_windows,
+                                                                         cost_record=a.cost_record)
         rec["extra"] = extra_rec
         rec["extra_written"] = extra_written
         rec["extra_summary"] = extra_summary

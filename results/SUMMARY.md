@@ -1,8 +1,8 @@
 # ankyra-lite against the baselines
 
-Test windows (`late` subset: origins after the training cutoff of the trained baselines) of 9 populations. The reference is **ankyra-lite** (version 0.1.0): the small carrier network
+Test windows (`late` subset: origins after the training cutoff of the trained baselines) of 9 populations. The reference is **ankyra-lite** (version 0.2.0): the small carrier network
 (copy-pointer structured load network, 61,613 parameters) feeding the ANKYRA 2.2.1 anchoring layer, month-ahead (744 h)
-hourly forecasts. For each population the network was trained from scratch on a pooled training set (windows of several populations whose labels end before that population's validation set) with early stopping on the population's last 93 days before the training cut; then that validation span was returned to the training set and training continued for 8 epochs (the study's R recipe, the released recipe); three seeds averaged before anchoring.
+hourly forecasts. For each population the network was trained from scratch on a pooled training set (windows of several populations whose labels end before that population's validation set) with early stopping on the population's last 93 days before the training cut; then that validation span was returned to the training set and training continued for 8 epochs with each training window's loss weighted by the frozen inverse-noise rule (recipe Rw); six seeds averaged at every issue time before anchoring; the origin-continuity layer then acts on the anchored trajectory, while energy, level and peak are read before it (readout rule A).
 It is compared with **21 baselines** (22 forecasters in all): the 20 external baselines of the ANKYRA release
 and LSTM-T-KAN-M, the LSTM-T-KAN model with its model and training code copied line by line from the authors' public
 repository (commit ce24938) and the authors' exp2 feature list (load and calendar). ANKYRA itself and its versions
@@ -47,8 +47,9 @@ are not among the forecasters.
   (positive favours ankyra-lite). `*` = resolved better (the 95% unit x target-month bootstrap interval of r lies
   below zero), `(-)` = resolved worse (the interval lies above zero), no mark = not resolved.
 - **Hourly**: hourly errors over the 744 hours. **Energy**: monthly energy error, 744 x the error of the window's
-  mean load of the delivered trajectory (the release definition, applied to every forecaster).
-- **Peak**: ankyra-lite's peak readout (the envelope operator on the daily means of its delivered trajectory) against
+  mean load of the forecaster's trajectory (the release definition); for ankyra-lite the trajectory before the continuation
+  layer (readout rule A; the same as the delivered trajectory when the layer is off).
+- **Peak**: ankyra-lite's peak readout (the envelope operator on the daily means of its trajectory before the continuation layer) against
   the same readout applied to the baseline's trajectory, which is the release rule (`same readout on X`); the files
   also hold the baseline's own trajectory maximum (`trajectory maximum of X`).
 - **Rank**: position among the 22 forecasters by mean per-unit rank (forecasters ranked within each unit by RMSE).
@@ -64,22 +65,25 @@ Counts are over the 21 baselines: resolved better / resolved worse.
 
 | Population | Windows / units | Seasonal-naive windows | Rank of 22 (mean unit rank) | Hourly | Energy | Energy (level readout) | Peak (same readout) | Peak (trajectory max) | Flag |
 |---|---|---:|---|---|---|---|---|---|---|
-| BDG2 2017 | 474 / 142 | 33 | 1 (5.35) | 12 / 0 | 4 / 0 | 4 / 0 | 4 / 0 | 17 / 0 |  |
-| GoiEner non-household | 890 / 481 | 13 | 1 (5.42) | 14 / 0 | 14 / 0 | 14 / 0 | 1 / 0 | 18 / 0 |  |
-| GoiEner households | 696 / 696 | 35 | 1 (5.49) | 17 / 2 | 17 / 0 | 17 / 0 | 11 / 0 | 21 / 0 |  |
-| Cambridge | 730 / 108 | 0 | 1 (3.23) | 21 / 0 | 20 / 0 | 20 / 0 | 10 / 0 | 21 / 0 |  |
-| HEEW Arizona | 658 / 138 | 0 | 1 (5.56) | 12 / 0 | 5 / 0 | 5 / 0 | 5 / 0 | 16 / 0 |  |
-| EWELD | 523 / 197 | 245 | 1 (7.02) | 13 / 0 | 6 / 0 | 6 / 0 | 6 / 0 | 19 / 0 |  |
-| Oslo | 581 / 41 | 0 | 1 (1.76) | 20 / 0 | 19 / 0 | 19 / 0 | 17 / 0 | 17 / 0 |  |
-| Drammen | 689 / 43 | 0 | 1 (2.14) | 20 / 0 | 9 / 0 | 9 / 0 | 6 / 1 | 19 / 0 |  |
-| CINELDI | 475 / 45 | 0 | 1 (3.36) | 20 / 0 | 11 / 0 | 11 / 0 | 3 / 0 | 19 / 0 |  |
+| BDG2 2017 | 474 / 142 | 33 | 1 (4.68) | 13 / 0 | 7 / 0 | 7 / 0 | 4 / 0 | 17 / 0 |  |
+| GoiEner non-household | 890 / 481 | 13 | 1 (5.02) | 14 / 0 | 13 / 0 | 13 / 0 | 2 / 0 | 19 / 0 |  |
+| GoiEner households | 696 / 696 | 35 | 1 (5.34) | 17 / 1 | 16 / 0 | 16 / 0 | 11 / 0 | 21 / 0 |  |
+| Cambridge | 730 / 108 | 0 | 1 (3.04) | 21 / 0 | 20 / 0 | 20 / 0 | 12 / 0 | 21 / 0 |  |
+| HEEW Arizona | 658 / 138 | 0 | 1 (5.11) | 14 / 0 | 7 / 0 | 7 / 0 | 7 / 0 | 16 / 0 |  |
+| EWELD | 523 / 197 | 245 | 1 (7.09) | 13 / 0 | 6 / 0 | 6 / 0 | 5 / 0 | 19 / 0 |  |
+| Oslo | 581 / 41 | 0 | 1 (1.78) | 20 / 0 | 19 / 0 | 19 / 0 | 17 / 0 | 17 / 0 |  |
+| Drammen | 689 / 43 | 0 | 1 (1.67) | 20 / 0 | 13 / 0 | 13 / 0 | 6 / 1 | 19 / 0 |  |
+| CINELDI | 475 / 45 | 0 | 1 (2.89) | 21 / 0 | 13 / 0 | 13 / 0 | 3 / 0 | 19 / 0 |  |
 
-- **Hourly.** Resolved losses: GoiEner households: TimesFM (-5.6 (-)); GoiEner households: Chronos-2-X (-3.8 (-)).
-- **Energy** is the release definition (delivered trajectory). The release's energy table covers the six test
+- **Hourly.** Resolved losses: GoiEner households: TimesFM (-4.6 (-)).
+- **Energy** is the release definition (each forecaster's trajectory; ankyra-lite's before the continuation layer). The release's energy table covers the six test
   populations and the Suzhou park; the Oslo, Drammen and CINELDI rows are additional, with the same estimator.
 - **Energy (level readout)** is a sensitivity: ankyra-lite's independent energy readout (744 x its level) in place
-  of the delivered trajectory's mean. The two differ only on windows where the projection onto nonnegative load
-  binds: BDG2 2017 1, GoiEner non-household 142, GoiEner households 29, Cambridge 9, HEEW Arizona 0, EWELD 21, Oslo 0, Drammen 2, CINELDI 33 windows.
+  of its trajectory's mean (before the continuation layer). The two differ only on windows where the projection onto nonnegative load
+  binds: BDG2 2017 1, GoiEner non-household 138, GoiEner households 21, Cambridge 10, HEEW Arizona 0, EWELD 18, Oslo 0, Drammen 2, CINELDI 27 windows.
+- **Continuation layer.** The hourly tables score the delivered trajectory (after the origin-continuity layer); the
+  energy tables (`energy_error.csv`, `lead_day_energy.csv`), the level readout and the peak readout read ankyra-lite before
+  the layer (readout rule A), so the delivered trajectory's mean differs from the energy readout (`continuation_record.csv`).
 - **Peak (trajectory max)** counts the contrasts against each baseline's own trajectory maximum.
 
 ## By population
@@ -88,172 +92,172 @@ Improvement of ankyra-lite in % (positive = ankyra-lite better). Energy (level) 
 readout; Peak (readout) = against the same readout on the baseline; Peak (max) = against the baseline's
 trajectory maximum. The CSV files hold all 21 baselines.
 
-### BDG2 2017 (474 windows, 142 units; rank 1 of 22, mean unit rank 5.35)
+### BDG2 2017 (474 windows, 142 units; rank 1 of 22, mean unit rank 4.68)
 
 | Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
 |---|---|---|---|---|---|
-| TimesFM | -1.0 | +12.0 | +12.0 | +5.3 | +36.7 * |
-| TimesFM-X | +3.4 | +15.9 | +15.9 | +4.0 | +36.5 * |
-| Chronos-2 | +3.4 | +12.4 | +12.4 | +9.1 | +38.2 * |
-| Chronos-2-X | -5.8 | +0.1 | +0.1 | +1.2 | +35.1 * |
-| PatchTST | +8.9 * | +11.8 | +11.8 | +5.9 | +35.1 * |
-| iTransformer-X | +8.6 * | +18.5 | +18.5 | +10.9 | +40.2 * |
-| LSTM | +14.6 * | +16.3 | +16.3 | +5.1 | +36.8 * |
-| GBT-T | +5.5 | +8.4 | +8.4 | +2.7 | +9.1 |
-| LSTM-T-KAN-M | +11.1 * | +8.8 | +8.8 | +4.1 | +42.3 * |
-| RIDGE-L | +3.3 | +7.8 | +7.8 | +6.1 | +47.7 * |
-| Seasonal naive (week) | +18.0 * | +18.8 | +18.8 | +13.2 | +10.4 |
+| TimesFM | +0.7 | +14.7 | +14.7 | +4.0 | +35.8 * |
+| TimesFM-X | +5.0 | +18.5 | +18.5 | +2.6 | +35.6 * |
+| Chronos-2 | +5.1 | +15.2 | +15.2 | +7.8 | +37.3 * |
+| Chronos-2-X | -4.0 | +3.3 | +3.3 | -0.2 | +34.2 * |
+| PatchTST | +10.5 * | +14.5 | +14.5 | +4.6 | +34.1 * |
+| iTransformer-X | +10.2 * | +21.1 * | +21.1 * | +9.6 | +39.3 * |
+| LSTM | +16.1 * | +18.9 * | +18.9 * | +3.7 | +35.9 * |
+| GBT-T | +7.1 | +11.3 | +11.3 | +1.2 | +7.8 |
+| LSTM-T-KAN-M | +12.7 * | +11.6 | +11.6 | +2.7 | +41.4 * |
+| RIDGE-L | +5.0 | +10.7 | +10.7 | +4.8 | +46.9 * |
+| Seasonal naive (week) | +19.2 * | +21.2 | +21.2 | +11.9 | +8.9 |
 
-Also: peak readout vs its own trajectory maximum +34.0 *; vs the previous window's peak -2.8; energy without the three near-zero meters: TimesFM +12.0, TimesFM-X +15.9, Chronos-2 +12.4, Chronos-2-X +0.1, PatchTST +11.8, iTransformer-X +18.5, LSTM +16.3, GBT-T +8.4, LSTM-T-KAN-M +8.8, RIDGE-L +7.8, SN-week +18.8.
+Also: peak readout vs its own trajectory maximum +37.7 *; vs the previous window's peak -4.4; energy without the three near-zero meters: TimesFM +14.7, TimesFM-X +18.5, Chronos-2 +15.2, Chronos-2-X +3.3, PatchTST +14.5, iTransformer-X +21.1 *, LSTM +18.9 *, GBT-T +11.3, LSTM-T-KAN-M +11.6, RIDGE-L +10.7, SN-week +21.2.
 
-### GoiEner non-household (890 windows, 481 units; rank 1 of 22, mean unit rank 5.42)
-
-| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
-|---|---|---|---|---|---|
-| TimesFM | +2.8 | +19.7 * | +20.0 * | +0.1 | +41.3 * |
-| TimesFM-X | +3.3 | +17.2 * | +17.5 * | +2.0 | +39.2 * |
-| Chronos-2 | +0.6 | +17.2 | +17.5 | +6.1 | +27.7 * |
-| Chronos-2-X | -2.4 | +11.9 | +12.1 | +2.7 | +35.0 * |
-| PatchTST | +8.7 * | +13.9 | +14.2 | +4.3 | +45.4 * |
-| iTransformer-X | +3.3 | +16.1 * | +16.3 * | -3.6 | +33.8 * |
-| LSTM | +15.1 * | +19.6 * | +19.9 * | +0.4 | +42.6 * |
-| GBT-T | +27.9 * | +44.1 * | +44.3 * | -1.8 | +60.1 * |
-| LSTM-T-KAN-M | +13.6 * | +19.4 * | +19.6 * | -0.9 | +41.0 * |
-| RIDGE-L | +5.1 | +7.4 | +7.7 | -12.4 | +32.0 * |
-| Seasonal naive (week) | +20.0 * | +15.2 | +15.5 | -9.4 | -24.5 |
-
-Also: peak readout vs its own trajectory maximum +43.7 *; vs the previous window's peak -35.8.
-
-### GoiEner households (696 windows, 696 units; rank 1 of 22, mean unit rank 5.49)
+### GoiEner non-household (890 windows, 481 units; rank 1 of 22, mean unit rank 5.02)
 
 | Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
 |---|---|---|---|---|---|
-| TimesFM | -5.6 (-) | +36.4 * | +36.5 * | +11.0 * | +66.1 * |
-| TimesFM-X | -1.9 | +32.6 * | +32.7 * | +10.9 * | +66.7 * |
-| Chronos-2 | -3.8 | +37.1 * | +37.2 * | +11.8 * | +66.6 * |
-| Chronos-2-X | -3.8 (-) | +36.4 * | +36.5 * | +12.5 * | +66.1 * |
-| PatchTST | +4.8 * | +22.2 * | +22.4 * | +7.6 * | +67.8 * |
-| iTransformer-X | +5.9 * | +20.8 * | +21.0 * | +8.0 * | +67.2 * |
-| LSTM | +7.7 * | +21.2 * | +21.3 * | +4.2 | +68.6 * |
-| GBT-T | +10.4 * | +25.5 * | +25.6 * | +6.7 | +58.2 * |
-| LSTM-T-KAN-M | +7.7 * | +23.3 * | +23.5 * | +3.4 | +68.9 * |
-| RIDGE-L | +3.4 * | +7.2 | +7.4 | +5.8 | +65.9 * |
-| Seasonal naive (week) | +19.9 * | +11.8 | +12.0 | +7.3 | +30.9 * |
+| TimesFM | +4.7 | +20.2 * | +20.5 * | +0.8 | +41.7 * |
+| TimesFM-X | +5.2 | +17.7 * | +18.0 * | +2.7 | +39.6 * |
+| Chronos-2 | +2.5 | +17.7 | +18.0 | +6.7 | +28.2 * |
+| Chronos-2-X | -0.5 | +12.4 | +12.7 | +3.4 | +35.5 * |
+| PatchTST | +10.4 * | +14.4 | +14.7 | +5.0 | +45.8 * |
+| iTransformer-X | +5.2 | +16.6 | +16.8 | -2.9 | +34.3 * |
+| LSTM | +16.8 * | +20.1 * | +20.3 * | +1.1 | +43.0 * |
+| GBT-T | +29.2 * | +44.5 * | +44.6 * | -1.1 | +60.3 * |
+| LSTM-T-KAN-M | +15.2 * | +19.9 * | +20.1 * | -0.2 | +41.4 * |
+| RIDGE-L | +6.9 | +8.0 | +8.3 | -11.6 | +32.5 * |
+| Seasonal naive (week) | +21.5 * | +15.8 | +16.0 | -8.6 | -23.6 |
 
-Also: peak readout vs its own trajectory maximum +67.9 *; vs the previous window's peak +3.2.
+Also: peak readout vs its own trajectory maximum +39.7 *; vs the previous window's peak -34.7.
 
-### Cambridge (730 windows, 108 units; rank 1 of 22, mean unit rank 3.23)
-
-| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
-|---|---|---|---|---|---|
-| TimesFM | +14.2 * | +23.1 * | +23.2 * | +10.4 | +41.7 * |
-| TimesFM-X | +15.6 * | +25.1 * | +25.1 * | +9.7 | +41.0 * |
-| Chronos-2 | +15.6 * | +29.4 * | +29.4 * | +10.1 | +42.9 * |
-| Chronos-2-X | +8.7 * | +18.2 * | +18.2 * | +4.9 | +40.4 * |
-| PatchTST | +13.3 * | +18.8 * | +18.9 * | +4.8 | +36.6 * |
-| iTransformer-X | +7.7 * | +6.2 | +6.3 | +3.5 | +36.1 * |
-| LSTM | +35.3 * | +46.1 * | +46.1 * | +20.1 * | +45.9 * |
-| GBT-T | +11.4 * | +21.3 * | +21.3 * | +9.5 | +30.5 * |
-| LSTM-T-KAN-M | +44.4 * | +59.7 * | +59.7 * | +27.2 * | +46.9 * |
-| RIDGE-L | +12.3 * | +21.7 * | +21.7 * | +9.2 * | +46.2 * |
-| Seasonal naive (week) | +26.7 * | +30.6 * | +30.6 * | +10.8 | +27.0 * |
-
-Also: peak readout vs its own trajectory maximum +34.1 *; vs the previous window's peak +5.6.
-
-### HEEW Arizona (658 windows, 138 units; rank 1 of 22, mean unit rank 5.56)
+### GoiEner households (696 windows, 696 units; rank 1 of 22, mean unit rank 5.34)
 
 | Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
 |---|---|---|---|---|---|
-| TimesFM | +1.1 | -1.6 | -1.6 | -1.7 | +23.1 |
-| TimesFM-X | +3.3 | +2.1 | +2.1 | +2.0 | +33.5 * |
-| Chronos-2 | +4.0 | +4.7 | +4.7 | -2.6 | +29.4 * |
-| Chronos-2-X | -0.7 | -2.4 | -2.4 | -0.5 | +26.9 * |
-| PatchTST | +4.9 | +3.3 | +3.3 | -1.5 | +32.9 * |
-| iTransformer-X | +3.7 | -2.2 | -2.2 | -0.8 | +33.2 * |
-| LSTM | +31.0 * | +33.0 * | +33.0 * | +18.0 * | +49.5 * |
-| GBT-T | +4.0 | +1.6 | +1.6 | -3.2 | +13.6 |
-| LSTM-T-KAN-M | +29.5 * | +37.3 * | +37.3 * | +26.6 * | +44.8 * |
-| RIDGE-L | +2.8 | +0.1 | +0.1 | +3.0 | +39.6 * |
-| Seasonal naive (week) | +15.7 * | +5.8 | +5.8 | +2.2 | +9.7 |
+| TimesFM | -4.6 (-) | +32.8 * | +32.9 * | +10.2 * | +65.8 * |
+| TimesFM-X | -0.9 | +28.7 * | +28.9 * | +10.0 * | +66.4 * |
+| Chronos-2 | -2.8 | +33.6 * | +33.7 * | +11.0 * | +66.3 * |
+| Chronos-2-X | -2.9 | +32.8 * | +32.9 * | +11.7 * | +65.8 * |
+| PatchTST | +5.7 * | +17.8 * | +18.0 * | +6.7 * | +67.5 * |
+| iTransformer-X | +6.8 * | +16.4 | +16.6 | +7.1 * | +66.9 * |
+| LSTM | +8.5 * | +16.7 * | +17.0 * | +3.4 | +68.3 * |
+| GBT-T | +11.2 * | +21.2 * | +21.5 * | +5.8 | +57.8 * |
+| LSTM-T-KAN-M | +8.6 * | +19.0 * | +19.2 * | +2.5 | +68.6 * |
+| RIDGE-L | +4.3 * | +2.0 | +2.3 | +5.0 | +65.6 * |
+| Seasonal naive (week) | +20.7 * | +6.8 | +7.1 | +6.4 | +30.3 * |
 
-Also: peak readout vs its own trajectory maximum +33.1 *; vs the previous window's peak +9.3.
+Also: peak readout vs its own trajectory maximum +68.2 *; vs the previous window's peak +2.3.
 
-### EWELD (523 windows, 197 units; rank 1 of 22, mean unit rank 7.02)
-
-| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
-|---|---|---|---|---|---|
-| TimesFM | +1.4 | -5.3 | -5.4 | +5.7 | +33.9 * |
-| TimesFM-X | +2.0 | -4.7 | -4.8 | +0.2 | +37.1 * |
-| Chronos-2 | -0.4 | -4.2 | -4.3 | +3.6 | +42.8 * |
-| Chronos-2-X | +4.0 | +14.7 | +14.7 | +3.5 | +40.6 * |
-| PatchTST | +5.0 | -8.0 | -8.1 | +7.8 | +38.5 * |
-| iTransformer-X | +3.2 | +2.7 | +2.6 | +2.6 | +36.2 * |
-| LSTM | +21.2 * | +35.8 * | +35.7 * | +27.9 * | +61.6 * |
-| GBT-T | +28.9 * | +22.7 | +22.6 | +32.3 * | +71.0 * |
-| LSTM-T-KAN-M | +18.5 * | +35.3 * | +35.2 * | +26.5 * | +58.1 * |
-| RIDGE-L | +3.3 | +2.7 | +2.6 | +6.8 | +47.6 * |
-| Seasonal naive (week) | +15.0 * | -2.7 | -2.7 | -0.7 | -30.9 |
-
-Also: peak readout vs its own trajectory maximum +48.4 *; vs the previous window's peak -20.2.
-
-### Oslo (581 windows, 41 units; rank 1 of 22, mean unit rank 1.76)
+### Cambridge (730 windows, 108 units; rank 1 of 22, mean unit rank 3.04)
 
 | Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
 |---|---|---|---|---|---|
-| TimesFM | +23.4 * | +35.4 * | +35.4 * | +17.1 * | +39.1 * |
-| TimesFM-X | +25.4 * | +39.2 * | +39.2 * | +17.5 * | +37.9 * |
-| Chronos-2 | +23.9 * | +37.6 * | +37.6 * | +16.1 * | +42.1 * |
-| Chronos-2-X | +15.0 * | +21.0 * | +21.0 * | +7.9 | +32.3 * |
-| PatchTST | +16.1 * | +24.2 * | +24.2 * | +10.7 * | +19.1 |
-| iTransformer-X | +10.6 * | +10.9 | +10.9 | +1.5 | +16.1 |
-| LSTM | +42.6 * | +54.2 * | +54.2 * | +31.1 * | +54.7 * |
-| GBT-T | +3.4 | +6.7 | +6.7 | -3.3 | -16.5 |
-| LSTM-T-KAN-M | +40.3 * | +53.7 * | +53.7 * | +30.5 * | +49.8 * |
-| RIDGE-L | +24.1 * | +33.3 * | +33.3 * | +17.1 * | +46.1 * |
-| Seasonal naive (week) | +36.7 * | +45.0 * | +45.0 * | +19.2 * | +39.3 * |
+| TimesFM | +15.4 * | +24.6 * | +24.6 * | +10.0 * | +41.4 * |
+| TimesFM-X | +16.8 * | +26.5 * | +26.6 * | +9.3 | +40.8 * |
+| Chronos-2 | +16.8 * | +30.7 * | +30.8 * | +9.8 * | +42.7 * |
+| Chronos-2-X | +10.0 * | +19.7 * | +19.8 * | +4.5 | +40.2 * |
+| PatchTST | +14.5 * | +20.3 * | +20.4 * | +4.4 | +36.4 * |
+| iTransformer-X | +9.0 * | +8.0 | +8.1 | +3.1 | +35.8 * |
+| LSTM | +36.2 * | +47.1 * | +47.1 * | +19.8 * | +45.6 * |
+| GBT-T | +12.7 * | +22.7 * | +22.8 * | +9.2 | +30.2 * |
+| LSTM-T-KAN-M | +45.2 * | +60.4 * | +60.5 * | +26.9 * | +46.7 * |
+| RIDGE-L | +13.6 * | +23.2 * | +23.2 * | +8.9 * | +46.0 * |
+| Seasonal naive (week) | +27.8 * | +31.9 * | +31.9 * | +10.5 | +26.7 * |
 
-Also: peak readout vs its own trajectory maximum +18.1; vs the previous window's peak +27.4 *.
+Also: peak readout vs its own trajectory maximum +32.6 *; vs the previous window's peak +5.2.
 
-### Drammen (689 windows, 43 units; rank 1 of 22, mean unit rank 2.14)
-
-| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
-|---|---|---|---|---|---|
-| TimesFM | +18.9 * | +25.7 * | +25.7 * | +14.3 | +40.3 * |
-| TimesFM-X | +14.5 * | +19.3 | +19.3 | +11.7 | +37.1 * |
-| Chronos-2 | +15.8 * | +24.0 | +24.0 | +12.1 | +39.4 * |
-| Chronos-2-X | +5.0 | -0.1 | -0.1 | -1.4 | +31.0 * |
-| PatchTST | +10.8 * | +4.5 | +4.5 | -4.9 | +19.5 * |
-| iTransformer-X | +9.6 * | +4.7 | +4.7 | -4.3 | +22.8 * |
-| LSTM | +28.1 * | +19.4 | +19.4 | +18.2 * | +46.0 * |
-| GBT-T | +9.1 * | +9.8 | +9.8 | -10.9 (-) | +9.2 |
-| LSTM-T-KAN-M | +24.3 * | +20.1 | +20.1 | +16.1 * | +46.3 * |
-| RIDGE-L | +7.4 * | -9.8 | -9.8 | +4.0 | +41.5 * |
-| Seasonal naive (week) | +27.2 * | +26.8 * | +26.8 * | +12.7 | +24.5 * |
-
-Also: peak readout vs its own trajectory maximum +30.8 *; vs the previous window's peak +15.4.
-
-### CINELDI (475 windows, 45 units; rank 1 of 22, mean unit rank 3.36)
+### HEEW Arizona (658 windows, 138 units; rank 1 of 22, mean unit rank 5.11)
 
 | Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
 |---|---|---|---|---|---|
-| TimesFM | +9.8 * | +21.2 * | +21.2 * | +5.2 | +51.8 * |
-| TimesFM-X | +8.2 * | +19.0 | +19.1 | +3.8 | +48.3 * |
-| Chronos-2 | +7.8 * | +18.6 | +18.6 | +6.1 | +47.8 * |
-| Chronos-2-X | +6.0 | +15.4 | +15.5 | +5.8 | +48.4 * |
-| PatchTST | +6.1 * | +7.2 | +7.2 | +1.0 | +43.9 * |
-| iTransformer-X | +6.7 * | +11.9 | +11.9 | +0.9 | +46.2 * |
-| LSTM | +24.7 * | +27.0 * | +27.0 * | +9.4 | +58.5 * |
-| GBT-T | +12.4 * | +24.2 * | +24.2 * | +5.0 | +39.4 * |
-| LSTM-T-KAN-M | +18.1 * | +13.1 | +13.1 | +3.1 | +51.4 * |
-| RIDGE-L | +5.0 * | +8.4 | +8.4 | +5.3 | +52.8 * |
-| Seasonal naive (week) | +24.0 * | +22.6 * | +22.6 * | +6.2 | +26.2 |
+| TimesFM | +2.5 | -0.1 | -0.1 | -1.2 | +23.6 |
+| TimesFM-X | +4.7 | +3.5 | +3.5 | +2.5 | +33.8 * |
+| Chronos-2 | +5.4 | +6.2 | +6.2 | -2.0 | +29.8 * |
+| Chronos-2-X | +0.8 | -0.8 | -0.8 | +0.0 | +27.3 * |
+| PatchTST | +6.3 | +4.8 | +4.8 | -1.0 | +33.2 * |
+| iTransformer-X | +5.0 | -0.7 | -0.7 | -0.2 | +33.6 * |
+| LSTM | +32.0 * | +34.0 * | +34.0 * | +18.4 * | +49.8 * |
+| GBT-T | +5.4 * | +3.1 | +3.1 | -2.6 | +14.1 |
+| LSTM-T-KAN-M | +30.5 * | +38.2 * | +38.2 * | +27.0 * | +45.1 * |
+| RIDGE-L | +4.2 | +1.6 | +1.6 | +3.6 | +39.9 * |
+| Seasonal naive (week) | +16.9 * | +7.2 | +7.2 | +2.8 | +10.2 |
 
-Also: peak readout vs its own trajectory maximum +48.8 *; vs the previous window's peak -20.4 (-).
+Also: peak readout vs its own trajectory maximum +32.6 *; vs the previous window's peak +9.8.
+
+### EWELD (523 windows, 197 units; rank 1 of 22, mean unit rank 7.09)
+
+| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
+|---|---|---|---|---|---|
+| TimesFM | +1.5 | -2.8 | -2.8 | +2.9 | +31.9 * |
+| TimesFM-X | +2.1 | -2.2 | -2.2 | -2.7 | +35.2 * |
+| Chronos-2 | -0.2 | -1.7 | -1.7 | +0.7 | +41.1 * |
+| Chronos-2-X | +4.2 | +16.8 | +16.8 | +0.6 | +38.8 * |
+| PatchTST | +5.1 | -5.4 | -5.5 | +5.0 | +36.6 * |
+| iTransformer-X | +3.4 | +5.0 | +5.0 | -0.4 | +34.3 * |
+| LSTM | +21.4 * | +37.3 * | +37.3 * | +25.8 * | +60.4 * |
+| GBT-T | +29.0 * | +24.5 | +24.5 | +30.3 * | +70.2 * |
+| LSTM-T-KAN-M | +18.6 * | +36.8 * | +36.8 * | +24.3 * | +56.8 * |
+| RIDGE-L | +3.5 | +5.0 | +5.0 | +4.0 | +46.1 * |
+| Seasonal naive (week) | +15.2 * | -0.2 | -0.2 | -3.6 | -34.8 |
+
+Also: peak readout vs its own trajectory maximum +43.4 *; vs the previous window's peak -23.7.
+
+### Oslo (581 windows, 41 units; rank 1 of 22, mean unit rank 1.78)
+
+| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
+|---|---|---|---|---|---|
+| TimesFM | +23.0 * | +34.9 * | +34.9 * | +16.4 * | +38.5 * |
+| TimesFM-X | +25.0 * | +38.6 * | +38.6 * | +16.8 * | +37.4 * |
+| Chronos-2 | +23.5 * | +37.0 * | +37.0 * | +15.4 * | +41.6 * |
+| Chronos-2-X | +14.6 * | +20.4 * | +20.4 * | +7.1 | +31.8 * |
+| PatchTST | +15.6 * | +23.6 * | +23.6 * | +9.9 * | +18.4 |
+| iTransformer-X | +10.2 * | +10.2 | +10.2 | +0.7 | +15.4 |
+| LSTM | +42.3 * | +53.8 * | +53.8 * | +30.5 * | +54.3 * |
+| GBT-T | +2.9 | +5.9 | +5.9 | -4.2 | -17.5 |
+| LSTM-T-KAN-M | +40.0 * | +53.3 * | +53.3 * | +29.9 * | +49.3 * |
+| RIDGE-L | +23.7 * | +32.8 * | +32.8 * | +16.4 * | +45.6 * |
+| Seasonal naive (week) | +36.4 * | +44.6 * | +44.6 * | +18.5 * | +38.8 * |
+
+Also: peak readout vs its own trajectory maximum +21.3 *; vs the previous window's peak +26.8 *.
+
+### Drammen (689 windows, 43 units; rank 1 of 22, mean unit rank 1.67)
+
+| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
+|---|---|---|---|---|---|
+| TimesFM | +20.9 * | +29.0 * | +29.0 * | +14.6 | +40.5 * |
+| TimesFM-X | +16.6 * | +22.9 * | +22.9 * | +12.0 | +37.3 * |
+| Chronos-2 | +17.9 * | +27.4 * | +27.4 * | +12.3 | +39.6 * |
+| Chronos-2-X | +7.3 | +4.3 | +4.3 | -1.1 | +31.2 * |
+| PatchTST | +12.9 * | +8.7 | +8.7 | -4.6 | +19.8 * |
+| iTransformer-X | +11.8 * | +8.8 | +8.8 | -4.0 | +23.0 * |
+| LSTM | +29.8 * | +23.0 | +23.0 | +18.4 * | +46.2 * |
+| GBT-T | +11.3 * | +13.8 * | +13.8 * | -10.6 (-) | +9.5 |
+| LSTM-T-KAN-M | +26.1 * | +23.6 * | +23.6 * | +16.4 * | +46.4 * |
+| RIDGE-L | +9.7 * | -5.0 | -5.0 | +4.3 | +41.7 * |
+| Seasonal naive (week) | +29.0 * | +30.0 * | +30.0 * | +12.9 | +24.7 * |
+
+Also: peak readout vs its own trajectory maximum +25.9 *; vs the previous window's peak +15.7.
+
+### CINELDI (475 windows, 45 units; rank 1 of 22, mean unit rank 2.89)
+
+| Baseline | Hourly | Energy | Energy (level) | Peak (readout) | Peak (max) |
+|---|---|---|---|---|---|
+| TimesFM | +10.5 * | +22.4 * | +22.4 * | +6.9 | +52.7 * |
+| TimesFM-X | +8.9 * | +20.3 * | +20.3 * | +5.6 | +49.2 * |
+| Chronos-2 | +8.5 * | +19.8 | +19.8 | +7.8 | +48.8 * |
+| Chronos-2-X | +6.7 * | +16.7 | +16.7 | +7.6 | +49.4 * |
+| PatchTST | +6.8 * | +8.6 | +8.6 | +2.8 | +45.0 * |
+| iTransformer-X | +7.4 * | +13.2 | +13.2 | +2.7 | +47.1 * |
+| LSTM | +25.3 * | +28.1 * | +28.1 * | +11.1 | +59.2 * |
+| GBT-T | +13.1 * | +25.3 * | +25.3 * | +6.8 | +40.6 * |
+| LSTM-T-KAN-M | +18.7 * | +14.4 | +14.4 | +4.9 | +52.3 * |
+| RIDGE-L | +5.8 * | +9.8 | +9.8 | +7.0 | +53.7 * |
+| Seasonal naive (week) | +24.6 * | +23.7 * | +23.8 * | +8.0 | +27.6 |
+
+Also: peak readout vs its own trajectory maximum +46.5 *; vs the previous window's peak -18.2 (-).
 
 ## Rank tests, six test populations pooled
 
 1762 units, Friedman p < 1e-300, Nemenyi critical difference 0.786; ankyra-lite's mean rank
-5.496 (position 1 of 22). Holm-corrected Wilcoxon: significantly better than 21 of 21 baselines, significantly worse than 0. Descriptive.
+5.234 (position 1 of 22). Holm-corrected Wilcoxon: significantly better than 21 of 21 baselines, significantly worse than 0. Descriptive.
 
 ## Data splits
 
@@ -276,17 +280,17 @@ windows returned at its own sampling density, labels ending at least 24 h before
 
 ## Training (`training_curves.csv`)
 
-| Population | From-scratch stage: best epoch (seeds 0, 1, 2) | Epochs run | Span return: epochs | Returned windows | Start criterion reproduced |
+| Population | From-scratch stage: best epoch (seeds 0-5) | Epochs run | Span return: epochs | Returned windows | Start criterion reproduced |
 |---|---|---|---|---|---|
-| BDG2 2017 | 12, 9, 27 | 17, 14, 30 | 8, 8, 8 | 5042, 5042, 5042 | True |
-| GoiEner non-household | 15, 3, 16 | 20, 8, 21 | 8, 8, 8 | 5381, 5381, 5381 | True |
-| GoiEner households | 15, 16, 5 | 20, 21, 10 | 8, 8, 8 | 6292, 6292, 6292 | True |
-| Cambridge | 16, 12, 16 | 21, 17, 21 | 8, 8, 8 | 312, 312, 312 | True |
-| HEEW Arizona | 27, 20, 23 | 30, 25, 28 | 8, 8, 8 | 749, 749, 749 | True |
-| EWELD | 10, 9, 7 | 15, 14, 12 | 8, 8, 8 | 1969, 1969, 1969 | True |
-| Oslo | 14, 9, 30 | 19, 14, 30 | 8, 8, 8 | 304, 304, 304 | True |
-| Drammen | 21, 4, 23 | 26, 9, 28 | 8, 8, 8 | 396, 396, 396 | True |
-| CINELDI | 14, 6, 6 | 19, 11, 11 | 8, 8, 8 | 389, 389, 389 | True |
+| BDG2 2017 | 12, 9, 27, 16, 24, 29 | 17, 14, 30, 21, 29, 30 | 8, 8, 8, 8, 8, 8 | 5042, 5042, 5042, 5042, 5042, 5042 | True |
+| GoiEner non-household | 15, 3, 16, 5, 19, 9 | 20, 8, 21, 10, 24, 14 | 8, 8, 8, 8, 8, 8 | 5381, 5381, 5381, 5381, 5381, 5381 | True |
+| GoiEner households | 15, 16, 5, 6, 10, 7 | 20, 21, 10, 11, 15, 12 | 8, 8, 8, 8, 8, 8 | 6292, 6292, 6292, 6292, 6292, 6292 | True |
+| Cambridge | 16, 12, 16, 29, 21, 29 | 21, 17, 21, 30, 26, 30 | 8, 8, 8, 8, 8, 8 | 312, 312, 312, 312, 312, 312 | True |
+| HEEW Arizona | 27, 20, 23, 27, 27, 30 | 30, 25, 28, 30, 30, 30 | 8, 8, 8, 8, 8, 8 | 749, 749, 749, 749, 749, 749 | True |
+| EWELD | 10, 9, 7, 6, 14, 10 | 15, 14, 12, 11, 19, 15 | 8, 8, 8, 8, 8, 8 | 1969, 1969, 1969, 1969, 1969, 1969 | True |
+| Oslo | 14, 9, 30, 30, 15, 12 | 19, 14, 30, 30, 20, 17 | 8, 8, 8, 8, 8, 8 | 304, 304, 304, 304, 304, 304 | True |
+| Drammen | 21, 4, 23, 3, 2, 13 | 26, 9, 28, 8, 7, 18 | 8, 8, 8, 8, 8, 8 | 396, 396, 396, 396, 396, 396 | True |
+| CINELDI | 14, 6, 6, 6, 5, 13 | 19, 11, 11, 11, 10, 18 | 8, 8, 8, 8, 8, 8 | 389, 389, 389, 389, 389, 389 | True |
 
 The from-scratch stage records the validation criterion of every epoch, not the training loss (`training_loss` is
 blank there). The span-return epochs record both; their validation criterion is computed on windows that are back in
@@ -324,8 +328,20 @@ proportional validation set and early stopping (the study's P3s, F, R and V arms
   +1.08%, plain continuation +0.97%, proportional validation +0.86%.
 - These test windows had been read before; the reading gives directions, not a confirmation.
 
-The product reading reproduces the study's own scorer on 9 of 9 populations: the per-population contrasts against the plain continuation and against the from-scratch stage equal those of the score
-record (largest difference 0.0e+00 percentage points).
+### Version 0.2.0 (the 0.2.0 study's development check and one test read)
+
+Configuration after the test read: `Rw6_c` (weighting True, six seeds True, continuation layer True; after selection: False). Positive favours the first-named configuration; the 0.2.0 against
+0.1.0 and the weighting rows have the seed layer of the two three-seed groups.
+
+| Readout (nine populations) | Result |
+|---|---|
+| 0.2.0 vs 0.1.0, hourly | +1.15% (+0.60 to +1.71; resolved positive) |
+| 0.2.0 vs 0.1.0, lead day 1 | +13.97% (+11.87 to +16.02; resolved positive) |
+| layer on / off, hourly | +0.43% (+0.14 to +0.78; resolved positive) |
+| weighting Rw6 vs R6, hourly | +0.31% (+0.06 to +0.56; resolved positive) |
+| seeds R6 vs R3, hourly | +0.41% (+0.15 to +0.70; resolved positive) |
+
+- The test windows had been read many times before; this reading sets directions only.
 
 ## Ablation (`ablation.csv`, `component_contributions.csv`)
 
@@ -334,28 +350,30 @@ ankyra-lite against versions of itself, hourly error, improvement of ankyra-lite
 
 | Version | BDG2 2017 | GoiEner non-household | GoiEner households | Cambridge | HEEW Arizona | EWELD | Oslo | Drammen | CINELDI |
 |---|---|---|---|---|---|---|---|---|---|
-| carrier alone (no anchoring layer) | +3.2 * | +3.5 | -1.0 | +0.3 | +1.4 | +1.2 | +0.0 | +0.4 | +2.6 * |
-| state rule off (the anchoring layer's own return on state windows) | +0.2 | -0.0 | +0.3 | 0 (identical) | 0 (identical) | +2.6 | 0 (identical) | 0 (identical) | 0 (identical) |
-| single seed 0 (its carrier anchored alone) | +0.6 | -0.5 | +0.7 * | +0.9 | +0.5 | +0.4 | +0.6 | +1.7 * | +0.9 |
-| single seed 1 (its carrier anchored alone) | +2.5 * | +1.2 | -0.0 | +1.5 * | +0.7 | +0.5 | +3.7 * | -1.5 | +1.2 * |
-| single seed 2 (its carrier anchored alone) | -0.6 | +1.6 | +0.4 | +2.2 * | +4.5 * | +0.8 | +1.2 | +3.9 * | +0.4 |
-| anchoring layer without the within-day anchoring | +0.9 * | +3.2 * | -0.1 | +0.5 * | +0.9 * | -0.0 | +0.5 * | +1.0 * | +1.2 * |
-| within-day trust per lead block instead of one value per window | +0.0 | +0.2 | +0.1 | +0.1 | +0.1 * | -0.0 | +0.0 | +0.1 | +0.0 |
-| anchoring layer without the short-gap rule | +0.2 | -0.0 | +0.2 | +0.0 | -0.1 | +0.1 | 0 (identical) | -0.0 | 0 (identical) |
+| carrier alone (no anchoring layer) | +3.6 * | +3.3 | -1.3 | +0.1 | +2.2 * | +0.5 | -0.5 | +0.8 | +1.3 |
+| state rule off (the anchoring layer's own return on state windows) | +0.3 | -0.0 | +0.3 | 0 (identical) | 0 (identical) | +2.1 | 0 (identical) | 0 (identical) | 0 (identical) |
+| without the continuation layer (the same carrier and anchoring layer) | +0.8 * | +0.5 * | +0.4 * | +0.2 | +0.9 * | +0.5 * | -0.3 | +1.0 | +0.0 |
+| three-seed group 0 (seeds 0-2, anchored alone) | +0.7 | +0.4 | +0.2 | +0.8 | -0.0 | +0.0 | -0.3 | +0.9 | +0.5 |
+| three-seed group 1 (seeds 3-5, anchored alone) | +0.3 | +0.1 | +0.0 | -0.3 | +0.8 | +0.4 | +0.9 | +0.1 | -0.0 |
+| anchoring layer without the within-day anchoring | +0.7 * | +2.4 | -0.0 | +0.3 | +0.8 * | -0.0 | +0.6 * | +0.9 * | +0.9 * |
+| within-day trust per lead block instead of one value per window | +0.1 | +0.1 | +0.1 | +0.1 | +0.1 * | +0.0 | -0.0 | +0.1 | -0.0 |
+| anchoring layer without the short-gap rule | +0.2 | -0.0 | +0.1 | +0.0 | -0.1 | +0.1 | 0 (identical) | -0.0 | 0 (identical) |
 | anchoring layer without the micro-load rule | +0.1 | 0 (identical) | 0 (identical) | 0 (identical) | 0 (identical) | 0 (identical) | 0 (identical) | 0 (identical) | 0 (identical) |
-| history-only configuration (anchoring layer without a carrier) | +6.4 * | +19.5 * | +11.1 * | +13.8 * | +12.6 * | +16.6 * | +20.5 * | +15.3 * | +5.4 * |
-| recipe: from-scratch stage alone, no continuation (anchored) | +1.2 | +2.7 | +1.4 * | +1.7 * | +0.9 * | +1.1 | +2.2 * | -2.3 | +0.8 |
-| recipe: 8 continuation epochs, validation set held out, no span return (anchored) | +0.5 | +2.2 | +0.7 | +0.5 | -0.2 | -0.3 | +0.1 | -2.9 (-) | +0.3 |
-| recipe: continuation with a proportional validation set and early stopping (anchored) | +1.2 | +1.1 | +0.1 | +0.2 | -0.2 | +1.1 | +0.4 | -2.5 (-) | +0.6 |
-| earlier carrier: structured network without the copy pointer, weekly training windows (anchored) | +3.0 * | +7.0 * | +1.1 | +10.4 * | +4.3 * | +2.7 * | +5.9 * | +1.9 | - |
-| carrier without the copy pointer, from-scratch recipe (anchored) | +1.2 | +2.2 | +1.5 | +3.7 * | +2.3 * | +1.6 | +2.6 * | -0.3 | - |
-| earlier continuation study: unweighted loss (anchored) | +1.0 | +1.6 | +0.6 * | +0.4 | +0.9 | +0.9 | +0.4 | -0.9 | - |
-| earlier continuation study: weighted loss (anchored) | -0.1 | +0.9 | +0.0 | -0.3 | -0.4 | +1.7 | +1.2 | -0.6 | - |
-| earlier continuation study: weighted loss and warm-up (anchored) | +0.1 | +1.2 | +0.1 | +0.2 | -1.3 (-) | +1.9 | +2.0 | -0.6 | - |
-| fixed division (history level and daily path, no handover) | +2.8 * | +5.1 * | +2.5 * | +8.3 * | +7.9 * | +9.5 * | +9.2 * | +7.0 * | +2.9 * |
-| fixed half handover weight | +0.9 * | -0.2 | +0.4 | +1.3 | +1.1 * | +1.4 | +0.2 | +0.4 | +0.0 |
-| one whole-window combination weight of the history side and the carrier | -0.4 | -0.8 | +1.4 * | +0.5 | +0.0 | +0.7 | +0.5 | -0.3 | -0.3 |
-| half-and-half average of the history side and the carrier | +0.7 * | +1.6 | +3.8 * | +3.8 * | +3.1 * | +3.5 * | +2.4 * | +0.6 | +0.1 |
+| history-only configuration (anchoring layer without a carrier) | +8.0 * | +21.1 * | +11.9 * | +15.0 * | +13.8 * | +16.8 * | +20.1 * | +17.4 * | +6.2 * |
+| 0.1.0 configuration: recipe R (span return), seeds 0-2, no continuation layer (anchored) | +1.7 | +1.9 * | +0.9 * | +1.4 * | +1.4 * | +0.2 | -0.5 | +2.4 * | +0.8 |
+| configuration: recipe R (span return), seeds 0-2, with the continuation layer (anchored) | +0.9 | +1.3 * | +0.6 * | +1.2 * | +0.6 | -0.3 | -0.5 | +1.3 * | +0.8 * |
+| configuration: recipe R (span return), six seeds, without the continuation layer (anchored) | +0.9 | +1.4 * | +0.7 * | +0.8 * | +1.3 * | +0.2 | -0.4 | +1.1 | +0.6 |
+| configuration: recipe R (span return), six seeds, with the continuation layer (anchored) | +0.2 | +0.9 | +0.3 | +0.5 | +0.5 | -0.3 | -0.2 | +0.1 | +0.6 * |
+| configuration: recipe Rw (span return with inverse-noise loss weighting), seeds 0-2, without the continuation layer (anchored) | +1.4 * | +1.0 | +0.6 * | +1.0 * | +0.8 | +0.6 | -0.3 | +1.9 | +0.6 |
+| configuration: recipe Rw (span return with inverse-noise loss weighting), seeds 0-2, with the continuation layer (anchored) | +0.7 | +0.4 | +0.2 | +0.8 | -0.0 | +0.0 | -0.3 | +0.9 | +0.5 |
+| recipe: from-scratch stage alone, no continuation (anchored) | +2.9 * | +4.6 * | +2.3 * | +3.1 * | +2.3 * | +1.3 | +1.7 * | +0.2 | +1.6 |
+| recipe: 8 continuation epochs, validation set held out, no span return (anchored) | +2.2 * | +4.1 | +1.7 * | +2.0 * | +1.2 * | -0.2 | -0.4 | -0.4 | +1.1 |
+| recipe: continuation with a proportional validation set and early stopping (anchored) | +2.9 * | +3.0 | +1.1 * | +1.7 * | +1.2 | +1.2 * | -0.1 | -0.0 | +1.4 |
+| earlier carrier: structured network without the copy pointer, weekly training windows (anchored) | +4.6 * | +8.7 * | +2.0 * | +11.7 * | +5.7 * | +2.9 * | +5.5 * | +4.3 * | - |
+| carrier without the copy pointer, from-scratch recipe (anchored) | +2.9 * | +4.1 * | +2.4 * | +5.0 * | +3.7 * | +1.8 * | +2.2 * | +2.2 | - |
+| earlier continuation study: unweighted loss (anchored) | +2.7 * | +3.5 | +1.6 * | +1.8 * | +2.3 * | +1.1 * | -0.1 | +1.6 | - |
+| earlier continuation study: weighted loss (anchored) | +1.7 * | +2.8 | +1.0 * | +1.1 | +1.0 | +1.9 * | +0.7 | +1.8 | - |
+| earlier continuation study: weighted loss and warm-up (anchored) | +1.8 * | +3.1 | +1.0 * | +1.6 * | +0.1 | +2.0 * | +1.6 * | +1.8 | - |
 
 The rows of switched-off parts of the anchoring layer need re-anchoring (`evaluation/lite_reanchor.py`); the single
 seeds are the stored single-seed products; the history-only configuration, the recipe arms and the earlier carriers are
@@ -364,30 +382,31 @@ network) were trained with the from-scratch recipe or its earlier continuations,
 
 ## Seeds (`seed_spread.csv`)
 
-Hourly improvement against TimesFM, per seed and for the three-seed ensemble (carrier alone, and anchored):
+Hourly improvement against TimesFM: the carrier alone per seed and the six-seed ensemble, and anchored per three-seed group
+(the stored group products) and the ensemble:
 
-| Population | Stage | Seed 0 | Seed 1 | Seed 2 | Ensemble |
-|---|---|---|---|---|---|
-| BDG2 2017 | carrier alone | -71.3 (-) | -76.8 (-) | -71.6 (-) | -69.8 (-) |
-| BDG2 2017 | anchored (ankyra-lite) | -1.6 | -3.6 | -0.4 | -1.0 |
-| BDG2 2017 (without the three near-zero meters) | carrier alone | -5.6 | -9.3 (-) | -4.9 | -4.4 |
-| BDG2 2017 (without the three near-zero meters) | anchored (ankyra-lite) | -1.6 | -3.6 | -0.4 | -1.0 |
-| GoiEner non-household | carrier alone | -2.9 | -5.6 | -8.1 | -3.7 |
-| GoiEner non-household | anchored (ankyra-lite) | +3.3 | +1.7 | +1.2 | +2.8 |
-| GoiEner households | carrier alone | -8.6 (-) | -6.3 (-) | -7.1 (-) | -7.0 (-) |
-| GoiEner households | anchored (ankyra-lite) | -6.3 (-) | -5.6 (-) | -6.0 (-) | -5.6 (-) |
-| Cambridge | carrier alone | +12.7 * | +12.1 * | +10.6 * | +13.9 * |
-| Cambridge | anchored (ankyra-lite) | +13.4 * | +12.8 * | +12.3 * | +14.2 * |
-| HEEW Arizona | carrier alone | -2.7 | -3.2 | -8.7 (-) | -0.3 |
-| HEEW Arizona | anchored (ankyra-lite) | +0.6 | +0.4 | -3.5 | +1.1 |
-| EWELD | carrier alone | -21.2 (-) | -17.6 | -14.8 | -17.0 |
-| EWELD | anchored (ankyra-lite) | +0.9 | +0.8 | +0.5 | +1.4 |
-| Oslo | carrier alone | +22.4 * | +19.5 * | +21.6 * | +23.4 * |
-| Oslo | anchored (ankyra-lite) | +23.0 * | +20.5 * | +22.4 * | +23.4 * |
-| Drammen | carrier alone | +16.5 * | +19.9 * | +13.3 * | +18.6 * |
-| Drammen | anchored (ankyra-lite) | +17.5 * | +20.2 * | +15.7 * | +18.9 * |
-| CINELDI | carrier alone | +4.8 | +4.2 | +6.4 | +7.4 * |
-| CINELDI | anchored (ankyra-lite) | +9.0 * | +8.7 * | +9.4 * | +9.8 * |
+| Population | Stage | Members (in order) | Ensemble |
+|---|---|---|---|
+| BDG2 2017 | carrier alone | seed 0: -69.2 (-) / seed 1: -75.3 (-) / seed 2: -77.8 (-) / seed 3: -74.7 (-) / seed 4: -74.6 (-) / seed 5: -77.3 (-) | -68.5 (-) |
+| BDG2 2017 | anchored (ankyra-lite) | group 0: +0.0 / group 1: +0.4 | +0.7 |
+| BDG2 2017 (without the three near-zero meters) | carrier alone | seed 0: -4.6 / seed 1: -9.0 (-) / seed 2: -6.4 / seed 3: -7.4 / seed 4: -8.3 / seed 5: -8.2 | -3.0 |
+| BDG2 2017 (without the three near-zero meters) | anchored (ankyra-lite) | group 0: +0.0 / group 1: +0.4 | +0.7 |
+| GoiEner non-household | carrier alone | seed 0: -1.9 / seed 1: -5.0 / seed 2: -5.6 / seed 3: +0.3 / seed 4: -4.0 / seed 5: -5.6 (-) | -1.4 |
+| GoiEner non-household | anchored (ankyra-lite) | group 0: +4.3 / group 1: +4.6 | +4.7 |
+| GoiEner households | carrier alone | seed 0: -5.7 (-) / seed 1: -5.2 (-) / seed 2: -5.9 (-) / seed 3: -4.4 (-) / seed 4: -5.7 (-) / seed 5: -5.1 (-) | -4.8 (-) |
+| GoiEner households | anchored (ankyra-lite) | group 0: -4.9 (-) / group 1: -4.7 (-) | -4.6 (-) |
+| Cambridge | carrier alone | seed 0: +12.2 * / seed 1: +13.2 * / seed 2: +11.5 * / seed 3: +14.4 * / seed 4: +13.6 * / seed 5: +12.1 * | +15.3 * |
+| Cambridge | anchored (ankyra-lite) | group 0: +14.7 * / group 1: +15.6 * | +15.4 * |
+| HEEW Arizona | carrier alone | seed 0: -2.7 / seed 1: -1.7 / seed 2: -8.2 (-) / seed 3: -3.2 / seed 4: -5.6 (-) / seed 5: -3.9 | +0.3 |
+| HEEW Arizona | anchored (ankyra-lite) | group 0: +2.5 / group 1: +1.7 | +2.5 |
+| EWELD | carrier alone | seed 0: -17.6 / seed 1: -15.5 / seed 2: -14.7 / seed 3: -16.6 / seed 4: -11.7 / seed 5: -11.5 | -13.6 |
+| EWELD | anchored (ankyra-lite) | group 0: +1.5 / group 1: +1.2 | +1.5 |
+| Oslo | carrier alone | seed 0: +22.7 * / seed 1: +19.2 * / seed 2: +22.1 * / seed 3: +21.5 * / seed 4: +19.3 * / seed 5: +21.7 * | +23.4 * |
+| Oslo | anchored (ankyra-lite) | group 0: +23.2 * / group 1: +22.3 * | +23.0 * |
+| Drammen | carrier alone | seed 0: +17.6 * / seed 1: +20.2 * / seed 2: +12.9 * / seed 3: +18.8 * / seed 4: +18.2 * / seed 5: +16.9 * | +20.2 * |
+| Drammen | anchored (ankyra-lite) | group 0: +20.2 * / group 1: +20.8 * | +20.9 * |
+| CINELDI | carrier alone | seed 0: +5.7 / seed 1: +5.3 / seed 2: +7.4 / seed 3: +7.5 / seed 4: +7.4 / seed 5: +7.1 | +9.3 * |
+| CINELDI | anchored (ankyra-lite) | group 0: +10.1 * / group 1: +10.5 * | +10.5 * |
 
 The carrier alone has no state rule: on the three near-zero BDG2 meters its error is not zero while some baselines' errors
 are near zero, which dominates the unit-equal mean (hence the BDG2 row without those meters).
@@ -400,15 +419,15 @@ interval was not designed for this carrier.
 
 | Population | 80% coverage (ankyra-lite / TimesFM / Chronos-2) | 90% coverage (ankyra-lite / Chronos-2) | Winkler 80 vs TimesFM | vs Chronos-2 |
 |---|---|---|---|---|
-| BDG2 2017 | 0.758 / 0.349 / 0.629 | 0.850 / 0.776 | -3.9 | -18.6 |
-| GoiEner non-household | 0.783 / 0.430 / 0.720 | 0.868 / 0.851 | +5.5 | -9.9 (-) |
-| GoiEner households | 0.777 / 0.345 / 0.680 | 0.870 / 0.815 | +6.3 * | -1.9 |
-| Cambridge | 0.791 / 0.393 / 0.710 | 0.881 / 0.836 | +15.2 * | -1.3 |
-| HEEW Arizona | 0.779 / 0.373 / 0.726 | 0.865 / 0.848 | +9.4 * | -2.4 |
-| EWELD | 0.841 / 0.606 / 0.804 | 0.893 / 0.883 | -4.0 | -40.0 (-) |
-| Oslo | 0.851 / 0.379 / 0.678 | 0.921 / 0.813 | +21.2 * | +4.7 * |
-| Drammen | 0.848 / 0.388 / 0.725 | 0.915 / 0.841 | +20.4 * | +2.9 |
-| CINELDI | 0.812 / 0.438 / 0.736 | 0.896 / 0.859 | +15.2 * | -4.7 (-) |
+| BDG2 2017 | 0.766 / 0.349 / 0.629 | 0.858 / 0.776 | -2.7 | -17.2 |
+| GoiEner non-household | 0.792 / 0.430 / 0.720 | 0.876 / 0.851 | +6.2 | -9.1 (-) |
+| GoiEner households | 0.782 / 0.345 / 0.680 | 0.874 / 0.815 | +6.8 * | -1.4 |
+| Cambridge | 0.790 / 0.393 / 0.710 | 0.880 / 0.836 | +15.3 * | -1.1 |
+| HEEW Arizona | 0.776 / 0.373 / 0.726 | 0.863 / 0.848 | +9.3 | -2.5 |
+| EWELD | 0.844 / 0.606 / 0.804 | 0.894 / 0.883 | -3.7 | -39.6 (-) |
+| Oslo | 0.847 / 0.379 / 0.678 | 0.920 / 0.813 | +21.0 * | +4.5 * |
+| Drammen | 0.855 / 0.388 / 0.725 | 0.917 / 0.841 | +20.6 * | +3.2 |
+| CINELDI | 0.818 / 0.438 / 0.736 | 0.901 / 0.859 | +15.5 * | -4.3 (-) |
 
 ## Trained carriers inside the anchoring layer (`carriers_in_anchoring_layer.csv`)
 
@@ -417,15 +436,15 @@ anchored carrier`), and each carrier's anchored forecast against the carrier alo
 
 | Population | vs anchored LSTM | vs anchored PatchTST | vs anchored LSTM-T-KAN-M | (i) small net | (i) LSTM | (i) PatchTST | (i) LSTM-T-KAN-M |
 |---|---|---|---|---|---|---|---|
-| BDG2 2017 | +4.3 * | +2.7 | +6.1 * | +3.2 * | +6.9 * | +5.1 | +9.5 * |
-| GoiEner non-household | +11.5 * | +4.3 | +14.2 * | +3.5 | +12.5 * | +7.1 * | +13.1 * |
-| GoiEner households | +7.5 * | +3.3 * | +8.6 * | -1.0 | +1.8 | +0.3 | +2.7 |
-| Cambridge | +15.7 * | +8.1 * | +21.8 * | +0.3 | +20.3 * | +5.4 * | +32.2 * |
-| HEEW Arizona | +13.5 * | +1.1 | +15.1 * | +1.4 | +20.6 * | +4.6 * | +22.2 * |
-| EWELD | +15.4 * | +3.3 | +20.0 * | +1.2 | +6.4 * | +2.2 * | +7.1 * |
-| Oslo | +20.0 * | +11.2 * | +23.0 * | +0.0 | +23.2 * | +7.4 * | +27.7 * |
-| Drammen | +10.9 * | +4.6 * | +10.7 * | +0.4 | +14.7 * | +7.8 * | +14.5 * |
-| CINELDI | +6.2 * | +2.0 * | +7.7 * | +2.6 * | +12.7 * | +6.1 * | +15.8 * |
+| BDG2 2017 | +5.2 * | +3.6 | +7.0 * | +2.8 * | +6.9 * | +5.1 | +9.5 * |
+| GoiEner non-household | +12.7 * | +5.6 * | +15.4 * | +2.8 | +12.5 * | +7.1 * | +13.1 * |
+| GoiEner households | +8.0 * | +3.8 * | +9.1 * | -1.7 | +1.8 | +0.3 | +2.7 |
+| Cambridge | +16.7 * | +9.2 * | +22.8 * | -0.1 | +20.3 * | +5.4 * | +32.2 * |
+| HEEW Arizona | +14.0 * | +1.7 | +15.6 * | +1.4 | +20.6 * | +4.6 * | +22.2 * |
+| EWELD | +15.2 * | +3.0 | +19.7 * | -0.0 | +6.4 * | +2.2 * | +7.1 * |
+| Oslo | +19.9 * | +11.0 * | +22.9 * | -0.2 | +23.2 * | +7.4 * | +27.7 * |
+| Drammen | +12.2 * | +5.9 * | +11.9 * | -0.2 | +14.7 * | +7.8 * | +14.5 * |
+| CINELDI | +6.9 * | +2.8 * | +8.5 * | +1.3 * | +12.7 * | +6.1 * | +15.8 * |
 
 The other carriers were trained on their own population only, with the same training cut as the small network.
 On state windows the anchoring layer returns those carriers' own forecasts, whereas ankyra-lite delivers the seasonal naive.
@@ -436,10 +455,10 @@ Populations (of 9) where the first-named forecast is resolved better / not resol
 
 | Contrast | Hourly | Level | Daily path | Within-day |
 |---|---|---|---|---|
-| anchored vs history only | 9 / 0 / 0 | 4 / 5 / 0 | 5 / 4 / 0 | 8 / 1 / 0 |
-| anchored vs carrier alone | 2 / 7 / 0 | 1 / 8 / 0 | 1 / 6 / 2 | 7 / 2 / 0 |
-| carrier alone vs history only | 6 / 3 / 0 | 2 / 7 / 0 | 5 / 3 / 1 | 7 / 2 / 0 |
-| anchored vs carrier-free control | 9 / 0 / 0 | 4 / 5 / 0 | 5 / 4 / 0 | 7 / 2 / 0 |
+| anchored vs history only | 9 / 0 / 0 | 5 / 4 / 0 | 6 / 3 / 0 | 8 / 1 / 0 |
+| anchored vs carrier alone | 2 / 7 / 0 | 0 / 9 / 0 | 1 / 6 / 2 | 6 / 3 / 0 |
+| carrier alone vs history only | 7 / 2 / 0 | 3 / 6 / 0 | 5 / 3 / 1 | 8 / 1 / 0 |
+| anchored vs carrier-free control | 9 / 0 / 0 | 5 / 4 / 0 | 5 / 4 / 0 | 8 / 1 / 0 |
 | carrier-free control vs history only | 8 / 1 / 0 | 0 / 9 / 0 | 1 / 8 / 0 | 8 / 1 / 0 |
 
 `anchored` is ankyra-lite. The history-only configuration and the carrier-free control (the anchoring layer called
@@ -451,17 +470,17 @@ windows out.
 
 | Stratum | Windows | vs carrier alone | vs TimesFM | vs Chronos-2-X |
 |---|---:|---|---|---|
-| < 10,248 h (no annual candidate) | 450 | -0.6 | -3.7 | -3.9 |
-| 10,248 h - 2 years | 1715 | +1.8 * | -1.3 | -4.4 |
-| 2-3 years | 829 | +2.6 | +10.8 | +6.1 |
-| >= 3 years | 2722 | +0.3 | +8.3 * | +5.0 |
+| < 10,248 h (no annual candidate) | 450 | -0.6 | -2.4 | -2.6 |
+| 10,248 h - 2 years | 1715 | +1.7 | +0.4 | -2.7 |
+| 2-3 years | 829 | +2.5 | +11.8 | +7.2 |
+| >= 3 years | 2722 | +0.3 | +9.1 * | +5.8 |
 | K_eff 6-8 | 0 | - | - | - |
-| K_eff 9-11 | 451 | -0.5 | -3.6 | -3.9 |
-| K_eff 12 | 5265 | +1.6 * | +2.0 | -1.0 |
+| K_eff 9-11 | 451 | -0.6 | -2.3 | -2.6 |
+| K_eff 12 | 5265 | +1.4 * | +3.4 | +0.4 |
 
 ## BDG2 near-zero meters (`bdg2_near_zero_sensitivity.csv`)
 
-Mean unit rank of ankyra-lite: 5.345 on all units (142 units), 5.367 without the three near-zero meters (139 units; rank 1 of 22).
+Mean unit rank of ankyra-lite: 4.676 on all units (142 units), 4.683 without the three near-zero meters (139 units; rank 1 of 22).
 
 ## Anchoring record (`anchoring_gain_deciles.csv`)
 
@@ -469,36 +488,71 @@ The two statistics of `anchoring_record` against the realised gain of ankyra-lit
 
 | Statistic | Level gain by decile (%) | Hourly gain by decile (%) |
 |---|---|---|
-| `carrier_level_weight` | +7 +4 -2 +3 +6 +1 +2 +1 -1 -1 | +2 +2 +0 +1 +1 +1 +1 +2 +1 +0 |
-| `history_vs_carrier_log_ratio` | +10 +8 +3 -0 -1 -0 -6 -1 +5 -4 | +3 +3 +1 +0 +0 +1 -1 +0 +2 +1 |
+| `carrier_level_weight` | +9 +5 +1 +6 +5 +5 -7 -4 +3 +3 | +3 +1 +1 +1 +2 +1 +1 +0 +1 +1 |
+| `history_vs_carrier_log_ratio` | +11 +9 +1 +4 +2 -1 -0 -8 +1 -1 | +3 +2 +1 +1 +1 +0 -0 +1 +1 +1 |
 
 ## Cost (`cost_per_window.csv`)
 
-Measured on 6 Oslo test windows, CPU, one thread: carrier forecasts at 7 issue times x 3 seeds 0.075 s/window, anchoring layer 0.509 s/window, total 0.584 s/window. The carrier forecasts match the stored evaluation forecasts to a relative difference of 2.0e-06.
+Measured on 6 Oslo test windows, CPU, one thread: carrier forecasts at 7 issue times x 6 seeds 0.135 s/window, anchoring layer 0.520 s/window, total 0.655 s/window. The carrier forecasts match the stored evaluation forecasts to a relative difference of 1.9e-06.
 
 ## Robustness to corrupted contexts (`robustness.csv`)
 
 64 Drammen test windows (43 units), only the context corrupted, re-forecast on the CPU with the
-released checkpoints (carrier forecasts at every issue time, anchoring layer, state rule). Change of the hourly RMS error
+released checkpoints (carrier forecasts at every issue time, anchoring layer, state rule, continuation layer). Change of the hourly RMS error
 against the clean context (positive = worse); the comparator is the carrier alone from the same corrupted record.
 
 | Corruption of the context | ankyra-lite: hourly error vs clean | carrier alone | level change, median / max | peak readout change, median | ankyra-lite vs carrier alone (corrupted) |
 |---|---:|---:|---:|---:|---:|
-| 5% of hours missing, filled by linear interpolation | -0.0% | -0.1% | +0.03% / 0.6% | +0.01% | -2.0% |
-| 20% of hours missing, filled | +0.1% | -0.1% | +0.14% / 2.3% | -0.24% | -2.0% |
-| a 24-hour zero-filled block in the last week | +3.2% | +3.0% | -3.44% / 7.0% | -1.25% | -2.0% |
-| one spike at 10x the context maximum, 36 hours before the origin | +41.1% | +23.6% | +3.67% / 12.5% | +998.39% | +11.8% |
-| context shifted by +1 hour | +9.4% | +9.2% | +0.32% / 5.3% | +0.24% | -1.9% |
-| context shifted by -1 hour | +11.7% | +12.7% | +0.22% / 5.1% | +0.05% | -3.1% |
-| whole history scaled by 0.5 | +0.0% | +0.0% | +0.00% / 0.0% | +0.00% | -2.2% |
-| whole history scaled by 2 | +0.0% | +0.0% | +0.00% / 0.0% | +0.00% | -2.2% |
+| 5% of hours missing, filled by linear interpolation | +0.0% | -0.1% | +0.02% / 0.6% | -0.01% | -2.9% |
+| 20% of hours missing, filled | +0.2% | +0.1% | +0.12% / 1.7% | -0.23% | -2.9% |
+| a 24-hour zero-filled block in the last week | +2.3% | +2.4% | -3.46% / 7.2% | -1.45% | -3.0% |
+| one spike at 10x the context maximum, 36 hours before the origin | +52.5% | +40.7% | +4.05% / 10.4% | +996.79% | +5.2% |
+| context shifted by +1 hour | +10.8% | +10.8% | +0.46% / 6.2% | +0.26% | -2.9% |
+| context shifted by -1 hour | +13.3% | +13.9% | -0.11% / 3.7% | -0.06% | -3.4% |
+| whole history scaled by 0.5 | +0.0% | +0.0% | +0.00% / 0.0% | +0.00% | -2.9% |
+| whole history scaled by 2 | +0.0% | +0.0% | +0.00% / 0.0% | +0.00% | -2.9% |
 
-Largest deviation from exact scale equivariance: 0.00e+00. State rules fired: miss05 0, miss20 0, zero24 0, spike 0, shift_plus1 0, shift_minus1 0, scale0.5 0, scale2 0. The clean forecasts match the stored evaluation product to a relative difference of 2.3e-06. CPU time 4.9 min (0.51 s per window and corruption).
+Largest deviation from exact scale equivariance: 0.00e+00. State rules fired: miss05 0, miss20 0, zero24 0, spike 0, shift_plus1 0, shift_minus1 0, scale0.5 0, scale2 0. The clean forecasts match the stored evaluation product to a relative difference of 1.2e-06. CPU time 5.4 min (0.56 s per window and corruption).
 
 ## Constants (`constants.csv`)
 
-23 carrier rows (training recipe, span return, network; read from the package defaults) and 20 anchoring-layer rows (group, constant, value and where_fixed as in the first release; the layer
+36 carrier rows (training recipe, span return, network; read from the package defaults) and 20 anchoring-layer rows (group, constant, value and where_fixed as in the first release; the layer
 is a byte-identical copy). The `sensitivity` column holds the study's recipe readouts where a recipe constant was varied.
+
+## Continuation layer (`continuation_layer.csv`, `continuation_record.csv`)
+
+The origin-continuity layer on against off on the same carrier and anchoring layer (ankyra-lite after against before the
+layer, seasonal naive on state windows in both), hourly error by lead time, improvement in % (`*` resolved better, `(-)`
+resolved worse; unit x month interval, no seed layer: the same carrier on both sides):
+
+| Population | lead hour 0 | lead hours 0-3 | forecast day 1 | forecast days 2-7 | forecast days 8-31 | whole window |
+|---|---|---|---|---|---|---|
+| BDG2 2017 | +39.2 * | +32.2 * | +19.2 * | +3.7 * | +0.2 | +0.8 * |
+| GoiEner non-household | +32.4 * | +29.8 * | +12.0 * | +2.4 * | +0.3 * | +0.5 * |
+| GoiEner households | +18.4 * | +13.5 * | +8.4 * | +1.7 * | +0.1 * | +0.4 * |
+| Cambridge | +22.6 * | +17.7 * | +7.6 * | +0.4 | -0.1 | +0.2 |
+| HEEW Arizona | +31.9 * | +27.5 * | +14.3 * | +3.1 * | +0.3 * | +0.9 * |
+| EWELD | +37.0 * | +28.4 * | +7.5 * | +1.1 | +0.3 | +0.5 * |
+| Oslo | +35.1 * | +30.0 * | +12.6 * | -1.0 | -0.5 (-) | -0.3 |
+| Drammen | +42.8 * | +39.5 * | +25.1 * | +2.3 | -0.1 | +1.0 |
+| CINELDI | +24.8 * | +23.9 * | +6.4 * | +0.2 | -0.1 | +0.0 |
+| all nine populations | +28.0 * | +23.4 * | +11.1 * | +1.9 * | +0.2 * | +0.5 * |
+
+Readout rule A: energy, level and peak are read before the layer, so the delivered trajectory's mean differs from the
+energy readout (744 x level). Relative difference on the windows the layer acts on, and what the layer did:
+
+| Population | Delivered mean vs energy readout, p50 / p99 / max | State windows bypassed | Clipped spans (fast / day) | No-match reference day | max abs Delta |
+|---|---|---:|---|---:|---:|
+| BDG2 2017 | 0.46% / 7.93% / 8.71% | 33 | 6.1% / 6.6% | 0 | 0.809 |
+| GoiEner non-household | 1.21% / 9.00% / 89.89% | 13 | 11.6% / 7.9% | 0 | 0.809 |
+| GoiEner households | 1.54% / 9.93% / 309.77% | 35 | 20.0% / 10.9% | 0 | 0.809 |
+| Cambridge | 0.39% / 4.46% / 13.32% | 0 | 1.1% / 0.4% | 0 | 0.809 |
+| HEEW Arizona | 0.33% / 3.30% / 6.58% | 0 | 0.5% / 0.2% | 0 | 0.809 |
+| EWELD | 1.04% / 7.71% / 9.49% | 245 | 12.9% / 6.5% | 33 | 0.809 |
+| Oslo | 0.88% / 5.29% / 7.57% | 0 | 0.3% / 0.3% | 0 | 0.809 |
+| Drammen | 1.13% / 4.88% / 6.45% | 0 | 0.3% / 0.3% | 0 | 0.782 |
+| CINELDI | 0.94% / 7.10% / 9.43% | 0 | 7.2% / 6.1% | 0 | 0.809 |
+| all nine populations | 0.77% / 7.81% / 309.77% | 326 | 6.4% / 4.2% | 33 | 0.809 |
 
 ## What the handover contributes (`handover_granularity.csv`, `lead_weeks.csv`)
 
@@ -509,29 +563,29 @@ worse); `share` = the part of AW's gain over A0 that the fixed half weight alrea
 
 | Population | AW vs Ah | AW vs AM | Ah vs A0 | AW vs A0 | share (Ah) | ankyra-lite vs fixed division | mean weight on the carrier, weeks 1-4 |
 |---|---|---|---|---|---|---|---|
-| BDG2 2017 | +0.9 * | -0.2 | +0.7 | +1.6 * | 46% | +2.8 * | 0.54 / 0.49 / 0.54 / 0.51 |
-| GoiEner non-household | -0.2 | -0.1 | +1.3 | +1.1 | 114% | +5.1 * | 0.57 / 0.56 / 0.58 / 0.59 |
-| GoiEner households | +0.4 | -0.1 | +1.6 * | +1.9 * | 81% | +2.5 * | 0.57 / 0.53 / 0.54 / 0.55 |
-| Cambridge | +1.3 | -0.1 | +4.7 * | +5.9 * | 78% | +8.3 * | 0.70 / 0.62 / 0.61 / 0.63 |
-| HEEW Arizona | +1.1 * | -0.5 | +3.6 * | +4.7 * | 77% | +7.9 * | 0.68 / 0.62 / 0.60 / 0.62 |
-| EWELD | +1.4 | -0.3 | +5.8 * | +7.2 * | 80% | +9.5 * | 0.61 / 0.58 / 0.54 / 0.53 |
-| Oslo | +0.2 | -0.1 | +5.5 * | +5.7 * | 96% | +9.2 * | 0.63 / 0.69 / 0.67 / 0.68 |
-| Drammen | +0.4 | -0.3 | +4.6 * | +5.0 * | 91% | +7.0 * | 0.68 / 0.73 / 0.70 / 0.68 |
-| CINELDI | +0.0 | -0.1 | +1.0 | +1.1 | 97% | +2.9 * | 0.52 / 0.51 / 0.51 / 0.53 |
+| BDG2 2017 | +0.9 * | -0.1 | +0.7 | +1.7 * | 44% | +2.9 * | 0.56 / 0.48 / 0.54 / 0.53 |
+| GoiEner non-household | -0.1 | -0.1 | +1.3 | +1.2 | 111% | +4.3 * | 0.59 / 0.57 / 0.56 / 0.56 |
+| GoiEner households | +0.4 | -0.1 | +1.8 * | +2.1 * | 83% | +2.9 * | 0.56 / 0.53 / 0.55 / 0.56 |
+| Cambridge | +1.2 | -0.2 | +4.6 * | +5.7 * | 80% | +7.9 * | 0.71 / 0.64 / 0.63 / 0.64 |
+| HEEW Arizona | +0.9 | -0.3 | +2.9 * | +3.8 * | 76% | +6.8 * | 0.67 / 0.61 / 0.59 / 0.62 |
+| EWELD | +1.0 | -0.5 | +5.3 * | +6.2 * | 85% | +8.4 * | 0.62 / 0.59 / 0.55 / 0.54 |
+| Oslo | +0.4 | -0.2 | +4.9 * | +5.3 * | 92% | +8.3 * | 0.69 / 0.70 / 0.68 / 0.70 |
+| Drammen | +1.0 * | -0.2 | +4.5 * | +5.5 * | 82% | +7.5 * | 0.69 / 0.76 / 0.74 / 0.72 |
+| CINELDI | +0.0 | -0.1 | +1.3 * | +1.3 * | 99% | +2.7 * | 0.57 / 0.57 / 0.57 / 0.60 |
 
 By forecast week (`lead_weeks.csv`), hourly improvement of ankyra-lite and of the fixed division over the carrier alone:
 
 | Population | ankyra-lite vs carrier, weeks 1-4 | fixed division vs carrier, weeks 1-4 |
 |---|---|---|
-| BDG2 2017 | +2.5 +3.6 * +3.1 * +2.7 * | -3.5 +0.9 -1.2 +0.2 |
-| GoiEner non-household | +3.5 +4.1 +3.8 +4.1 | -2.1 -1.5 -2.1 -1.8 |
-| GoiEner households | -1.0 -1.9 (-) -3.2 (-) -1.6 | -7.4 (-) -7.5 (-) -8.3 (-) -5.1 (-) |
-| Cambridge | -0.3 +1.1 +0.4 +0.4 | -13.7 (-) -7.7 (-) -7.9 (-) -8.3 (-) |
-| HEEW Arizona | +0.7 +1.2 +2.1 +1.8 | -15.9 (-) -7.7 (-) -4.9 -4.8 (-) |
-| EWELD | +0.3 -2.9 -0.4 +1.4 | -12.8 (-) -17.5 (-) -12.2 (-) -8.6 |
-| Oslo | -1.2 +0.2 -0.3 +0.9 | -11.4 (-) -11.5 (-) -13.2 (-) -8.4 (-) |
-| Drammen | -0.8 -0.1 +1.1 +1.1 | -7.2 (-) -9.8 (-) -6.3 -6.3 |
-| CINELDI | +2.2 * +2.9 * +2.9 * +2.5 * | -0.7 -0.9 -0.4 -0.3 |
+| BDG2 2017 | +7.3 * +4.4 * +2.7 +2.1 * | +3.1 +1.9 -3.4 (-) -1.1 |
+| GoiEner non-household | +5.3 * +3.7 +3.3 +3.4 | +0.7 -1.0 -2.1 -1.6 |
+| GoiEner households | -0.1 -2.9 (-) -4.5 (-) -2.5 | -6.6 (-) -9.4 (-) -10.8 (-) -7.1 (-) |
+| Cambridge | +0.8 +0.7 +0.4 -0.3 | -8.0 (-) -7.6 (-) -8.4 (-) -10.0 (-) |
+| HEEW Arizona | +4.7 * +1.8 +2.3 +1.9 | -4.7 -5.6 -4.8 -5.6 (-) |
+| EWELD | +1.5 -3.0 -1.4 -0.5 | -6.9 -15.7 (-) -12.6 (-) -10.2 |
+| Oslo | -0.5 -1.1 -0.8 +0.2 | -7.9 (-) -10.7 (-) -13.0 (-) -9.2 (-) |
+| Drammen | +3.2 -0.4 +0.4 +0.4 | -3.3 -11.6 (-) -7.6 (-) -7.3 (-) |
+| CINELDI | +1.4 +1.3 +1.5 +1.4 * | -0.9 -2.4 -1.7 -1.5 |
 
 The arms are rebuilt from the anchoring layer's own fields (lite_reanchor.py, mode `fields`); AW reproduces the delivered
 forecast bit for bit, and the history-side daily means before the handover are those of the layer's own level.
@@ -540,15 +594,15 @@ forecast bit for bit, and the history-side daily means before the handover are t
 
 | Population | Anchored windows | Mean trust on the analog shape | Windows with trust > 0 | Analog shape kept |
 |---|---:|---:|---:|---:|
-| BDG2 2017 | 441 | 0.219 | 87% | 98% |
-| GoiEner non-household | 877 | 0.171 | 76% | 98% |
-| GoiEner households | 661 | 0.055 | 43% | 99% |
-| Cambridge | 730 | 0.172 | 85% | 100% |
-| HEEW Arizona | 658 | 0.185 | 86% | 100% |
-| EWELD | 278 | 0.144 | 78% | 94% |
-| Oslo | 581 | 0.145 | 80% | 100% |
-| Drammen | 689 | 0.223 | 89% | 100% |
-| CINELDI | 475 | 0.211 | 90% | 100% |
+| BDG2 2017 | 441 | 0.203 | 85% | 98% |
+| GoiEner non-household | 877 | 0.169 | 76% | 98% |
+| GoiEner households | 661 | 0.054 | 43% | 99% |
+| Cambridge | 730 | 0.154 | 82% | 100% |
+| HEEW Arizona | 658 | 0.174 | 85% | 100% |
+| EWELD | 278 | 0.139 | 76% | 94% |
+| Oslo | 581 | 0.131 | 76% | 100% |
+| Drammen | 689 | 0.213 | 88% | 100% |
+| CINELDI | 475 | 0.192 | 87% | 100% |
 
 ## Block-wise weights against one whole-window weight (`ablation.csv`, `component_contributions.csv`, `generic_combinations.csv`)
 
@@ -558,26 +612,26 @@ shrunk to 1/2) and against their half-and-half average; improvement of ankyra-li
 
 | Population | vs whole-window weight (hourly / energy) | vs half-and-half (hourly / energy) | mean weight on the carrier |
 |---|---|---|---:|
-| BDG2 2017 | -0.4 / -2.7 | +0.7 * / +4.8 | 0.55 |
-| GoiEner non-household | -0.8 / -0.3 | +1.6 / +2.3 | 0.61 |
-| GoiEner households | +1.4 * / +2.4 | +3.8 * / +5.5 | 0.64 |
-| Cambridge | +0.5 / +1.4 | +3.8 * / +6.4 | 0.68 |
-| HEEW Arizona | +0.0 / +1.5 | +3.1 * / +7.0 | 0.68 |
-| EWELD | +0.7 / -0.2 | +3.5 * / +8.2 | 0.62 |
-| Oslo | +0.5 / +2.0 | +2.4 * / +4.0 | 0.71 |
-| Drammen | -0.3 / -0.3 | +0.6 / +0.4 | 0.69 |
-| CINELDI | -0.3 / -1.6 | +0.1 / -0.9 | 0.58 |
+| BDG2 2017 | -0.2 / -3.9 | +1.0 / +2.8 | 0.56 |
+| GoiEner non-household | -0.2 / +0.9 | +1.7 / +3.3 | 0.61 |
+| GoiEner households | +1.5 * / -0.1 | +4.0 * / -0.3 | 0.65 |
+| Cambridge | +0.4 / +1.1 | +3.9 * / +6.4 | 0.70 |
+| HEEW Arizona | +0.4 / +0.4 | +2.9 * / +7.6 | 0.68 |
+| EWELD | +0.5 / +3.0 | +3.1 * / +11.4 | 0.63 |
+| Oslo | +0.4 / +1.8 | +2.5 * / +4.9 | 0.73 |
+| Drammen | -0.0 / +0.3 | +1.5 * / +2.7 | 0.72 |
+| CINELDI | -0.2 / -1.2 | +0.3 / -0.3 | 0.63 |
 
 Generic partners (`generic_combinations.csv`), populations (of 9) first-named resolved better / not resolved / resolved worse:
 
 | Contrast | Hourly | Energy |
 |---|---|---|
-| B2(H) vs B2(SN-week) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(H) vs B2(SN-week) | 1 / 8 / 0 | 0 / 9 / 0 |
 | B2(H) vs B2(WeekProf4) | 0 / 9 / 0 | 0 / 9 / 0 |
-| B2(H) vs B2(LYR-profile) | 2 / 7 / 0 | 0 / 9 / 0 |
+| B2(H) vs B2(LYR-profile) | 1 / 8 / 0 | 0 / 9 / 0 |
 | B2(H) vs best B2(X) | 0 / 9 / 0 | 0 / 9 / 0 |
-| B2(H) vs best equal-weight | 1 / 8 / 0 | 0 / 8 / 1 |
-| ankyra-lite vs best generic | 0 / 9 / 0 | 0 / 8 / 1 |
+| B2(H) vs best equal-weight | 2 / 7 / 0 | 0 / 8 / 1 |
+| ankyra-lite vs best generic | 0 / 9 / 0 | 0 / 9 / 0 |
 
 B2(H) is the whole-window weight with the history side, B2(X) the same with a generic forecaster X in its place (X computed
 from the load at every pseudo-origin), EW(X) the equal-weight average of the carrier and X; `best` was picked after scoring.
@@ -586,22 +640,22 @@ from the load at every pseudo-origin), EW(X) the equal-weight average of the car
 
 | Population | Seven candidates: hit rate / chance | Six historical: hit rate / chance |
 |---|---|---|
-| BDG2 2017 | 0.191 / 0.145 | 0.251 / 0.170 |
-| GoiEner non-household | 0.205 / 0.143 | 0.225 / 0.167 |
-| GoiEner households | 0.203 / 0.143 | 0.232 / 0.167 |
-| Cambridge | 0.207 / 0.146 | 0.229 / 0.172 |
-| HEEW Arizona | 0.228 / 0.147 | 0.280 / 0.173 |
-| EWELD | 0.180 / 0.144 | 0.236 / 0.169 |
-| Oslo | 0.248 / 0.143 | 0.217 / 0.167 |
-| Drammen | 0.221 / 0.143 | 0.231 / 0.167 |
-| CINELDI | 0.173 / 0.143 | 0.194 / 0.167 |
-| all nine populations (seven (six historical and the carrier)) | 0.209 / 0.144 (difference +0.065, 95% unit bootstrap +0.054 to +0.076) | |
+| BDG2 2017 | 0.210 / 0.145 | 0.251 / 0.170 |
+| GoiEner non-household | 0.206 / 0.143 | 0.225 / 0.167 |
+| GoiEner households | 0.197 / 0.143 | 0.232 / 0.167 |
+| Cambridge | 0.221 / 0.146 | 0.229 / 0.172 |
+| HEEW Arizona | 0.217 / 0.147 | 0.280 / 0.173 |
+| EWELD | 0.188 / 0.144 | 0.236 / 0.169 |
+| Oslo | 0.257 / 0.143 | 0.217 / 0.167 |
+| Drammen | 0.255 / 0.143 | 0.231 / 0.167 |
+| CINELDI | 0.175 / 0.143 | 0.194 / 0.167 |
+| all nine populations (seven (six historical and the carrier)) | 0.217 / 0.144 (difference +0.073, 95% unit bootstrap +0.061 to +0.084) | |
 | all nine populations (six historical) | 0.233 / 0.169 (difference +0.064, 95% unit bootstrap +0.053 to +0.075) | |
 
 Descriptive (P20): the candidate with the largest weight (smallest pseudo-origin error) against the candidate whose window
 mean at the origin is closest to the realised mean; windows with tied weights (no evidence) are left out.
 
-Peak readout of ankyra-lite against the same readout on the carrier alone (`peak_readout.csv`, comparator `same readout on the carrier alone`): BDG2 2017 -3.0; GoiEner non-household +4.5; GoiEner households +2.1; Cambridge -1.5; HEEW Arizona -1.7; EWELD +11.3; Oslo -3.1 (-); Drammen -3.1 (-); CINELDI +2.3.
+Peak readout of ankyra-lite against the same readout on the carrier alone (`peak_readout.csv`, comparator `same readout on the carrier alone`): BDG2 2017 -1.6; GoiEner non-household +5.6; GoiEner households +3.5; Cambridge -1.7; HEEW Arizona -6.9; EWELD +4.2; Oslo -2.5 (-); Drammen -2.9 (-); CINELDI +0.0.
 
 ## Training budget of the trained baselines (`training_budget_sensitivity.csv`)
 
@@ -611,17 +665,17 @@ learning-rate grid and seeds unchanged). Improvement of ankyra-lite in % (`*` re
 
 | Population | DLinear original -> relaxed | iTransformer original -> relaxed | LSTM original -> relaxed | PatchTST original -> relaxed |
 |---|---|---|---|---|
-| BDG2 2017 | +6.9 * -> +6.9 * | +8.2 -> +8.2 | +14.6 * -> +13.9 * | +8.9 * -> +8.9 * |
-| Cambridge | +21.7 * -> +19.6 * | +12.8 * -> +12.8 * | +35.3 * -> +33.0 * | +13.3 * -> +12.4 * |
-| HEEW Arizona | +17.5 * -> +17.5 * | +7.0 -> +5.1 | +31.0 * -> +25.3 * | +4.9 -> +5.3 |
-| EWELD | +11.4 * -> +12.5 * | +4.5 -> +6.2 | +21.2 * -> +18.1 * | +5.0 -> +5.0 |
-| GoiEner non-household | +10.8 * -> +10.8 * | +0.2 -> +0.2 | +15.1 * -> +10.6 * | +8.7 * -> +8.7 * |
-| GoiEner households | +8.8 * -> +9.1 * | +6.1 * -> +4.2 * | +7.7 * -> +6.2 * | +4.8 * -> +4.9 * |
-| Oslo | +27.3 * -> +27.9 * | +16.3 * -> +16.3 * | +42.6 * -> +42.6 * | +16.1 * -> +16.1 * |
-| Drammen | +11.8 * -> +12.3 * | +9.5 * -> +9.5 * | +28.1 * -> +20.7 * | +10.8 * -> +9.6 * |
-| CINELDI | +8.7 * -> +8.3 * | +5.8 * -> +6.6 * | +24.7 * -> +14.6 * | +6.1 * -> +6.1 * |
+| BDG2 2017 | +8.5 * -> +8.5 * | +9.8 * -> +9.8 * | +16.1 * -> +15.3 * | +10.5 * -> +10.5 * |
+| Cambridge | +22.8 * -> +20.7 * | +14.0 * -> +14.0 * | +36.2 * -> +34.0 * | +14.5 * -> +13.7 * |
+| HEEW Arizona | +18.7 * -> +18.7 * | +8.3 * -> +6.5 | +32.0 * -> +26.4 * | +6.3 -> +6.7 |
+| EWELD | +11.5 * -> +12.6 * | +4.7 -> +6.3 | +21.4 * -> +18.3 * | +5.1 -> +5.1 |
+| GoiEner non-household | +12.5 * -> +12.5 * | +2.1 -> +2.1 | +16.8 * -> +12.4 * | +10.4 * -> +10.4 * |
+| GoiEner households | +9.7 * -> +10.0 * | +7.0 * -> +5.1 * | +8.5 * -> +7.1 * | +5.7 * -> +5.8 * |
+| Oslo | +26.9 * -> +27.5 * | +15.9 * -> +15.9 * | +42.3 * -> +42.3 * | +15.6 * -> +15.6 * |
+| Drammen | +13.9 * -> +14.5 * | +11.7 * -> +11.7 * | +29.8 * -> +22.6 * | +12.9 * -> +11.8 * |
+| CINELDI | +9.5 * -> +9.1 * | +6.6 * -> +7.3 * | +25.3 * -> +15.2 * | +6.8 * -> +6.8 * |
 
-Hourly: 36 of 36 verdicts unchanged, 0 point estimates change sign; energy: 34 of 36 unchanged, 2 sign changes. Relaxed against original (hourly): 8 better, 11 not resolved, 3 worse, 14 identical forecasts. Selected run at the 30-epoch cap: 6; selected epoch = 30: 2. ankyra-lite's rank among the 22 forecasters with the four relaxed versions substituted is unchanged on every population.
+Hourly: 35 of 36 verdicts unchanged, 0 point estimates change sign; energy: 33 of 36 unchanged, 0 sign changes. Relaxed against original (hourly): 8 better, 11 not resolved, 3 worse, 14 identical forecasts. Selected run at the 30-epoch cap: 6; selected epoch = 30: 2. ankyra-lite's rank among the 22 forecasters with the four relaxed versions substituted is unchanged on every population.
 
 ## Foundation models with a year of context (`long_context_baselines.csv`)
 
@@ -630,15 +684,15 @@ outside the main ranks. Improvement in % (`*` resolved better for the first-name
 
 | Population | ankyra-lite vs TimesFM-8736 (hourly / energy) | ankyra-lite vs Chronos-2-8192 | TimesFM-8736 vs TimesFM | Chronos-2-8192 vs Chronos-2 |
 |---|---|---|---|---|
-| BDG2 2017 | -7.9 (-) / -7.2 | +5.2 / +15.8 | -35.0 / -17.6 | -56.3 (-) / -58.2 |
-| Cambridge | +11.1 * / +19.1 * | +15.4 * / +28.0 * | +3.5 * / +5.0 | +0.3 / +1.8 |
-| HEEW Arizona | -3.7 / -9.5 | +3.4 / +2.9 | +4.6 / +7.2 | +0.6 / +1.9 |
-| EWELD | -1.0 / -11.2 | -0.1 / +0.5 | +0.5 / +3.4 | -373.0 (-) / -397.6 (-) |
-| GoiEner non-household | -1.7 / +13.0 | -2.9 / +15.0 | +4.6 * / +8.0 | +2.8 / +2.3 |
-| GoiEner households | -6.3 (-) / +32.6 * | -6.2 (-) / +35.5 * | +3.4 / +9.0 * | +4.4 * / +5.2 |
-| Oslo | +22.9 * / +35.5 * | +25.2 * / +38.1 * | +0.6 / -0.1 | -1.7 / -0.9 |
-| Drammen | +13.2 * / +15.6 | +14.3 * / +17.5 | +6.6 * / +12.0 * | +1.8 / +7.9 |
-| CINELDI | +6.9 * / +16.3 * | +8.3 * / +19.3 * | +3.1 * / +5.8 | -0.5 / -0.9 |
+| BDG2 2017 | -6.1 / -3.8 | +6.8 / +18.4 | -35.0 / -17.6 | -56.3 (-) / -58.2 |
+| Cambridge | +12.3 * / +20.6 * | +16.6 * / +29.4 * | +3.5 * / +5.0 | +0.3 / +1.8 |
+| HEEW Arizona | -2.2 / -7.9 | +4.8 / +4.3 | +4.6 / +7.2 | +0.6 / +1.9 |
+| EWELD | -0.8 / -8.5 | +0.1 / +2.9 | +0.5 / +3.4 | -373.0 (-) / -397.6 (-) |
+| GoiEner non-household | +0.2 / +13.5 | -0.9 / +15.5 | +4.6 * / +8.0 | +2.8 / +2.3 |
+| GoiEner households | -5.3 (-) / +28.7 * | -5.2 (-) / +31.9 * | +3.4 / +9.0 * | +4.4 * / +5.2 |
+| Oslo | +22.5 * / +34.9 * | +24.8 * / +37.6 * | +0.6 / -0.1 | -1.7 / -0.9 |
+| Drammen | +15.3 * / +19.3 * | +16.3 * / +21.2 | +6.6 * / +12.0 * | +1.8 / +7.9 |
+| CINELDI | +7.7 * / +17.6 * | +9.0 * / +20.5 * | +3.1 * / +5.8 | -0.5 / -0.9 |
 
 ## Files of the first release without a counterpart here
 
@@ -678,8 +732,6 @@ of any result file of this repository.
 
 Hourly cross-check against the earlier hourly-only comparison (20 baselines): not applicable: the earlier hourly-only comparison scored the from-scratch stage alone, not this product; the product reading is checked against the study's own scorer instead (`study_scorer_crosscheck`).
 
-Product check against the study's own scorer of the recipe arms: 9 of 9 populations reproduce its per-population contrasts (largest difference 0.0e+00 percentage points).
-
 ## Files
 
 All in `results/`. The files of the main comparison have the columns of the release files of the same name plus a
@@ -697,13 +749,13 @@ trailing `flag` column; the other files are described with their columns in `res
 | `rank_tests.csv` | Friedman, Nemenyi and Holm-corrected Wilcoxon tests on per-unit RMSE (descriptive) |
 | `scaled_errors.csv` | RMSSE and MASE with the weekly seasonal-naive in-sample scale (descriptive) |
 | `peak_readout.csv` | peak readout contrasts (late windows): own trajectory maximum, previous-window peak, and for each baseline the same readout and its trajectory maximum |
-| `recipe_history.csv` | the study's one reading of the recipe arms (from-scratch stage, F, R, V): ankyra-lite's version history |
+| `recipe_history.csv` | the study's one reading of the recipe arms (from-scratch stage, F, R, V): ankyra-lite's version history; and the 0.2.0 study's development check and test read |
 | `constants.csv` | every constant: the carrier's (training recipe, span return, network) and the anchoring layer's (as in the first release) |
-| `datasets.csv` | populations, the training, validation and test split, and the returned validation span |
+| `datasets.csv` | populations, the training, validation and test split, and the returned validation span, and the carrier seeds |
 | `robustness.csv` | ankyra-lite and the carrier alone on corrupted contexts (CPU re-forecast with the released checkpoints) |
 | `contrast_ii_blocks.csv` | ankyra-lite against the history-only configuration and the carrier alone, by error block |
 | `contrast_ii_control.csv` | ankyra-lite against the carrier-free control (the same procedure without a carrier), by error block |
-| `example_window_cambridge.csv` | one Cambridge test window: load, TimesFM, ankyra-lite (`ankyra_kw`) and the carrier alone |
+| `example_window_cambridge.csv` | one Cambridge test window: load, TimesFM, ankyra-lite (`ankyra_kw`) and the carrier alone and ankyra-lite before the continuation layer |
 | `cost_per_window.csv` | parameters, device and CPU seconds per window (one thread) |
 | `intervals_by_population.csv` | the release interval centred on ankyra-lite and the native quantiles of TimesFM and Chronos-2 (test windows) |
 | `intervals_winkler_contrasts.csv` | unit-equal Winkler contrasts of the ankyra-lite interval against the native quantiles |
@@ -715,6 +767,8 @@ trailing `flag` column; the other files are described with their columns in `res
 | `bdg2_near_zero_sensitivity.csv` | the BDG2 hourly contrasts with and without the three near-zero meters |
 | `anchoring_gain_deciles.csv` | the anchoring record against the realised gain of ankyra-lite over its carrier alone (descriptive) |
 | `training_curves.csv` | both training stages per population and seed: validation criterion (and training loss) by epoch, best epoch |
+| `continuation_layer.csv` | the origin-continuity layer on against off on the same carrier, by lead time (hourly) and the delivered energy |
+| `continuation_record.csv` | what the layer did on the test windows, and the delivered mean against the energy readout (readout rule A) |
 | `example_window_cambridge.json` | the building, period, day types and source of the example window |
 | `intervals_households.json` | the interval on GoiEner households: four arms and contrasts |
 | `handover_granularity.csv` | the handover arms (none, a fixed half weight, one weight per window, the weekly weights) against each other, the carrier alone, TimesFM and the fixed division |

@@ -1,7 +1,9 @@
 """Tests of the API around the anchoring layer: the readouts of ``ankyra_lite.readouts`` (interval, blocks, raw
 trajectory, energy added by the projection, peak), the history-only configuration through ``ankyra_lite.forecast``,
 the fields read through to the anchoring layer, the absence of information from after the origin end to end, the
-top-level names, and the two examples.
+top-level names, and the two examples.  The checks hold with the continuation layer off and on (release default
+``ankyra_lite._release.CONTINUATION_DEFAULT``): the readouts that are read before the layer are checked against
+``trajectory_before_continuation_kw``, which is ``trajectory_kw`` when the layer is off.
 
 Synthetic data and an untrained carrier (``build_carrier()``, seed 0); no checkpoint, study data or ANKYRA checkout is
 needed.  Run from the repository root:  python -m unittest tests.test_readouts_lite -v
@@ -96,8 +98,8 @@ class TestInterval(LiteReadoutBase):
         bands, n = readouts.interval(self.h, self.r, group=GROUP, temp_sigma_std=SIGMA)
         load, types = np.asarray(self.h.load_kw, dtype=np.float64), np.asarray(self.h.day_types)
         Q, n_ref = A.readouts.residual_quantiles(load, self.h.temperature_c, types, self.h.start_timestamp, GROUP, SIGMA, O)
-        ref = A.readouts.interval_bands(self.r.trajectory_kw, A.readouts.origin_scale(load[O - CONTEXT:O]), Q,
-                                        (O + np.arange(HORIZON)) % 24, (types[O:O + HORIZON] < 5).astype(int))
+        args = (A.readouts.origin_scale(load[O - CONTEXT:O]), Q, (O + np.arange(HORIZON)) % 24, (types[O:O + HORIZON] < 5).astype(int))
+        ref = A.readouts.interval_bands(self.r.trajectory_kw, *args)
         self.assertEqual(bands.shape, (5, HORIZON))
         self.assertTrue(np.array_equal(bands, ref))                                   # bit for bit
         self.assertEqual((n, n_ref), (12, 12))
@@ -106,7 +108,8 @@ class TestInterval(LiteReadoutBase):
         self.assertEqual(readouts.LEVELS, A.readouts.LEVELS)
         same, _ = readouts.interval(self.h, self.r.trajectory_kw, group=GROUP, temp_sigma_std=SIGMA)   # a point array works too
         self.assertTrue(np.array_equal(same, bands))
-        self.assertTrue(np.array_equal(ankyra_lite.interval(self.h, self.r.anchored, group=GROUP, temp_sigma_std=SIGMA)[0], bands))
+        before = A.readouts.interval_bands(self.r.trajectory_before_continuation_kw, *args)   # = bands with the layer off
+        self.assertTrue(np.array_equal(ankyra_lite.interval(self.h, self.r.anchored, group=GROUP, temp_sigma_std=SIGMA)[0], before))
 
     def test_interval_ignores_values_at_unobserved_hours(self):
         obs = np.ones(O, bool)
@@ -208,7 +211,8 @@ class TestReadThroughFields(LiteReadoutBase):
 class TestBlocksAndEnergy(LiteReadoutBase):
     def _check(self, r):
         raw = readouts.raw_trajectory(r)
-        self.assertTrue(np.array_equal(np.maximum(raw, 0.0), r.trajectory_kw))     # the delivered trajectory, bit for bit
+        before = r.trajectory_before_continuation_kw                               # the delivered trajectory when the layer is off
+        self.assertTrue(np.array_equal(np.maximum(raw, 0.0), before))              # bit for bit
         b = readouts.blocks(raw)
         scale = float(np.abs(raw).max())
         self.assertTrue(np.allclose(A.blocks.compose(b.level_kw, b.daily_path_kw, b.within_day_kw), raw, rtol=0, atol=1e-12 * scale))
@@ -220,7 +224,9 @@ class TestBlocksAndEnergy(LiteReadoutBase):
         self.assertEqual(r.energy_kwh, float(HORIZON * np.mean(r.daily_means_kw)))   # energy readout: 744 x level, before the projection
         inc = readouts.projection_energy_increase(r)
         self.assertEqual(inc, A.readouts.projection_energy_increase_kwh(raw))
-        self.assertAlmostEqual(float(r.trajectory_kw.sum()) - r.energy_kwh, inc, delta=1e-9 * HORIZON * scale)
+        self.assertAlmostEqual(float(before.sum()) - r.energy_kwh, inc, delta=1e-9 * HORIZON * scale)
+        self.assertAlmostEqual(float(r.trajectory_kw.sum()) - r.energy_kwh, inc + readouts.continuation_energy_change(r),
+                               delta=1e-9 * HORIZON * scale)
 
     def test_blocks_of_the_raw_forecast_sum_back_to_it(self):
         self._check(self.r)
@@ -239,15 +245,16 @@ class TestBlocksAndEnergy(LiteReadoutBase):
         self.assertEqual(inc, float(np.maximum(-raw, 0.0).sum()))
         self.assertAlmostEqual(inc, float(r.trajectory_kw.sum() - raw.sum()), places=9)
 
-    def test_peak_is_the_readout_of_the_delivered_trajectory(self):
+    def test_peak_is_the_readout_of_the_trajectory_before_the_continuation_layer(self):
         self.assertIs(readouts.peak, peak)
-        self.assertEqual(self.r.peak_kw, readouts.peak(self.r.trajectory_kw, self.h.load_kw, self.h.day_types))
+        before = self.r.trajectory_before_continuation_kw                          # the delivered trajectory when the layer is off
+        self.assertEqual(self.r.peak_kw, readouts.peak(before, self.h.load_kw, self.h.day_types))
         ctx = np.asarray(self.h.load_kw)[O - CONTEXT:O]
         ty = np.asarray(self.h.day_types)
-        ref = A.readouts.peak_readout(self.r.trajectory_kw, ctx[None], ty[O - CONTEXT + 12 + 24 * np.arange(56)][None],
+        ref = A.readouts.peak_readout(before, ctx[None], ty[O - CONTEXT + 12 + 24 * np.arange(56)][None],
                                       ty[O + 12 + 24 * np.arange(31)][None])[0]
         self.assertEqual(self.r.peak_kw, float(ref))
-        self.assertGreaterEqual(self.r.peak_kw, float(self.r.trajectory_kw.reshape(31, 24).mean(1).max()))
+        self.assertGreaterEqual(self.r.peak_kw, float(before.reshape(31, 24).mean(1).max()))
 
 
 class TestHistoryOnly(LiteReadoutBase):
@@ -298,11 +305,15 @@ class TestTopLevelNames(unittest.TestCase):
 class TestExamples(unittest.TestCase):
     def test_quickstart_prints_the_expected_lines(self):
         out = run_example("quickstart", ["--untrained"])
+        layer = ["continuation_x_fast_x_day", "continuation_energy_change_kwh"] if ankyra_lite._release.CONTINUATION_DEFAULT else []
         self.assertEqual(list(out), ["carrier", "carrier_parameters", "carrier_issue_times_k", "state_window", "state_rule", "energy_kwh",
-                                     "level_kw", "peak_kw", "interval_80pct_first_hour_kw", "interval_pseudo_windows",
+                                     "level_kw", "peak_kw"] + layer + ["interval_80pct_first_hour_kw", "interval_pseudo_windows",
                                      "lead_week_weights_on_carrier", "level_weights", "pseudo_origin_pairs",
                                      "within_day_trust_on_analog_shape", "within_day_pseudo_origin_triples", "analog_shape_kept",
                                      "trajectory_first_day_kw", "seconds"])
+        if layer:
+            self.assertEqual(len(out["continuation_x_fast_x_day"]), 2)
+            self.assertTrue(all(-1.0 <= x <= 1.0 for x in out["continuation_x_fast_x_day"]))
         self.assertTrue(out["carrier"].startswith("untrained stand-in"))
         self.assertEqual(out["carrier_parameters"], 61613)
         self.assertEqual(out["carrier_issue_times_k"], list(range(7)))
