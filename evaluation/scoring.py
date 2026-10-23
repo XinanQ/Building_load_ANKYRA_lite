@@ -126,13 +126,43 @@ def rank_tests(unit_rmse_by_model, reference=REFERENCE, alpha=0.05):
     for i, m in enumerate(sorted(raw, key=raw.get)):
         run = max(run, min(1.0, (len(raw) - i) * raw[m])); holm[m] = run
     ref = mean_rank[reference]
+    better, worse = [], []
+    for m, p in holm.items():
+        if p >= alpha:
+            continue
+        d = a - X[:, models.index(m)]
+        nonzero = d != 0
+        if not nonzero.any():
+            continue
+        signed_rank = stats.rankdata(np.abs(d[nonzero]), method="average")
+        w_plus = float(signed_rank[d[nonzero] > 0].sum())
+        w_minus = float(signed_rank[d[nonzero] < 0].sum())
+        if w_plus < w_minus:
+            better.append(m)
+        elif w_plus > w_minus:
+            worse.append(m)
     return {"units": int(n), "models": int(k), "friedman_chi2": float(fr.statistic), "friedman_p": float(fr.pvalue), "nemenyi_cd": cd,
             "mean_rank": {m: float(v) for m, v in mean_rank.items()},
             "reference_position": int(1 + sum(v < ref - 1e-12 for v in mean_rank.values())),
             "wilcoxon_holm_p": holm,
-            "significantly_better_than": [m for m in holm if holm[m] < alpha and ref < mean_rank[m]],
-            "significantly_worse_than": [m for m in holm if holm[m] < alpha and ref > mean_rank[m]],
+            "significantly_better_than": better,
+            "significantly_worse_than": worse,
             "within_nemenyi_cd": [m for m in models if m != reference and abs(mean_rank[m] - ref) <= cd]}
+
+
+def rank_block(unit_rmse_by_model, reference=REFERENCE, alpha=0.05):
+    """Legacy-schema adapter for the release tables, backed by :func:`rank_tests`."""
+    return rank_block_from_result(rank_tests(unit_rmse_by_model, reference=reference, alpha=alpha))
+
+
+def rank_block_from_result(result):
+    """Map :func:`rank_tests` output to the historical ``rank_block`` field names."""
+    return {"units": result["units"], "models": result["models"], "friedman_chi2": result["friedman_chi2"],
+            "friedman_p": result["friedman_p"], "nemenyi_cd": result["nemenyi_cd"], "mean_rank": result["mean_rank"],
+            "ankyra_position": result["reference_position"], "wilcoxon_holm_p": result["wilcoxon_holm_p"],
+            "ankyra_significantly_better_than": result["significantly_better_than"],
+            "ankyra_significantly_worse_than": result["significantly_worse_than"],
+            "within_nemenyi_cd_of_ankyra": result["within_nemenyi_cd"]}
 
 
 def scaled_errors(forecasts, y, context, unit):
@@ -165,8 +195,9 @@ def energy_error(forecasts, y, unit, month, reference=REFERENCE, seed=ENERGY_SEE
     hourly error, for every model other than the reference, with the median energy APE (``energy_ape``) of that model.
 
     ``reference_level`` (n,), optional: the reference's own level readout in kW, used in place of the mean of its
-    trajectory (the two differ only where the nonnegativity projection binds).  One generator seeded ``seed`` serves
-    all contrasts, in sorted model order."""
+    trajectory. They can differ where the nonnegativity projection binds; if the supplied trajectory includes the
+    continuation layer while the level was read before it, continuation can also contribute to the difference. One
+    generator seeded ``seed`` serves all contrasts, in sorted model order."""
     y = np.asarray(y, dtype=np.float64); unit = np.asarray(unit); month = np.asarray(month)
     err = {k: (y - np.asarray(p, dtype=np.float64)).mean(1) for k, p in forecasts.items()}       # mean of the hourly errors
     if reference_level is not None:

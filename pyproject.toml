@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "building-load-ankyra-lite"
-version = "0.2.0"
+version = "0.2.1"
 description = "ankyra-lite: a 61,613-parameter self-developed carrier network (six seeds, loss-weighted training) feeding a copy of the ANKYRA 2.2.1 anchoring layer and an origin-continuity layer, for month-ahead (744-hour) hourly building-load forecasting without a foundation model"
 readme = "README.md"
 license = "MIT"

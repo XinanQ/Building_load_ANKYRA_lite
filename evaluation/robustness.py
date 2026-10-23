@@ -53,6 +53,11 @@ from pathlib import Path                                           # noqa: E402
 import numpy as np                                                 # noqa: E402
 
 FACE, N, CONTEXT, HORIZON, STEP = "drammen", 64, CB.CONTEXT, CB.HORIZON, 744
+
+
+def _forecast_with_layer(FM, history, layer, *args, **kwargs):
+    """Call the public forecast API with an explicit layer setting, including when it is off."""
+    return FM.forecast(history, *args, continuation=bool(layer), **kwargs)
 SEED = 20261003                                                    # the first release's stream
 KINDS = ["clean", "miss05", "miss20", "zero24", "spike", "shift_plus1", "shift_minus1", "scale0.5", "scale2"]
 FIELDS = ["corruption", "ankyra_error_vs_clean_log_ratio", "carrier_error_vs_clean_log_ratio", "ankyra_windows_worse_share",
@@ -123,7 +128,6 @@ def measure(T, face, entry, n=N, log=print, layer=None):
     zx = np.load(entry["npz_path"], allow_pickle=False)
     layer = bool(entry.get("layer")) if layer is None else bool(layer)
     zc = np.load(entry["continued_path"], allow_pickle=False) if (layer and entry.get("continued_path") is not None) else None
-    kw = {"continuation": True} if layer else {}
     pick = np.unique(np.linspace(0, len(zx["building"]) - 1, n).round().astype(int))
     wb, wo = zx["building"][pick].astype(int), zx["origin"][pick].astype(int)
     load, temp, types = d["load"], d["temp"], d["types"]
@@ -146,7 +150,7 @@ def measure(T, face, entry, n=N, log=print, layer=None):
             ty = types if types.ndim == 1 else types[b]
             tmp = temp[b] if temp.ndim == 2 else temp
             h = History(load_kw=L, temperature_c=tmp[:o], day_types=ty[:o + HORIZON], start_timestamp=d["start_iso"], observed=np.isfinite(L))
-            r = FM.forecast(h, models, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut, **kw)
+            r = _forecast_with_layer(FM, h, layer, models, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut)
             Fk[i], Ck[i], lev[i], pk[i], cs[i] = r.trajectory_kw, r.carrier[0], r.level_kw, r.peak_kw, c
             if Fb is not None:
                 Fb[i] = r.trajectory_before_continuation_kw

@@ -15,21 +15,22 @@ There are three groups, one for each part of ankyra-lite:
   - what the energy and peak readouts can and cannot guarantee;
   - why the evaluation reports several estimands side by side.
 - **C1–C14, the carrier.** New in ankyra-lite. C1–C10: what the construction of the carrier network guarantees for any
-  weights, trained or not:
+  weights, trained or not, under the arithmetic and input assumptions of each claim:
   - its forecast is a nonnegative energy budget whose mean is its level;
   - it is built only from data before its issue time, without a unit identifier, and scales with the load;
   - its copy pointer starts at zero and never moves the level;
   - with a 186-day gap between the training cut and the test set, every pseudo-origin forecast that the anchoring
     layer scores is out of sample for the carrier.
 
-  C11–C14 (new in 0.2.0): what the inverse-noise loss weighting of recipe Rw's second stage guarantees for any
-  training pool:
+  C11–C14 (new in 0.2.0): what the inverse-noise loss weighting of recipe Rw's second stage guarantees for a
+  training pool that meets their stated support and positive-floor conditions (an arbitrary pool need not):
   - with equal weights it is recipe R bit for bit;
   - every population keeps its share of the draws;
   - every weight is finite, positive and bounded by the floor;
   - a weight is read only from its window's own last 28 context days.
 - **O1–O9, the continuation layer.** New in 0.2.0: what the origin-continuity layer after the anchoring layer
-  guarantees for any anchored trajectory:
+  guarantees for any admitted anchored trajectory under each claim's assumptions (floating-point finiteness and strict
+  positivity need separate representability conditions; arbitrary custom constants are not covered):
   - it multiplies every hour by a positive factor with stated bounds, so signs and exact zeros are kept;
   - it reads only the 672 hours before the origin and eight hours of the calendar;
 - it leaves state windows untouched and switches off without changing the carrier-specific pipeline; reproducing the
@@ -52,7 +53,7 @@ Each property is supported in three ways:
 python -m unittest discover -s theory -t .
 ```
 
-The command runs the four check files (109 checks; CPU only, about 35 seconds on one thread); no checkpoint and no
+The command runs the four check files (111 checks; CPU only, about 35 seconds on one thread); no checkpoint and no
 study data are needed. Run it from the repository root.
 
 ![Exact properties on a test window](../figures/fig7_operators.png)
@@ -98,10 +99,10 @@ unless a folder is given.
 
 ## The fourteen properties of the carrier
 
-All fourteen follow from the code of `ankyra_lite.carrier`. C1–C10 hold for any weights, trained or not, except C9(a),
-which is about the initialisation; the proofs cite the code lines. Real-arithmetic statements are checked in float64,
-statements about the delivered carrier forecasts on the package's own float32 path. C11–C14 (new in 0.2.0) hold for
-any training pool; they concern the loss weighting of recipe Rw's second stage (`train.noise_weights`,
+All fourteen follow from the code of `ankyra_lite.carrier`. C1–C10 hold for any weights, trained or not, under the arithmetic and input
+assumptions of each claim, except C9(a), which is about the initialisation; the proofs cite the code lines. Real-arithmetic statements are checked in float64,
+statements about the delivered carrier forecasts on the package's own float32 path. C11–C14 (new in 0.2.0) hold
+under their stated support and positive-floor conditions, which an arbitrary pool need not satisfy; they concern the loss weighting of recipe Rw's second stage (`train.noise_weights`,
 `train.weighted_log1p_loss`), and the proofs cite the functions.
 
 | | Property | Holds when | What it gives ankyra-lite | Code | Check |
@@ -128,14 +129,17 @@ classes in [test_carrier_properties.py](test_carrier_properties.py) (C1–C10) a
 ## The nine properties of the continuation layer
 
 All nine follow from the code of `ankyra_lite.continuation` (new in 0.2.0) and of `ankyra_lite.forecast`, and hold for
-any trajectory the anchoring layer delivers and, unless a number is given, for any constants κ₁, κ₂ ≥ 0, ρ₁, ρ₂ > 0.
+any trajectory the anchoring layer delivers. The analytic statements allow any constants κ₁, κ₂ ≥ 0, ρ₁, ρ₂ > 0 unless a
+number is given; in floating point they also need representability conditions: with extreme custom constants a
+non-finite correction or output on an ordinary window raises `ValueError` (since 0.2.1), and a nonzero hour can underflow
+to zero.
 The layer multiplies the anchored trajectory F by e^{Δ(h)}, Δ(h) = κ₁x_f e^{−h/12} + κ₂x_d e^{−h/168}, where x_f and
 x_d are the clipped log ratios of the last 3 and 24 observed hours to the forecast's own reference day; the bound
 E(h) = κ₁e^{−h/12} + κ₂e^{−h/168} is 0.809 at h = 0, at most 0.1215 from day 8 and 0.004 at the last hour.
 
 | | Property | Holds when | What it gives ankyra-lite | Code | Check |
 |---|---|---|---|---|---|
-| O1 | [Nonnegativity, sign and zeros](PROOFS.md#exact-properties-of-the-continuation-layer) | always; a subnormal hour can vanish (counterexample); a last-hours mean at or below −ε (negative loads) sets that anomaly to 0 | the delivered hourly forecast stays nonnegative, and exact zeros stay zero | `continuation.apply_batch` | `NonnegativityTests` |
+| O1 | [Nonnegativity, sign and zeros](PROOFS.md#exact-properties-of-the-continuation-layer) | in real arithmetic; in floating point a subnormal hour can vanish (counterexample) and extreme custom constants raise `ValueError` instead of a non-finite hour; a last-hours mean at or below −ε (negative loads) sets that anomaly to 0 | the delivered hourly forecast stays nonnegative, and exact zeros stay zero | `continuation.apply_batch` | `NonnegativityTests` |
 | O2 | [Bounded correction](PROOFS.md#exact-properties-of-the-continuation-layer) | always (bitwise against the envelope) | each hour moves by a factor in [e^{−E(h)}, e^{E(h)}]: [0.445, 2.246] at the origin, [0.885, 1.130] from day 8 | `continuation.delta`, `continuation.envelope` | `BoundTests` |
 | O3 | [Causality](PROOFS.md#exact-properties-of-the-continuation-layer) | always; the calendar of the first forecast week is read | the layer reads only the 672 hours before the origin and eight hours of the calendar | `continuation.window_inputs` | `CausalityTests` |
 | O4 | [Bypass](PROOFS.md#exact-properties-of-the-continuation-layer) | state windows; unobserved last hours (not reachable through `forecast`); last-hours means at or below −ε (negative loads, a release rule) | the state rule's forecast is delivered unchanged; missing last hours switch the layer off; a nonpositive last-hours mean sets its anomaly to 0 (flagged), and both nonpositive switch the layer off | `continuation.apply_batch`, `forecast.forecast` | `BypassTests`, `ForecastBypassTests` |

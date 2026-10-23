@@ -886,16 +886,24 @@ def block_share_rows(T, P, preds, models, ref_label):
 
 
 def rank_scaled(T, P, preds, ref):
-    """tools_presub_stats_v1 for one population: per-unit RMSE, Friedman / Nemenyi / Holm-Wilcoxon (the reference is
-    keyed "ANKYRA" inside rank_block) and RMSSE / MASE."""
+    """Per-unit RMSE and rank tests use the release scorer; the legacy study helpers provide unit_rmse and scaled RMSSE / MASE."""
     ST = T.ST
     R_in = {("ANKYRA" if k == ref else k): v for k, v in preds.items()}
     uu, R = ST.unit_rmse(R_in, P["yL"], P["uL"])
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        rb = ST.rank_block(R)
+        rb = _rank_block_from_scoring(R)
         sc = ST.scaled(R_in, P["yL"], P["ctxL"], P["uL"])
     return R, rb, sc
+
+
+def _rank_block_from_scoring(unit_rmse_by_model):
+    """Use the lite scorer's directional Wilcoxon labels, then preserve the release record schema."""
+    if str(HERE) not in sys.path:
+        sys.path.insert(0, str(HERE))
+    import scoring
+    result = scoring.rank_tests(unit_rmse_by_model, reference="ANKYRA")
+    return scoring.rank_block_from_result(result)
 
 
 def fmt_p(p, release=False):
@@ -1168,7 +1176,7 @@ def pooled_rank_rows(T, pooled_R, ref_name, ref_label, release=False):
     P = {m: np.concatenate([pooled_R[f][m] for f in TEST6]) for m in sorted(common)}
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        rb = T.ST.rank_block(P)
+        rb = _rank_block_from_scoring(P)
     return rank_rows(T, "six test populations pooled", "test", rb, ref_name, ref_label, release=release), rb
 
 

@@ -9,7 +9,7 @@ Structure
   * a positive energy-budget decoder: a monthly level (scale x softplus), day fractions (softmax over 31 days) and
     hour fractions (softmax over 24 hours), so the forecast is nonnegative and its mean equals the level exactly in
     real arithmetic;
-  * a copy pointer: every forecast day attends over the unit's own last 56 complete days (keys from the encoder's day
+  * a copy pointer: every forecast day attends over complete days within the unit's last 56 day positions (keys from the encoder's day
     memory, queries from the forecast-day embedding, plus one learned bonus for a matching day type) and adds the
     attended within-day share profile to the hourly logits and the attended relative daily mean to the daily logits,
     through learned gates that start at zero (so an untrained pointer equals the base decoder).

@@ -46,9 +46,10 @@ The seasonal-naive state rule is applied when the tables are scored, not here.  
 record is read from the store files alone (store_arrays: the arrays of the study's loader tools_smallnet_carrier_v1.raw, without
 the earlier study's window arrays, saved forecasts and results files that loader opens for some populations), every unit's load at
 and after its last test origin is set to NaN as soon as it is loaded, and each window reads ``load[b, :o]`` only (plus the
-day types of its forecast month, a calendar).  The cache lives in ANKYRA_LITE_EVAL_CACHE (default: the system temporary
-directory), one npz per population and mode, keyed by the mapping's label (and configuration) and checked against the
-product file's SHA-256.
+day types of its forecast month, a calendar). The cache lives in ANKYRA_LITE_EVAL_CACHE (default: the system temporary
+directory), under a versioned namespace bound to implementation, store/prep/product/carrier inputs, mode specification,
+seed groups and continuation constants. Payload hashes are checked on read; legacy label-only caches are ignored and
+never overwritten.
 
 Usage:  python -B evaluation/lite_reanchor.py --faces oslo [--modes ens,s0] [--limit 8] [--workers 2] [--recipe p3s]
         python -B evaluation/lite_reanchor.py --faces oslo --products <mapping.json>
@@ -115,6 +116,8 @@ FIELD_ARRAYS = {
     "fields_ok": ((), bool, False),                      # a non-state window whose fields were recorded
     "rebuild_ok": ((), bool, False),                     # the rebuilt quantities reproduce the call's fields exactly
 }
+CACHE_SCHEMA = "ankyra-lite-reanchor-cache-v2"
+CACHE_IMPLEMENTATION_REV = "2026-10-22-cache-identity-1"
 
 
 def _sha(p):
@@ -131,9 +134,189 @@ def cache_key(prods):
     return prods["label"] + (f" {prods['configuration']}" if prods.get("configuration") else "")
 
 
-def cache_file(label, face, mode, limit=None):
+def cache_identity(*, label, face, mode, limit, spec, layer, seeds, seed_groups, constants_digest,
+                   input_manifest, implementation_digest):
+    """Canonical content identity for a re-anchoring cache entry; pure and safe to test with synthetic manifests."""
+    payload = {"schema": CACHE_SCHEMA, "implementation_revision": CACHE_IMPLEMENTATION_REV,
+               "implementation_digest": str(implementation_digest), "label": str(label), "face": str(face),
+               "mode": str(mode), "limit": None if limit is None else int(limit),
+               "spec": {"seeds": None if spec[0] is None else [int(x) for x in spec[0]],
+                        "kwargs": dict(spec[1])}, "layer": bool(layer), "constants_digest": constants_digest,
+               "seeds": [int(x) for x in seeds], "seed_groups": [[int(x) for x in g] for g in seed_groups],
+               "inputs": sorted((dict(x) for x in input_manifest), key=lambda x: x["path"])}
+    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return {"payload": payload, "sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+
+def cache_paths(label, face, mode, limit, identity, cache_root=None):
+    """Versioned namespace and paths for one identity; legacy path layout is never consulted."""
     name = mode if limit is None else f"{mode}_first{int(limit)}"
-    return CB.CACHE / re.sub(r"[^A-Za-z0-9._-]+", "_", label) / face / f"{name}.npz"
+    root = Path(cache_root or CB.CACHE) / CACHE_SCHEMA / identity["sha256"] / re.sub(r"[^A-Za-z0-9._-]+", "_", label) / face
+    data = root / f"{name}.npz"
+    return data, data.with_suffix(".json")
+
+
+def cache_file(label, face, mode, limit=None, identity=None):
+    """Compatibility helper; an explicit full identity is required for all cache access."""
+    if identity is None:
+        raise ValueError("cache_file requires a complete cache identity")
+    return cache_paths(label, face, mode, limit, identity)[0]
+
+
+def _source_store_paths(face, entry):
+    """Resolve only source file paths from study metadata; file bytes are fingerprinted without loading arrays."""
+    _paths()
+    import tools_hcr_within_anchor_r3_v1 as R3
+    P = R3.P
+    if face == "cineldi" and entry.get("store") == "corrected":
+        store, _ = CB.corrected_store_info()
+        original_dir, _ = R3.PA.SETS[face]
+        return [Path(original_dir) / "store.npz", Path(store) / "store.npz"]
+    if face in R3.PA.SETS:
+        store_dir, _ = R3.PA.SETS[face]
+        return [Path(store_dir) / "store.npz"]
+    if face in P.EXT:
+        return [Path(P.EXT[face][0])]
+    if face in P.EARLY:
+        return [Path(x) for x in P.EARLY[face][0]]
+    if face == "goiener_confirm":
+        return [Path(P.GOI)]
+    raise ValueError(f"no auditable source-store path for {face!r}")
+
+
+def _cache_file_manifest(face, entry, mode, spec, layer):
+    files = {"store": _source_store_paths(face, entry), "prep": [Path(entry["prep_path"])],
+             "product": [Path(entry["npz_path"])], "carrier_runs": [Path(rd) / "carrier.npz" for rd in
+                 (entry["run_paths"] if spec[0] is None else
+                  [entry["run_paths"][seeds_of(entry).index(int(s))] for s in spec[0]])]}
+    if layer and entry.get("continued_path") is not None:
+        files["continued_product"] = [Path(entry["continued_path"])]
+    if face == "cineldi" and entry.get("store") == "corrected":
+        files["store_selector"] = [Path(CB.DC_BUILD)]
+    if is_seed_mode(mode) and entry.get("seed_paths"):
+        k = seeds_of(entry).index(int(mode[1:]))
+        files["seed_gate"] = [Path(entry["seed_paths"][k])]
+    if is_group_mode(mode) and entry.get("group_paths"):
+        j = int(mode[1:])
+        files["group_gate"] = [Path(entry["group_paths"][j])]
+        if layer and entry.get("group_continued_paths"):
+            files["group_continued_gate"] = [Path(entry["group_continued_paths"][j])]
+    result = []
+    for role, paths in sorted(files.items()):
+        for path in paths:
+            path = path.resolve()
+            if not path.is_file():
+                raise FileNotFoundError(f"cache input {role} is missing: {path}")
+            result.append({"role": role, "path": path.as_posix(), "size": path.stat().st_size, "sha256": _sha(path)})
+    return result
+
+
+def _implementation_digest(layer):
+    _paths()
+    import tools_smallnet_carrier_v1 as V
+    import tools_hcr_within_anchor_r3_v1 as R3
+    import tools_hcr_analog_v2 as A2
+    import tools_hcr_ext_drammen_score_v1 as DS
+    import tools_hcr_level_zero_v1 as LZ
+    import tools_release_repro_check_v5 as RC
+    paths = [Path(__file__), Path(CB.__file__), Path(V.__file__), Path(R3.__file__), Path(R3.P.__file__),
+             Path(R3.PA.__file__), Path(A2.__file__), Path(DS.__file__), Path(LZ.__file__), Path(RC.__file__)]
+    anchor = Path(__file__).resolve().parents[1] / "ankyra_lite" / "anchor"
+    paths.extend(sorted((*anchor.rglob("*.py"), *anchor.rglob("*.json"))))
+    if layer:
+        paths.append(Path(__file__).resolve().parents[1] / "ankyra_lite" / "continuation.py")
+    h = hashlib.sha256()
+    for path in paths:
+        path = path.resolve()
+        h.update(path.as_posix().encode("utf-8")); h.update(_sha(path).encode("ascii"))
+    return h.hexdigest()
+
+
+def _identity_for(label, face, mode, entry, limit):
+    spec = modes_for(entry)[mode]
+    layer = layer_on(entry)
+    constants_digest = None
+    if layer:
+        from ankyra_lite import continuation as CT
+        constants_digest = CT.DIGEST
+    return cache_identity(label=label, face=face, mode=mode, limit=limit, spec=spec, layer=layer,
+                          seeds=seeds_of(entry), seed_groups=groups_of(entry), constants_digest=constants_digest,
+                          input_manifest=_cache_file_manifest(face, entry, mode, spec, layer),
+                          implementation_digest=_implementation_digest(layer))
+
+
+def validate_cache(data_path, meta_path, identity, *, allow_identical=False):
+    """Fail closed on stale, partial, mismatched, or damaged cache entries."""
+    data_path, meta_path = Path(data_path), Path(meta_path)
+    if not meta_path.exists():
+        if data_path.exists():
+            raise RuntimeError(f"unbound cache payload exists: {data_path}")
+        return None
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"invalid cache metadata: {meta_path}") from exc
+    if meta.get("cache_identity") != identity["payload"] or meta.get("cache_identity_sha256") != identity["sha256"]:
+        raise RuntimeError(f"cache identity mismatch: {meta_path}")
+    if meta.get("identical_to"):
+        if (identity["payload"].get("mode") != "no_micro" or meta.get("identical_to") != "ens"
+                or data_path.exists() or not allow_identical):
+            raise RuntimeError(f"invalid identical-to cache record: {meta_path}")
+        return meta
+    if not data_path.exists() or meta.get("payload_sha256") != _sha(data_path):
+        raise RuntimeError(f"cache payload is missing or damaged: {data_path}")
+    return meta
+
+
+def claim_cache(data_path, identity):
+    """Claim a cache miss exclusively; leave the claim behind if computation fails."""
+    data_path = Path(data_path)
+    claim_path = data_path.with_suffix(data_path.suffix + ".claim")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    record = {"cache_identity": identity["payload"], "cache_identity_sha256": identity["sha256"],
+              "status": "claimed"}
+    try:
+        with claim_path.open("x", encoding="utf-8") as stream:
+            json.dump(record, stream, ensure_ascii=False, sort_keys=True)
+            stream.write("\n")
+    except FileExistsError as exc:
+        raise RuntimeError(f"cache identity is already claimed; refusing concurrent or interrupted recompute: {claim_path}") from exc
+    return claim_path
+
+
+def complete_cache_claim(claim_path):
+    """Mark a successfully written cache claim complete without removing its audit record."""
+    claim_path = Path(claim_path)
+    record = json.loads(claim_path.read_text(encoding="utf-8"))
+    if record.get("status") != "claimed":
+        raise RuntimeError(f"invalid cache claim state: {claim_path}")
+    record["status"] = "completed"
+    tmp = claim_path.with_name(claim_path.name + ".part")
+    tmp.write_text(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, claim_path)
+
+
+def cached_gate_records(cache_root, label, face, prefix, identity_factory):
+    """Find and validate first-N seed/group gates across fingerprint namespaces; never scans legacy caches."""
+    root = Path(cache_root) / CACHE_SCHEMA
+    clean_label = re.sub(r"[^A-Za-z0-9._-]+", "_", label)
+    records = {}
+    if not root.exists():
+        return records
+    for meta_path in sorted(root.glob(f"*/{clean_label}/{face}/{prefix}*_first*.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        mode = str(meta.get("mode", ""))
+        limit = meta.get("limit")
+        if not mode.startswith(prefix) or limit is None:
+            continue
+        identity = identity_factory(mode, int(limit))
+        data_path, expected_meta = cache_paths(label, face, mode, int(limit), identity, cache_root=cache_root)
+        if meta_path.resolve() != expected_meta.resolve():
+            continue
+        checked = validate_cache(data_path, meta_path, identity, allow_identical=True)
+        if checked and checked.get("gate"):
+            records[meta_path.stem] = checked["gate"]
+    return records
 
 
 def seeds_of(entry):
@@ -534,23 +717,29 @@ def _inputs_equal(rows, zx, n):
 
 def run_mode(face, mode, entry, label, workers=2, limit=None):
     """Anchor one population in one mode (cached).  Returns the record."""
-    f = cache_file(label, face, mode, limit)
-    meta = f.with_suffix(".json")
+    identity = _identity_for(label, face, mode, entry, limit)
+    f, meta = cache_paths(label, face, mode, limit, identity)
     psha = _sha(entry["npz_path"])
     layer = layer_on(entry)
-    if f.exists() and meta.exists():
-        m = json.loads(meta.read_text(encoding="utf-8"))
-        if m.get("product_sha256") == psha and m.get("limit") == limit:
-            return m
+    cached = validate_cache(f, meta, identity, allow_identical=True)
+    if cached is not None:
+        if cached.get("product_sha256") != psha or cached.get("limit") != limit:
+            raise RuntimeError(f"cache record fields disagree with identity: {meta}")
+        return cached
+    claim_path = claim_cache(f, identity)
     zx = np.load(entry["npz_path"], allow_pickle=False)
     wb, wo = zx["building"].astype(np.int64), zx["origin"].astype(np.int64)
     specs = modes_for(entry)
     spec = specs[mode]
     if mode == "no_micro" and not zx["micro"].any():
         m = {"face": face, "mode": mode, "label": label_of(mode, entry), "identical_to": "ens", "reason": "no micro-load window in the product",
-             "product_sha256": psha, "limit": limit}
+             "product_sha256": psha, "limit": limit, "cache_identity": identity["payload"],
+             "cache_identity_sha256": identity["sha256"]}
         f.parent.mkdir(parents=True, exist_ok=True)
-        meta.write_bytes(json.dumps(m, indent=1).encode("utf-8"))
+        tmp_meta = meta.with_name(meta.name + ".part")
+        tmp_meta.write_text(json.dumps(m, indent=1, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp_meta, meta)
+        complete_cache_claim(claim_path)
         return m
     n = len(wb) if limit is None else min(int(limit), len(wb))
     e = {k: v for k, v in entry.items() if k in ("store", "prep_path", "run_paths", "npz_path", "seeds")}
@@ -634,22 +823,30 @@ def run_mode(face, mode, entry, label, workers=2, limit=None):
             zgc = np.load(entry["group_continued_paths"][j], allow_pickle=False)
             m["gate"].update(_gate_layer(extra["traj_cont"], zgc, n, _inputs_equal(ok, zg, n)))
             m["gate"]["pass"] = bool(m["gate"]["pass"] and m["gate"]["layer_pass"])
-    meta.write_bytes(json.dumps(m, indent=1).encode("utf-8"))
+    m["cache_identity"] = identity["payload"]
+    m["cache_identity_sha256"] = identity["sha256"]
+    m["payload_sha256"] = _sha(f)
+    tmp_meta = meta.with_name(meta.name + ".part")
+    tmp_meta.write_text(json.dumps(m, indent=1, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp_meta, meta)
+    complete_cache_claim(claim_path)
     return m
 
 
-def load_mode(label, face, mode, limit=None):
+def load_mode(prods, face, mode, limit=None):
     """(arrays, record) of a cached mode, or (None, None); a mode identical to another returns the other's arrays."""
-    f = cache_file(label, face, mode, limit)
-    meta = f.with_suffix(".json")
-    if not meta.exists():
+    label = cache_key(prods)
+    entry = prods["faces"].get(face)
+    if entry is None:
         return None, None
-    m = json.loads(meta.read_text(encoding="utf-8"))
+    identity = _identity_for(label, face, mode, entry, limit)
+    f, meta = cache_paths(label, face, mode, limit, identity)
+    m = validate_cache(f, meta, identity, allow_identical=True)
+    if m is None:
+        return None, None
     if m.get("identical_to"):
-        z, _ = load_mode(label, face, m["identical_to"])
+        z, _ = load_mode(prods, face, m["identical_to"], limit)
         return z, m
-    if not f.exists():
-        return None, None
     return dict(np.load(f, allow_pickle=False)), m
 
 

@@ -349,7 +349,7 @@ class Collector:
         for mode in LR.modes_for(entry):
             if (LR.is_seed_mode(mode) and stored) or LR.is_group_mode(mode) or mode in LR.FIELD_MODES:    # fields: read by added()
                 continue
-            z, m = LR.load_mode(LR.cache_key(self.prods), face, mode)
+            z, m = LR.load_mode(self.prods, face, mode)
             if z is None:
                 continue
             if m.get("product_sha256") != LR._sha(entry["npz_path"]) or (m.get("limit") is not None):
@@ -391,12 +391,9 @@ class Collector:
                     self.notes[face].append(f"stored single-seed product of seed {s} does not cover the test windows; not used")
                     return {}, rec
                 out[s] = arr
-            gates = {}
-            cdir = LR.cache_file(LR.cache_key(self.prods), face, "s0").parent
-            for f in (sorted(cdir.glob("s*_first*.json")) if cdir.exists() else []):
-                m = json.loads(f.read_text(encoding="utf-8"))
-                if m.get("product_sha256") == LR._sha(entry["npz_path"]) and m.get("gate"):
-                    gates[f.stem] = m["gate"]
+            label = LR.cache_key(self.prods)
+            gates = LR.cached_gate_records(CB.CACHE, label, face, "s",
+                                           lambda mode, limit: LR._identity_for(label, face, mode, entry, limit))
             rec["gate"] = gates or None
             if not gates:
                 self.notes[face].append("no single-seed gate in the re-anchoring cache (run with --reanchor)")
@@ -417,12 +414,9 @@ class Collector:
                     return {}, rec
                 arr["seeds"] = g
                 out[f"g{j}"] = arr
-            gates = {}
-            cdir = LR.cache_file(LR.cache_key(self.prods), face, "g0").parent
-            for f in (sorted(cdir.glob("g*_first*.json")) if cdir.exists() else []):
-                m = json.loads(f.read_text(encoding="utf-8"))
-                if m.get("product_sha256") == LR._sha(entry["npz_path"]) and m.get("gate"):
-                    gates[f.stem] = m["gate"]
+            label = LR.cache_key(self.prods)
+            gates = LR.cached_gate_records(CB.CACHE, label, face, "g",
+                                           lambda mode, limit: LR._identity_for(label, face, mode, entry, limit))
             rec["gate"] = gates or None
             if not gates:
                 self.notes[face].append("no seed-group gate in the re-anchoring cache (run lite_reanchor.py)")
@@ -1207,7 +1201,7 @@ class Collector:
         """The fields cache (lite_reanchor mode ``fields``) aligned to the panel order, or None when it is missing, stale,
         partial or did not pass its gate."""
         import lite_reanchor as LR
-        z, m = LR.load_mode(LR.cache_key(self.prods), face, "fields")
+        z, m = LR.load_mode(self.prods, face, "fields")
         if z is None:
             return None
         if m.get("product_sha256") != LR._sha(entry["npz_path"]) or m.get("limit") is not None or m.get("error_count"):

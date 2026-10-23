@@ -6,14 +6,14 @@ abstract: >-
   ankyra-lite is a self-contained month-ahead (744-hour) hourly load forecaster for buildings, industrial meters and
   households that needs no foundation model. A small self-developed carrier network (a copy-pointer structured load
   network with 61,613 parameters, trained per population) forecasts the month after a forecast origin from the unit's
-  own history and the known calendar. Version 0.2.0 averages six seeds of the carrier, each trained with every
+  own history and the supplied calendar, subject to the documented calendar-availability exceptions. Version 0.2.0 averages six seeds of the carrier, each trained with every
   training window's loss weighted by a frozen inverse-noise rule (recipe Rw), at every issue time. Its forecasts at
   the origin and at up to six earlier pseudo-origins are passed to an unchanged copy of the ANKYRA 2.2.1 anchoring
   layer, which estimates per-unit combination weights from the unit's own completed pseudo-forecasts; a
   seasonal-naive state rule handles off-state windows, and a new origin-continuity layer (four frozen constants)
-  corrects the first hours and days of the anchored trajectory toward the last observed hours. The month's energy,
+  applies a decaying correction across the anchored horizon, strongest in the first hours and days, toward the last observed hours. The month's energy,
   level and monthly peak readout are read before the continuation layer (readout rule A). The 0.1.x configuration
-  (recipe R, its three shipped seeds, the continuation layer off) stays available for reproducing the forecasts of 0.1.1.
+  (recipe R, its three shipped seeds, the continuation layer off, with the same inputs) stays available for reproducing the forecasts of 0.1.1.
   The repository contains the
   package, its training recipes, equivalence tests against the research code and the original ANKYRA
   package, the evaluation code, a re-evaluation against 21 baselines (22 forecasters) on nine populations (hourly,
@@ -23,8 +23,8 @@ authors:
   - family-names: Qin
     given-names: Xinan
     # orcid: "https://orcid.org/0000-0000-0000-0000"   # add if available
-version: "0.2.0"
-date-released: "2026-10-21"
+version: "0.2.1"
+date-released: "2026-10-22"
 license: MIT
 repository-code: "https://github.com/XinanQ/Building_load_ANKYRA_lite"
 # doi: "10.5281/zenodo.XXXXXXX"   # add the Zenodo DOI after the first archived release

@@ -297,7 +297,12 @@ class HelperTests(unittest.TestCase):
         p = CB.load_products()
         self.assertEqual(LR.default_modes(p["faces"]["oslo"]), ["ens", "no_within", "lead_trust", "no_gap", "no_micro"])
         self.assertEqual(LR.default_modes(CB.load_products(CB.RECIPE_PRODUCTS["p3s"])["faces"]["oslo"]), list(LR.MODES))
-        self.assertNotEqual(LR.cache_file("x", "oslo", "s0"), LR.cache_file("x", "oslo", "s0", 8))
+        identity = LR.cache_identity(label="x", face="oslo", mode="s0", limit=None, spec=LR.MODES["s0"], layer=False,
+                                     seeds=[0], seed_groups=[[0]], constants_digest=None,
+                                     input_manifest=[{"path": "synthetic", "sha256": "0" * 64}], implementation_digest="test")
+        self.assertNotEqual(LR.cache_file("x", "oslo", "s0", None, identity), LR.cache_file("x", "oslo", "s0", 8, identity))
+        with self.assertRaises(ValueError):                                     # every cache access needs a full identity
+            LR.cache_file("x", "oslo", "s0")
 
     def test_corruptions_of_the_robustness_test(self):
         import robustness as RB

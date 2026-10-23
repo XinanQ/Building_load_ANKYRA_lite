@@ -156,7 +156,10 @@ def features(load, temp, day_types, groups_or_group: str | Sequence[str] | None,
             warnings.simplefilter("ignore", RuntimeWarning)
             quant = np.nanpercentile(np.where(om[valid], old[valid], np.nan), [10, 90], axis=1)
         month[valid, 2:4] = np.arcsinh(quant.T / s)
-    oldtype = _take(types, b, end - MONTHS * MONTH_HOURS, end).reshape(MONTHS, MONTH_HOURS)
+    old_hours = np.arange(end - MONTHS * MONTH_HOURS, end)
+    oldtype = _take(types, b, int(old_hours[0]), end).reshape(MONTHS, MONTH_HOURS)
+    old_weekday = (weekday0 + np.floor_divide(old_hours, 24)) % 7
+    oldtype = np.where(np.isfinite(oldtype), oldtype, old_weekday.reshape(MONTHS, MONTH_HOURS))
     for k, cond in ((4, oldtype < 5), (5, oldtype >= 5)):
         mv, _, _ = _stats(old, om & np.isfinite(oldtype) & cond)
         month[:, k] = np.arcsinh(mv / s)

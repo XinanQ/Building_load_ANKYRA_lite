@@ -8,7 +8,7 @@
   CHECKPOINT_SUBDIR     the folder of those checkpoints under checkpoints/<population>/ ("" for recipe R, "rw" for
                         recipe Rw)
 
-Version 0.2.0 sets CONTINUATION_DEFAULT = True, CARRIER_RECIPE = "Rw", CARRIER_SEEDS = (0, 1, 2, 3, 4, 5) and
+Versions 0.2.0 and 0.2.1 set CONTINUATION_DEFAULT = True, CARRIER_RECIPE = "Rw", CARRIER_SEEDS = (0, 1, 2, 3, 4, 5) and
 CHECKPOINT_SUBDIR = "rw".  With CONTINUATION_DEFAULT = False, CARRIER_RECIPE = "R", CARRIER_SEEDS = (0, 1, 2) and
 CHECKPOINT_SUBDIR = "", the package is meant to reproduce ankyra-lite 0.1.1; this is checked bit for bit by the two examples
 and the 0.1.1 comparison tests (tests/test_forecast_v2.py, tests/test_train_rw.py), not by a full re-run of every results
@@ -20,7 +20,7 @@ from pathlib import Path
 
 __all__ = ["VERSION", "CONTINUATION_DEFAULT", "CARRIER_RECIPE", "CARRIER_SEEDS", "CHECKPOINT_SUBDIR", "checkpoint_paths"]
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 CONTINUATION_DEFAULT = True
 CARRIER_RECIPE = "Rw"
 CARRIER_SEEDS = (0, 1, 2, 3, 4, 5)

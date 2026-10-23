@@ -1,5 +1,7 @@
 # Data: sources, preparation and splits
 
+**Audit scope.** Code-level isolation of future load/temperature does not certify the publication time of supplied calendar labels. The historical calendar exceptions below remain. The maintenance audit did not reconstruct every raw historical file; [corrections](CODE_AUDIT_CORRECTIONS_20261022.md) preserve the original scored records.
+
 This page says where the nine populations of the ankyra-lite evaluation come from, how the study prepared them, and
 how each population's record is divided into a training set, a validation set and a test set. It is written for a
 reader who wants to rebuild the inputs from the public sources or to check that no test target reached the training.
@@ -45,7 +47,7 @@ Every population was brought to one hourly format. Two parts of ankyra-lite read
 
 | Input | Content | Carrier network | Anchoring layer |
 |---|---|---|---|
-| `load_kw` | hourly mean load in kW from the record anchor; NaN where missing | reads only hours before each issue time; a negative value counts as missing; a day with no observed hour is masked out | the last 1,344 hours before the origin must be completely observed (the package never fills them); earlier gaps are NaN, and gaps of at most 6 hours inside one 744-hour block are interpolated in the copy its estimator reads |
+| `load_kw` | hourly mean load in kW from the record anchor; NaN where missing | reads only hours before each issue time; a negative value counts as missing; a day with no observed hour is masked out | the normal inference path requires the last 1,344 hours before the origin completely observed (never filled; the precomputed-mapping off-state exception is documented in METHOD.md); earlier gaps are NaN, and gaps of at most 6 hours inside one 744-hour block are interpolated in the copy its estimator reads |
 | `observed` | optional Boolean mask of the load | — (finite and nonnegative = observed) | `False` hours are ignored; the study passed `observed = finite load` |
 | `temperature_c` | hourly outdoor temperature in °C | reads only hours before each issue time, through daily means and their coverage; missing hours are allowed | finite everywhere before the origin; no future temperature is needed |
 | `day_types` | one integer per hour for the history and the 744 forecast hours: Monday = 0 … Sunday = 6, public holiday = 7 | read through the forecast month of each issue time (the calendar is treated as known at the origin); outside the array the calendar weekday is used | the same |
@@ -90,7 +92,7 @@ origin:
 
 | Complete hours before the origin | What the code can then do | Code |
 |---:|---|---|
-| 1,344 (56 days) | the forecast runs: the 1,344-hour context at the origin must be completely observed, or `anchor.InputError` is raised (`ankyra_lite.forecast` raises `ValueError` earlier, when it computes the carrier forecasts). With no completed pseudo-origin the level weights are equal, the handover weights are ½ and the within-day trust is 0 | `anchor.forecast`, `history.api._validate_history` |
+| 1,344 (56 days) | the normal carrier-inference path runs: the 1,344-hour context at the origin must be completely observed, or `anchor.InputError` is raised (`ankyra_lite.forecast` raises `ValueError` earlier, when it computes the carrier forecasts). With no completed pseudo-origin the level weights are equal, the handover weights are ½ and the within-day trust is 0 | `anchor.forecast`, `history.api._validate_history` |
 | 2,088 (1,344 + 744) | the first pseudo-origin completes: the handover weights leave ½ (α_w = (λ̂_w + 1)/3 with one pair) | `anchor.lead_week_weights` |
 | 2,832 (1,344 + 2 × 744; 118 days) | two pseudo-origin errors per candidate: the level weights leave equal weights (data share K_eff/(K_eff + 8) = 0.2), and so do the daily-path weights | P7; `history/_day.py` |
 | 5,808 (1,344 + 6 × 744) | all six carrier pseudo-origins: the carrier candidate and the handover have their full evidence | `core.K_FM` |
@@ -129,8 +131,9 @@ have complete contexts and targets and did not need it.
 
 ## Two kinds of windows
 
-A window is a pair (unit, origin o): the 1,344 hours before o are its context and the 744 hours from o are its target
-(its labels, in training).
+A window is a pair (unit, origin o): the 1,344 hours before o are its eligibility/anchoring context and the 744 hours
+from o are its target (its labels, in training). The carrier feature history is longer: up to 366 daily tokens and
+24 earlier fixed 744-hour blocks, together 1,110 days, masked where absent; the blocks are not calendar months.
 
 **Test windows** are the late windows of the first release's evaluation panel, unchanged, so that every number here is
 on the same windows as the first release's tables:

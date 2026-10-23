@@ -183,7 +183,8 @@ def forecast(history, carriers, *, group: str, temp_sigma_std: float, dst_region
                      release setting ``ankyra_lite._release.CONTINUATION_DEFAULT``
     device           torch device for the carrier
 
-    With the layer off the result is that of ankyra-lite 0.1.1 bit for bit.  With it on, ``trajectory_kw`` is the
+    With ``continuation=False``, identical inputs, and the original R three-seed checkpoints, the result matches
+    ankyra-lite 0.1.1 bit for bit. With it on, ``trajectory_kw`` is the
     corrected trajectory and every readout (level, energy, peak) is unchanged, so ``trajectory_kw.sum()`` differs from
     ``energy_kwh`` by a further ``ankyra_lite.readouts.continuation_energy_change`` (see :class:`ForecastResult`)."""
     if state_rule not in ("seasonal_naive", None):

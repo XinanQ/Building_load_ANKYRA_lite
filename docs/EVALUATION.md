@@ -1,5 +1,7 @@
 # Evaluation
 
+**Provenance.** Every table on this page was produced by version 0.2.0 (commit 6bcd706); version 0.2.1 is a maintenance release with unchanged default outputs, checkpoints and results ([correction note](CODE_AUDIT_CORRECTIONS_20261022.md)). The main monthly-energy comparison uses the trajectory before the continuation layer; the disclosed cross-carrier post-continuation energy rows keep their delivered-curve definition; no CSV value is changed. After the Wilcoxon direction fix, all 186 Holm-significant pairs of `rank_tests.csv` keep their direction.
+
 The scored statistics are in [`results/`](../results) ([file list and columns](../results/README.md)); the figures are
 drawn from those files by [`figures/make_figures.py`](../figures/README.md). Data sources and the split are in
 [DATA.md](DATA.md), the forecaster in [METHOD.md](METHOD.md), and the scoring code in
@@ -484,7 +486,7 @@ Every number below is a row of `results/recipe_history.csv`, copied unrounded th
 
 **Decision.** The author chose the span return on 19 October 2026, with the disclosure of the Drammen loss and of the
 resolved loss on forecast days 2–7 above. It is a rule applied identically to every population (train, select the
-stopping epoch, then use all pre-cut data), not a per-population choice.
+stopping epoch, then sample the validation period at the original training density), not a per-population choice.
 
 Figure [18](../figures/fig18_recipe_history.png) (a–c) shows the readings of the recipe study.
 
@@ -1277,10 +1279,11 @@ records (in its research folder, not part of this repository), from the data or 
 
 Run the tests from the repository root with `python -m unittest discover -s tests -t .` and the theory checks with
 `python -m unittest discover -s theory -t .`; the tests that need the first release's checkout, the 0.1.1 checkout or
-the study's local data skip with a reason when those are absent. Version 0.2.0 has 267 tests and 109 theory checks; the
-full run passed on 21 October 2026 (CPU, one thread): 267 tests with 15 skipped (2 result-file checks without a matching
-record in this run, 4 comparisons with version 0.1 that passed when run separately against the 0.1.1 commit, 9
-store-array checks skipped for free memory, of which 7 passed when run separately) and the 109 theory checks.
+the study's local data skip with a reason when those are absent. Version 0.2.1 has 275 tests and 111 theory checks; the
+full run passed on 22 October 2026 (CPU, one thread): 269 tests ran (a class skipped as a whole counts once), none
+failed, 14 were skipped (9 store-array checks for free memory and 5 tests whose research records or files were not
+available), the comparisons with version 0.1 ran against a 0.1.1 checkout of commit c27affc and passed, and the 111
+theory checks passed.
 
 | Module | Tests |
 |---|---:|
@@ -1296,8 +1299,9 @@ store-array checks skipped for free memory, of which 7 passed when run separatel
 | `tests/test_store_arrays.py` (study's local data) | 9 |
 | `tests/test_compare_baselines.py` (part on the first release's files, the study's data and `results/`) | 42 |
 | `tests/test_evaluation.py` | 15 |
+| `tests/test_audit_fixes.py` (the maintenance fixes of 0.2.1, synthetic) | 8 |
 | `tests/test_external_tables.py` (the external-test table) | 12 |
-| `theory/test_operators.py`, `theory/test_carrier_properties.py`, `theory/test_weighting_properties.py`, `theory/test_continuation_properties.py` | 31, 27, 15, 36 |
+| `theory/test_operators.py`, `theory/test_carrier_properties.py`, `theory/test_weighting_properties.py`, `theory/test_continuation_properties.py` | 31, 27, 15, 38 |
 
 ## References
 

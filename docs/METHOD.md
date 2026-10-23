@@ -1,5 +1,7 @@
 # Method
 
+**Maintenance note.** The [code-audit corrections](CODE_AUDIT_CORRECTIONS_20261022.md) distinguish the original scored implementation from subsequent interface/guard maintenance. No historical score or frozen provenance hash is replaced.
+
 This document describes ankyra-lite 0.2.0 (recipe Rw, six seeds, the continuation layer on): a small carrier network,
 trained per population, whose forecasts at the origin and at six pseudo-origins go into an unchanged copy of the
 ANKYRA 2.2.1 anchoring layer, followed by the seasonal-naive state rule and the origin-continuity layer, which corrects
@@ -125,8 +127,8 @@ and its token set to zero:
 | 63 | load coverage (observed hours / 24) |
 | 64–68 | category one-hot: Industrial, Office, Public, Residential, Commercial (any other label counts as Public) |
 
-**Monthly tokens** (24 × 16), 24 blocks of 744 hours older than the daily span (together with it, about three years of
-history); a block with no observed hour is masked out and set to zero:
+**Monthly tokens** (24 × 16), 24 fixed blocks of 744 hours older than the daily span (not calendar months; together
+with it, at most 1,110 days of history); a block with no observed hour is masked out and set to zero:
 
 | Features | Content |
 |---|---|
@@ -183,7 +185,7 @@ the history; the 31 day outputs z_d carry the calendar of each forecast day.
 
 ### Copy pointer
 
-Every forecast day attends over the unit's own **last 56 complete days** (all 24 hours observed; zero-load days
+Every forecast day attends over the **complete days within the unit's last 56 day positions** (all 24 hours observed; zero-load days
 included):
 
 - for each such day j, its hourly shares (load / (24 × daily mean); uniform where the daily mean is at most 10⁻⁶ of the
@@ -746,8 +748,10 @@ within-day triples still require a completely observed target month, counted on 
 readout (`ankyra_lite.anchor.readouts.residual_quantiles`, and `ankyra_lite.readouts.interval` built on it) is a
 separate call on the record the caller passes and applies neither rule.
 
-The context at the origin is never filled by the package: it must be complete, and a gap in it raises an input error
-(`anchor.InputError`). The off-state and micro-load rules read the raw context. `anchor.pseudo_origin_contexts`
+The context at the origin is never filled by the package. The normal carrier-inference path requires completeness
+and raises an error for a gap. A precomputed mapping can instead enter the inherited off-state branch before that
+validation, using the observed last-week maximum; its seasonal-naive fallback zero-fills missing last-week values.
+This exception is an input-path distinction; the inherited rule does not establish that missing hours represent a shutdown. The off-state and micro-load rules read the raw context. `anchor.pseudo_origin_contexts`
 returns the interpolated pseudo-origin contexts; `carrier_forecasts` uses it only to choose the pseudo-origins and
 builds each carrier forecast from the record as supplied ([Pseudo-origins](#pseudo-origins)).
 `ankyra_lite.fill_short_gaps` (= `anchor.fill_short_gaps`) applies rule 1 to a user's own record before the call
@@ -861,7 +865,12 @@ trained to a development cut (+0.48% whole window, +9.49% day 1, +23.6% hours 0�
 `results/recipe_history.csv`, `Rw6_c vs Rw6`), tests whether the constants carry over to that carrier, not the form;
 those windows had served to choose the form, so it is not an independent confirmation.
 
-**What it guarantees** (theory/PROOFS.md, O1–O9; each property is checked):
+**What it guarantees** (theory/PROOFS.md, O1–O9; under each property's stated assumptions):
+
+The exponential bounds are real-arithmetic statements. The maintenance implementation retains the original
+`F64 * exp(delta)` order, restores input zeros including signed zero, and rejects a non-finite non-state correction
+or final output with `ValueError`; it does not clip custom constants. Nonzero floating-point values can underflow
+to zero. Default constants and ordinary finite inputs retain their arithmetic path.
 
 - a nonnegative trajectory stays nonnegative and exact zeros stay zero (O1);
 - each hour moves by a factor between e^(−E(h)) and e^(E(h)), E(h) = κ₁e^(−h/12) + κ₂e^(−h/168): between 0.445 and
@@ -877,8 +886,9 @@ those windows had served to choose the form, so it is not an independent confirm
   same sign move the whole window the same way (O7);
 - it does not depend on the unit of the load while the scale stays above its floor (O8).
 
-**Limits.** Through `forecast` the missing-hour bypass cannot occur, because the anchoring layer needs the 1,344 hours
-before the origin completely observed. The history-only configuration (`forecast(history, None, ...)`) is never
+**Limits.** The normal carrier-inference path requires the 1,344 hours before the origin completely observed.
+The precomputed-mapping off-state exception above bypasses continuation as a state window; direct continuation calls
+can also receive missing-hour inputs. The history-only configuration (`forecast(history, None, ...)`) is never
 continued, because it was not evaluated with the layer. The bound limits how far an hour moves, not its error: when the
 load changes level right after the origin the correction can point the wrong way.
 
@@ -1211,11 +1221,12 @@ The continuation layer (`continuation.CONSTANTS` and `continuation.RULE`, identi
 - **No mechanism is proven by the recipe study.** The returned span adds same-season data for the short-record
   populations, but it also changes recency, sample diversity and the replay of older windows, and adds 8 epochs of
   training; the study's readings do not separate these.
-- **Properties are not accuracy.** C1–C14, O1–O9 and P1–P20 hold for any weights, pools and trajectories; they make
+- **Properties are not accuracy.** C1–C14, O1–O9 and P1–P20 hold under their stated input, arithmetic and support
+  assumptions, not for arbitrary overflowing weights, pools or trajectories; they make
   the forecaster inspectable and bound what its parts can do. Accuracy is measured.
 - **No intervals.** The interval of the evaluation is the anchoring layer's, centred on ankyra-lite's trajectory as a
   description; ankyra-lite was not designed or tuned for it.
 - **No bitwise reproducibility of training.** GPU training is not bitwise repeatable; the package reproduces single
   optimisation steps, not the study's full runs.
 - **Inherited limits of the anchoring layer.** Hourly data only, a 744-hour horizon only, a complete 1,344-hour context
-  at the origin, and no temperature-signature prior for the category Commercial.
+  on the normal inference path (the mapping/off-state exception is documented above), and no temperature-signature prior for the category Commercial.

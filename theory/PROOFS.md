@@ -1,5 +1,7 @@
 # Proofs of the exact properties
 
+**Post-audit qualification.** These proofs distinguish real arithmetic, finite representable implementation paths and empirical comparisons. The [maintenance correction note](../docs/CODE_AUDIT_CORRECTIONS_20261022.md) preserves the original scored-code identities and records the scoped corrections; no result table was regenerated.
+
 The properties below follow from the construction of ankyra-lite's three parts (identities and elementary bounds),
 not from fitted relationships; the historical estimates, the anchoring weights, the carrier's weights and the four
 constants of the continuation layer are fitted to the data. This page states them with proofs and counterexamples:
@@ -11,11 +13,14 @@ constants of the continuation layer are fitted to the data. This page states the
   repository's result files measure a consequence, the statement names the file.
 - **C1–C14** belong to the carrier, `ankyra_lite.carrier`
   ([Exact properties of the carrier network](#exact-properties-of-the-carrier-network)). C1–C10 hold for any weights,
-  trained or not, except C9(a), which is about the initialisation. C11–C14 (new in 0.2.0) are properties of the loss
-  weighting of recipe Rw's second stage and hold for any training pool.
+  trained or not, under the arithmetic and input assumptions of each claim, except C9(a), which concerns
+  initialisation. C11–C14 (new in 0.2.0) concern the loss weighting of recipe Rw's second stage and require their
+  stated support and positive-floor conditions; an arbitrary pool need not satisfy them.
 - **O1–O9** belong to the continuation layer, `ankyra_lite.continuation` (new in 0.2.0;
   [Exact properties of the continuation layer](#exact-properties-of-the-continuation-layer)). They hold for any
-  trajectory the anchoring layer delivers and, unless a number is given, for any constants of the layer.
+  admitted trajectory under each claim's assumptions. The analytic formulas allow the stated nonnegative
+  coefficients and positive decay scales; floating-point finiteness and strict positivity require separate
+  representability conditions. They are not guaranteed for arbitrary custom constants.
 
 They make the construction auditable:
 
@@ -337,9 +342,11 @@ summarised by its pair
 $(\bar u,\bar o)$, and the best method for any $\lambda$ lies on the lower envelope of the lines
 $\tau\bar u+(1-\tau)\bar o$.
 
-*Evidence for the peak operator (this repository).* The readout applied to ankyra-lite's delivered trajectory is
-compared with the maximum of the same trajectory (rows `trajectory maximum`), with the previous window's observed
-peak and with the same readout on the baselines' trajectories, on the test windows of every population
+*Evidence for the peak readout (this repository).* The readout is applied to ankyra-lite's nonnegative projected
+pre-continuation trajectory F and compared with the maximum of its delivered trajectory F' (rows `trajectory maximum`).
+This is a comparison of the released readout choices, not a pure operator comparison on a fixed curve. It is also
+compared with the previous window's observed peak and with the same readout on the baselines' trajectories, on the
+test windows of every population
 ([`results/peak_readout.csv`](../results/peak_readout.csv); summary in [`results/SUMMARY.md`](../results/SUMMARY.md)).
 
 ## Estimands
@@ -813,25 +820,31 @@ and x_d = 0 when m_d + ε ≤ 0 (negative loads, where the logarithm is undefine
 
 $$E(h)=\kappa_1e^{-h/\rho_1}+\kappa_2e^{-h/\rho_2}.$$
 
-The properties hold for any constants κ₁, κ₂ ≥ 0 and ρ₁, ρ₂ > 0 unless a number is given; the numbers are those of
-`CONSTANTS`. The checks are in [`test_continuation_properties.py`](test_continuation_properties.py): on synthetic
+Unless stated otherwise, the analytic properties are in real arithmetic for finite constants κ₁, κ₂ ≥ 0 and
+ρ₁, ρ₂ > 0 under the stated input conditions; numerical values use `CONSTANTS`. Floating-point claims additionally
+require the representability conditions below. The maintenance implementation preserves the original correction
+and `F64 * exp(delta)` evaluation order, restores exact input zeros including signed zero, and raises `ValueError`
+for a non-finite non-state correction or final output. It does not clip custom constants, and nonzero outputs may
+underflow to zero. This is a bounded API contract, not an arbitrary-constant finiteness theorem. The checks are in [`test_continuation_properties.py`](test_continuation_properties.py): on synthetic
 windows, and end to end through `ankyra_lite.forecast` on an artificial building with a stand-in carrier and an
 untrained one; bit for bit unless a tolerance is stated. None of them is an accuracy guarantee: what the layer does on
 the test windows is measured ([EVALUATION.md](../docs/EVALUATION.md)).
 
 **O1. Nonnegativity, sign and zeros.**
 
-*Claim.* F' has the sign of F hour by hour: a nonnegative trajectory stays nonnegative, and an hour forecast as
-exactly zero stays exactly zero. In real arithmetic F'(h) = 0 only where F(h) = 0; in floating point every hour with
-|F(h)| at least the smallest normal number (2.2 × 10⁻³⁰⁸) stays nonzero. Off state windows the trajectory before the
-layer is nonnegative (the anchoring layer's projection, P11), so the delivered hourly forecast with the layer is
-nonnegative too.
+*Claim.* In real arithmetic F' has the sign of F hour by hour and F'(h) = 0 only where F(h) = 0. In floating point,
+accepted finite non-state outputs preserve nonnegativity; exact input zeros are explicitly restored, including
+signed zero. Nonzero values can underflow to zero. With the frozen constants, |F(h)| at least the smallest normal
+number (2.2 × 10⁻³⁰⁸) stays nonzero provided the final output is finite. Off state windows the trajectory before the
+layer is nonnegative (the anchoring layer's projection, P11), so accepted delivered outputs are nonnegative too.
 
 *Proof.* |x_f|, |x_d| ≤ 1 and 0 < e^{−h/ρ} ≤ 1, so |Δ(h)| ≤ E(0) and the factor e^{Δ(h)} lies in
-[e^{−E(0)}, e^{E(0)}], a positive normal number. A floating-point product with a positive factor keeps the sign of the
-other factor and is zero only when that factor is zero or the product underflows; with a factor of at least
-e^{−0.809} = 0.445 only the smallest subnormal number can underflow. `apply_batch` rejects a non-finite trajectory on a
-window that is not a state window (ValueError).
+[e^{−E(0)}, e^{E(0)}], positive in real arithmetic. A finite representable positive floating-point factor preserves
+the sign unless the product underflows; for the frozen constants its minimum is e^{−0.809} = 0.445, so only the
+smallest subnormal number can underflow. That numeric bound does not apply to arbitrary custom constants. The
+maintenance `apply_batch` rejects a non-finite input trajectory, correction or final output on a non-state window
+with `ValueError`; exact input zeros are restored before final-output validation even if the intermediate factor
+overflows. State-window bypass semantics are retained.
 
 *Where it stops.*
 
@@ -846,7 +859,8 @@ window that is not a state window (ValueError).
 
 **O2. Bounded correction.**
 
-*Claim.* |Δ(h)| ≤ E(h), E decreases strictly in h, and wherever F(h) ≠ 0, e^{−E(h)} ≤ F'(h)/F(h) ≤ e^{E(h)}. For the
+*Claim.* In real arithmetic |Δ(h)| ≤ E(h), E is nonincreasing in h and is strictly decreasing if at least one κ
+is positive. With κ₁ = κ₂ = 0 it is identically zero. Wherever F(h) ≠ 0, e^{−E(h)} ≤ F'(h)/F(h) ≤ e^{E(h)}. For the
 frozen constants:
 
 | Hour h | E(h) | F'(h) / F(h) lies in (rounded outward) |
@@ -859,11 +873,12 @@ frozen constants:
 
 The bound is reached when both anomalies are clipped to the same sign. In floating point, |Δ(h)| never exceeds the
 envelope evaluated with the same operations, (κ₁ · 1)e^{−h/ρ₁} + (κ₂ · 1)e^{−h/ρ₂} (`envelope`), with equality at
-x_f = x_d = ±1.
+x_f = x_d = ±1, provided the operations are finite. Strict decrease is a real-arithmetic property; rounding and
+underflow can introduce plateaus. Ratio bounds do not guarantee a nonzero floating-point result for custom constants.
 
 *Proof.* The clip, the triangle inequality with κ ≥ 0 and e^{−h/ρ} > 0, and the monotonicity of the exponential; E is a
-sum of two decreasing functions with positive weights. In floating point, rounding is monotone and symmetric under
-negation, so |x| ≤ 1 gives |fl(κx)| ≤ κ, then |fl(fl(κx) g)| ≤ fl(κg), and the rounded sum is bounded by the rounded
+sum of decreasing functions with nonnegative weights, strictly decreasing when a weight is positive. In floating
+point, where the intermediate operations are finite, rounding is monotone and symmetric under negation, so |x| ≤ 1 gives |fl(κx)| ≤ κ, then |fl(fl(κx) g)| ≤ fl(κg), and the rounded sum is bounded by the rounded
 sum of the bounds.
 
 *Where it stops.*
@@ -918,8 +933,9 @@ contain the last 3 hours, so x_f = x_d = 0; then Δ = (κ₁ · 0)e^{−h/ρ₁}
 exactly. (c) and (d) hold by construction. (e) `forecast` returns before the layer when `carriers` is None. (f) By
 construction (`anomalies`), with the argument of (b) when both anomalies are 0.
 
-*Where it stops.* Through `forecast`, (b)–(d) cannot occur: the anchoring layer requires the 1,344 hours before the
-origin to be completely observed and raises an error otherwise. They apply when `continuation.apply` is called
+*Where it stops.* The normal carrier-inference path requires the 1,344 hours before the origin completely observed.
+The inherited precomputed-mapping off-state exception can accept an incomplete context before that check, but then
+bypasses continuation as a state window. The missing-hour cases also apply when `continuation.apply` is called
 directly on a record with gaps. (f) can occur through `forecast`, since the record may hold negative loads.
 
 *Check.* `BypassTests`, `ForecastBypassTests`.
@@ -939,9 +955,12 @@ are those of version 0.1.
 trajectory on a window that is not a state window (O1), as the frozen constants do; `continuation=False` (or None)
 computes nothing. (On a window with negative loads, O4 (f), ZERO and the frozen constants no longer raise; the study's
 reference implementation did.) "Version 0.1" means its steps: with another carrier (six seeds, or recipe Rw) the layer off gives
-that carrier in the 0.1 pipeline, not the 0.1 forecasts. That the package with the layer off reproduces version
-0.1.1's forecasts field by field is a test of the release against version 0.1.1 itself (`tests/test_forecast_v2.py`),
-not a property.
+that carrier in the 0.1 pipeline, not the 0.1 forecasts. Recovering the published 0.1.1 predictions requires the
+same inputs and the original recipe-R three-seed checkpoints; this is a reproduction condition. The existing
+`tests/test_forecast_v2.py` reference-version checks instead establish same-carrier, same-input pipeline compatibility
+using synthetic histories and an untrained carrier with the same state dictionary in both versions (including
+reference version 0.1.1); they can skip
+when the reference checkout is unavailable. They do not demonstrate a rerun of the released checkpoints.
 
 *Check.* `DegeneracyTests`.
 
@@ -1007,9 +1026,11 @@ F(h) / Σ F, so it lies between the smallest and the largest of e^{±E(h)} − 1
 logarithm and the clip are monotone, and e^{Δ} ≥ 1 exactly when Δ ≥ 0.
 
 *Where it stops.* With anomalies of opposite signs (the last 3 hours above and the last day below the forecast, or the
-reverse) Δ changes sign once: the fast term dominates the first hours and the slow term the rest; with x_f = 1 and
-x_d = −1 the sign changes after about 4.8 hours. Beyond |ln ratio| = 1 the clip makes the anomaly flat. Monotonicity
-is in the anomalies, not in accuracy.
+reverse) and distinct decay rates, Δ changes sign at most once; a crossing may be outside the forecast window or
+absent for nonnegative lead times. With the frozen constants, x_f = 1 and x_d = −1 gives a crossing after about
+4.8 hours, whereas x_f = 0.1 and x_d = −1 stays negative throughout all 744 hours. The ratio of the two exponential
+terms is monotone when their rates differ; equal rates give a constant sign or an identically zero correction.
+Beyond |ln ratio| = 1 the clip makes the anomaly flat. Monotonicity is in the anomalies, not in accuracy.
 
 - The monotonicity in m_f and m_d holds for m + ε > 0 only. At m + ε ≤ 0 (negative loads, O4 (f)) the anomaly is set
   to 0, so as m falls through −ε it jumps from the clipped value −1 (or above) to 0.

@@ -45,6 +45,11 @@ if str(CB.REPO) not in sys.path:
 COUNT_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
 
 
+def _forecast_with_layer(FM, history, layer, *args, **kwargs):
+    """Call the public forecast API with an explicit layer setting, including when it is off."""
+    return FM.forecast(history, *args, continuation=bool(layer), **kwargs)
+
+
 def _study_loader():
     for p in (str(CB.REL), str(CB.HKAD)):
         if p not in sys.path:
@@ -94,7 +99,6 @@ def measure(T, face, entry, n=6, layer=None):
     t_load = time.perf_counter() - t0
     params = parameter_count(models[0])
     size_mb = float(np.mean([os.path.getsize(Path(rd) / entry["checkpoint"]) for rd in entry["run_paths"]])) / 1e6
-    kw = {"continuation": True} if layer else {}
 
     def one(i):
         b, o = int(wb[i]), int(wo[i])
@@ -107,7 +111,7 @@ def measure(T, face, entry, n=6, layer=None):
         h = History(load_kw=pre_load, temperature_c=tmp[:o], day_types=ty[:o + CB.HORIZON], start_timestamp=d["start_iso"],
                     observed=np.isfinite(pre_load))
         t3 = time.perf_counter()
-        r = FM.forecast(h, F, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut, **kw)
+        r = _forecast_with_layer(FM, h, layer, F, group=d["groups"][b], temp_sigma_std=sigma, dst_region=region(b), cut=cut)
         t4 = time.perf_counter()
         FM.peak(getattr(r, "trajectory_before_continuation_kw", r.trajectory_kw), FM._masked_load(h), h.day_types)
         t5 = time.perf_counter()

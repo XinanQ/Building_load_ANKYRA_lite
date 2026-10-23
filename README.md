@@ -1,5 +1,7 @@
 # Building_load_ANKYRA_lite
 
+**Version 0.2.1 (22 October 2026) is a maintenance release.** It fixes interface and guard code found in a code audit and corrects the documentation; default outputs, the checkpoints, `results/` and `figures/` are those of version 0.2.0, which produced every number on this page ([correction note](docs/CODE_AUDIT_CORRECTIONS_20261022.md)). No training or scoring was repeated.
+
 **Month-ahead hourly load forecasting without a foundation model: a 61,613-parameter carrier network, trained per population, anchored to each unit's own history**
 
 [中文说明](README.zh-CN.md) · [Install and run](#install-and-run) · [Quickstart](#quickstart) ·
@@ -25,7 +27,7 @@ populations: the six seeds of this version and the three of version 0.1), the tr
 scored comparison with 21 external baselines on nine populations, the figures, and the exact properties of all three
 parts.
 
-> **Status (version 0.2.0, 21 October 2026).**
+> **Status (version 0.2.1, 22 October 2026; every result from version 0.2.0, 21 October 2026).**
 >
 > - **What changed from 0.1.** The carrier is trained with recipe Rw (recipe R with inverse-noise loss weights in its
 >   second stage) and six seeds are averaged, and the new continuation layer corrects the first hours and days of the
@@ -114,7 +116,7 @@ the layer are in the same file.
 at up to six pseudo-origins o − 744k (Δ = 744 h), each time from the data before that issue time only; each
 pseudo-origin forecast covers a month that is already observed at o and is scored on it (e_k). b, The carrier network:
 daily, monthly and future-day tokens, the dilated causal encoder, the attention read-out (31 day queries and a learned
-global query), the copy pointer over the unit's last 56 complete days and the energy-budget decoder
+global query), the copy pointer over the complete days within the unit's last 56 day positions and the energy-budget decoder
 F(d, h) = 744 · ℓ · p_d · q_d(h). c, The anchoring layer (a copy of ANKYRA 2.2.1; nothing in it is trained) weights the
 carrier's level, daily means and within-day shape against the unit's own history, with weights set from the scores
 e_k; energy and peak are read from its trajectory, and the continuation layer then corrects the first hours and days
@@ -196,11 +198,11 @@ checkpoints/                 81 carriers: <population>/rw/seed0-5.pt (0.2.0, rec
 examples/quickstart.py       end to end on an artificial building with the shipped checkpoints
 examples/own_unit.py         your own unit's record, on an artificial meter: a record that starts in the middle of a year,
                              holidays, gaps, the history-only call, the interval and the anchoring record
-tests/                       267 tests: the anchoring layer's own tests, equivalence with the original package and the
+tests/                       275 tests: the anchoring layer's own tests, equivalence with the original package and the
                              research code, the carrier, the training recipes, the continuation layer, the forecast API
                              against 0.1.1, the evaluation module, the comparison script and the external-test table
 theory/                      the exact properties: P1-P20 (anchoring layer), C1-C14 (carrier and recipe Rw) and O1-O9
-                             (continuation layer), proofs, operators, 109 checks
+                             (continuation layer), proofs, operators, 111 checks
 evaluation/                  the scoring module, a runnable example, and the scripts that wrote results/ (need the study's data)
 results/                     every scored statistic (CSV / JSON), SUMMARY.md, the reproduction record; README.md lists the columns
 figures/                     make_figures.py, architecture.py (the drawing of Figure 1) and the figures (PDF and PNG), drawn
@@ -333,7 +335,7 @@ The record, `ankyra_lite.anchor.History` (the anchoring layer's input record, un
 
 | Field | What to supply | How the carrier reads it | How the anchoring layer reads it |
 |---|---|---|---|
-| `load_kw` | hourly mean load in kW; index 0 is 1 January 00:00 of the first year; the last value is the hour before the origin; NaN where missing | only hours before each issue time; a negative or non-finite value counts as missing; a day with no observed hour is masked out | the last 1,344 hours must be completely observed (never filled; a gap raises an error); earlier gaps of at most 6 hours inside one 744-hour block are interpolated in the copy its estimator reads |
+| `load_kw` | hourly mean load in kW; index 0 is 1 January 00:00 of the first year; the last value is the hour before the origin; NaN where missing | only hours before each issue time; a negative or non-finite value counts as missing; a day with no observed hour is masked out | the normal carrier-inference path requires the last 1,344 hours completely observed (never filled); the precomputed-mapping off-state exception is described below; earlier gaps of at most 6 hours inside one 744-hour block are interpolated in the copy its estimator reads |
 | `temperature_c` | hourly outdoor temperature in °C for the same hours | only hours before each issue time, through daily means and their coverage; missing hours allowed | finite everywhere before the origin; no future temperature is needed |
 | `day_types` | one integer per hour for the history plus the 744 forecast hours: Monday = 0 … Sunday = 6, public holiday = 7 | through the forecast month of each issue time (the calendar is treated as known at the origin) | the same |
 | `start_timestamp` | 1 January 00:00 of the first year with a `+00:00` offset, e.g. `"2019-01-01T00:00:00+00:00"` (a fixed-offset grid) | the annual phase of every token and the record's absolute time | the phase of the annual temperature harmonic and the daylight-saving state of analog days |
@@ -420,7 +422,7 @@ fixed division and the analog fields at their defaults), not the seasonal naive 
 (`ankyra_lite.readouts.raw_trajectory`), and `ankyra_lite.readouts.blocks` splits any trajectory into its three blocks.
 Every field is listed in [docs/METHOD.md](docs/METHOD.md#output-fields).
 
-**State windows.** When the last 168 hours are at or below 10⁻⁶ kW (off-state) or the whole 1,344-hour context stays
+**State windows.** The precomputed-forecast mapping path can enter the inherited off-state branch before complete-context validation, using only the observed last-week maximum; missing last-week hours are then zero-filled by the seasonal-naive rule. This inherited rule does not establish that missing hours represent a shutdown. The normal carrier-inference path rejects an incomplete context. When the last 168 hours are at or below 10⁻⁶ kW (off-state) or the whole 1,344-hour context stays
 within 10⁻³ kW of zero (micro-load), the anchoring layer hands back the carrier's forecast unchanged. With the default
 `state_rule="seasonal_naive"` ankyra-lite delivers the last observed week repeated instead (missing hours as 0); this is
 the evaluated configuration. `state_rule=None` keeps the anchoring layer's return
@@ -467,7 +469,7 @@ layer on or off leaves them unchanged bit for bit; the hourly curve that is deli
 
 ### How much history
 
-- **The anchoring layer** needs the 1,344 hours before the origin completely observed. Its weights leave their priors
+- **The anchoring layer** normally needs the 1,344 hours before the origin completely observed, with the precomputed-mapping off-state exception above. Its weights leave their priors
   as completed pseudo-origins accrue (one 744-hour step each): with 2,088 complete hours the handover weights leave ½
   (one completed pseudo-origin), with 2,832 the level weights leave equal weights (two), and the candidates that use
   the window one year earlier need 10,248 hours ([the full list](docs/DATA.md#how-much-history)). Every test window
@@ -528,13 +530,13 @@ Every entry was checked against the code (`ankyra_lite/carrier/model.py`, `featu
 | Encoder | width **48**; token, age and resolution embeddings; **two shared gated causal blocks** (layer normalisation, depthwise causal convolution with kernel 3, gate tanh · σ, residual) reused with **dilations 1, 2, …, 128** over the 366 daily tokens and **1, 2, 4, 8** over the 24 monthly tokens |
 | Read-out | one multi-head attention (**4 heads**) from one global query and 31 calendar-conditioned day queries over the 390 memory positions, then a 48 → 96 → 48 MLP |
 | Decoder | positive energy budget F(d, h) = 744 · L · p_d · q_d(h): monthly level L = s · softplus(·), daily shares p (softmax over 31 days), hourly shares q_d (softmax over 24 hours); the hour logits come from a **rank-8 dictionary** on the 23 zero-mean hourly directions (a learned base plus a bounded origin-conditioned change, 0.1 · tanh), shared by the 31 days, with per-day coefficients |
-| Copy pointer | every forecast day attends over the unit's own **last 56 complete days** (16-dimensional queries and keys, a learned bonus for the same day type) and adds the attended within-day share profile to its hour logits and the attended relative daily mean to its day logits, through gates initialised at zero |
+| Copy pointer | every forecast day attends over the **complete days within the unit's last 56 day positions** (16-dimensional queries and keys, a learned bonus for the same day type) and adds the attended within-day share profile to its hour logits and the attended relative daily mean to its day logits, through gates initialised at zero |
 | Output | the carrier: 744 hours, nonnegative, its mean equal to L (in real arithmetic), level, daily path and within-day shape the exact blocks of the trajectory. ankyra-lite: 744 nonnegative hours after the continuation layer; energy, level and peak read before that layer, so the delivered curve's mean is not the energy readout ([Readouts](#readouts)) |
 | Continuation layer | F′(h) = F(h) e^(Δ(h)), Δ(h) = 0.479 x_f e^(−h/12) + 0.330 x_d e^(−h/168); x_f, x_d = clipped log ratios of the last 3 and 24 observed hours to the forecast's reference day; four constants fitted once on development windows, never refitted; bypassed on state windows ([section](#the-continuation-layer)) |
 | Training | per population, from scratch, then 8 epochs with the validation span returned and inverse-noise loss weights ([recipe Rw](#training-recipe-rw)); seeds 0–5; the forecast is the plain average of the six seeds |
 | Training data | the population's own windows before its training cut (the validation span joins them in stage 2) plus windows borrowed from other study populations, each ending before the population's validation span ([docs/DATA.md](docs/DATA.md#windows-borrowed-from-other-populations)) |
 | Checkpoints | 81 files: 54 of this version (`checkpoints/<population>/rw/seed0–5.pt`, recipe Rw) and the 27 of version 0.1 (`checkpoints/<population>/seed0–2.pt`, recipe R), `{"model": state_dict, "epoch": 8}`, 265,653 bytes each |
-| Inference cost | 42 network evaluations per forecast (7 issue times × 6 seeds): 0.135 s; with the anchoring layer, the continuation layer and the peak readout 0.655 s per window, one CPU thread (`results/cost_per_window.csv`) |
+| Inference cost | At most 42 member predictions per forecast (7 issue times × 6 seeds, batchable; fewer when pseudo-origins are unavailable); the six-Oslo-window measurement: 0.135 s; with the anchoring layer, the continuation layer and the peak readout 0.655 s per window, one CPU thread (`results/cost_per_window.csv`) |
 | Intended use | month-ahead hourly forecasts for units of a population the carrier was trained for, at origins at least 186 days after its training cut |
 | Not evaluated | other populations without retraining; sub-hourly data; horizons other than 744 hours; prediction intervals designed for this carrier |
 | Evidence | one more read of test windows read many times before, which sets direction only ([Read this first](#read-this-first)) |
@@ -621,7 +623,10 @@ layer stays byte-identical.
   fades within a day, the slow term within about a week.
 - **Bounded.** Each hour moves by a factor between e^(−E(h)) and e^(E(h)), E(h) = 0.479 e^(−h/12) + 0.330 e^(−h/168):
   between ×0.445 and ×2.246 at the first hour, between ×0.885 and ×1.130 from day 8, and within ±0.4% at the last hour
-  (O2). A nonnegative forecast stays nonnegative, and exact zeros stay zero (O1).
+  (O2). For accepted finite outputs, nonnegativity is preserved and exact zeros, including signed zero, are
+  restored (O1). Nonzero floating-point values can underflow to zero; custom constants that produce a non-finite
+  non-state correction or final output raise `ValueError`. The real-arithmetic positive-factor bound does not
+  guarantee strict floating-point positivity for arbitrary constants.
 - **Causal and switchable.** It reads only the forecast itself, the 672 hours of load before the origin and the day
   types of the last observed day and of the first forecast week (O3); state windows bypass it (O4);
   `continuation=False` turns it off.
@@ -649,7 +654,7 @@ and [theory/PROOFS.md](theory/PROOFS.md#exact-properties-of-the-continuation-lay
 ## Training recipe Rw
 
 The released recipe Rw has two stages, applied identically to every population (train, select the stopping epoch,
-then use all pre-cut data with weighted windows). Stage 1 is that of recipe R (version 0.1); stage 2 differs from R's
+then add a density-matched sample from the validation period and weight the windows). Stage 1 is that of recipe R (version 0.1); stage 2 differs from R's
 only by the loss weights. Every constant is a field of `ankyra_lite.carrier.train.TrainConfig`; `recipe(name,
 init_checkpoint)` builds the named configurations ([docs/METHOD.md](docs/METHOD.md#training)).
 
@@ -845,6 +850,10 @@ forecast inputs always use the load up to the origin.
 
 ## No information after the origin
 
+This heading concerns code access to load and temperature. Calendar inputs are supplied as known: the documented
+post-origin holiday announcements mean it is not a certification that every supplied input was available at issue
+time. The audit found no added future-load read; it did not rebuild every historical source file.
+
 A forecast at origin o is a function of the following, and nothing else ([docs/METHOD.md](docs/METHOD.md#information-at-the-origin)):
 
 - load and temperature at hours before o (the carrier reads at most the last 366 days and the 24 blocks of 744 hours
@@ -852,7 +861,7 @@ A forecast at origin o is a function of the following, and nothing else ([docs/M
 - the day types of the 31 forecast days, treated as known at the origin;
 - the unit's category, the population's fixed temperature-anomaly scale (fitted on days before the training cut) and
   the daylight-saving rule of its region;
-- the carrier's weights, fitted on labels that end at least 186 days and 24 hours before the first test origin;
+- the carrier's weights: final gradient-training labels end at least 186 days and 24 hours before the first test origin; first-stage early stopping also reads validation labels ending by the training cut;
 - the carrier's forecasts at o and at each pseudo-origin q, each built from data before q only;
 - for the continuation layer, the anchored forecast itself, the 672 hours of load before o and the day types of the
   last observed day and of the first forecast week (O3).
@@ -1905,8 +1914,8 @@ r01 = forecast(history, old, group="Public", temp_sigma_std=sigma, dst_region="E
 `pytest` is not required; the tests use `unittest`. From the repository root:
 
 ```bash
-python -m unittest discover -s tests -t .      # 267 tests
-python -m unittest discover -s theory -t .     # 109 checks of the exact properties
+python -m unittest discover -s tests -t .      # 275 tests
+python -m unittest discover -s theory -t .     # 111 checks of the exact properties
 ```
 
 | Module | Tests | What it checks |
@@ -1926,11 +1935,12 @@ python -m unittest discover -s theory -t .     # 109 checks of the exact propert
 | `tests/test_external_tables.py` | 12 | the external-test table: columns, forecaster names, no absolute path, the sealed Helsinki set never read, equality with the score records field by field, no contrast of the scorer's other output files, the primary table of docs/EXTERNAL_TESTS.md (part needs the study's score records) |
 | `theory/test_operators.py`, `theory/test_carrier_properties.py`, `theory/test_weighting_properties.py`, `theory/test_continuation_properties.py` | 31, 27, 15, 36 | P1–P20, C1–C10, C11–C14 and O1–O9, counterexamples included |
 
-On 21 October 2026 (CPU, one thread) the full run on this version passed: 267 tests, 15 of them skipped, and the 109
-theory checks. The skips: 2 result-file checks with no matching record in this run (the earlier hourly-only comparison
-and the study scorer's record), 4 comparisons with version 0.1 (a 0.1.1 checkout and its training module; run
-separately against the 0.1.1 commit, all 4 passed) and 9 store-array checks skipped for free memory (run separately:
-7 passed; EWELD and the households need 6.5 and 11 GB and were not run). Tests that need the ANKYRA checkout, the 0.1.1 checkout or the study's data skip with a reason
+On 22 October 2026 (version 0.2.1; CPU, one thread) the full run passed: 269 of the 275 collected tests ran (a class
+skipped as a whole counts once), none failed, 14 were skipped, and the 111 theory checks passed. The comparisons with
+version 0.1 ran against a 0.1.1 checkout exported from commit c27affc (`ANKYRA_LITE_REFERENCE_REPO`,
+`ANKYRA_LITE_REFERENCE_TRAIN`) and passed. The skips: 9 store-array checks for free memory (they need 5, 6.5 or 11 GB;
+in the run of 21 October, 7 passed when run separately, EWELD and the households were not run) and 5 tests whose
+research records or files were not available in this run. Tests that need the ANKYRA checkout, the 0.1.1 checkout or the study's data skip with a reason
 where those are absent (as on CI). Environment variables: `ANKYRA_ORIGINAL_ROOT` (the ANKYRA checkout),
 `ANKYRA_LITE_RESEARCH_ROOT` (the study's research folder), `ANKYRA_LITE_REFERENCE_REPO` (a 0.1.1 checkout of this
 repository), `ANKYRA_LITE_REFERENCE_TRAIN` (the `ankyra_lite/carrier/train.py` of version 0.1), `ANKYRA_LITE_RESULTS` (another result directory to check) and `ANKYRA_LITE_TEST_MIN_FREE_GB` (the free
@@ -1966,7 +1976,7 @@ The construction is auditable because each step has a stated property. They sit 
   workday class and one digest for the constants (O9).
 
 [theory/PROOFS.md](theory/PROOFS.md) gives the statements, proofs and counterexamples; `theory/operators.py` writes
-P1–P20 as functions; the four check files hold 109 numerical checks. None of the properties is an accuracy guarantee;
+P1–P20 as functions; the four check files hold 111 numerical checks. None of the properties is an accuracy guarantee;
 accuracy is measured.
 
 ## Reproducibility
@@ -2014,6 +2024,14 @@ accuracy is measured.
 
 ## Version history
 
+- **0.2.1 (22 October 2026)** — maintenance after a code audit; default outputs, checkpoints, results and figures
+  unchanged ([correction note](docs/CODE_AUDIT_CORRECTIONS_20261022.md)). Switching the continuation layer off in
+  `evaluation/cost_timing.py` and `evaluation/robustness.py` now takes effect (the released runs had it on); missing day types
+  in the older 744-hour feature blocks fall back to the weekday; the Wilcoxon direction is read from each pair's signed
+  ranks (all 186 Holm-significant pairs keep their direction); extreme custom continuation constants raise `ValueError`
+  instead of giving non-finite hours; re-anchoring caches are bound to a content identity with an exclusive claim; the
+  external-test subgroup is labelled by its construction (first-stage training windows); the method, readout and theory
+  documentation is corrected; regression tests in `tests/test_audit_fixes.py`.
 - **0.2.0 (21 October 2026)** — the carrier trained with recipe Rw (inverse-noise loss weights in the second stage) and
   averaged over six seeds; the origin-continuity layer (`ankyra_lite.continuation`, four frozen constants) after the
   anchoring layer and the state rule, with energy, level and peak read before it (readout rule A) and two new result

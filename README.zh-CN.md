@@ -1,5 +1,7 @@
 # Building_load_ANKYRA_lite
 
+**0.2.1 版（2026 年 10 月 22 日）是维护版本。** 修复了代码审核发现的接口与保护问题，并更正了文档；默认输出、检查点、`results/` 和 `figures/` 都与 0.2.0 版相同，本页的每个数字都由 0.2.0 版得出（[更正说明](docs/CODE_AUDIT_CORRECTIONS_20261022.md)）。没有重新训练或评分。日历公告例外仍然存在，不能据此认证所有输入在起报时都已可得。
+
 **不用基础模型的月前逐时负荷预测：一个 61,613 个参数的载体网络，每个人群单独训练，并锚定到每个单位自己的历史**
 
 [English](README.md) · [安装与运行](#安装与运行) · [快速上手](#快速上手) · [用自己的数据](#输入与输出) ·
@@ -12,7 +14,7 @@
 
 ankyra-lite（包名 `ankyra-lite`，发行名 `building-load-ankyra-lite`，导入名 `ankyra_lite`）根据一个单位（一栋楼、一块电表、一个用电点或一户住户）截至起报点的自身记录，预测其后 744 小时（31 天）的逐时负荷。它由三部分组成。一个小型**载体网络**（复制指针结构化负荷网络，61,613 个参数，每个人群从零训练，不用任何预训练权重）根据单位的历史和已知日历，在起报点和六个更早的伪起报点上预测这个月；六个训练好的副本（种子）取平均。一个**锚定层**（从 ANKYRA 2.2.1 包逐字节复制而来）在单位已经经历过的月份上给载体的伪起报点预测打分，并用这些误差逐块（月水平、日路径、日内形状）在载体和单位的长期历史之间定权。一个有四个冻结常数的**接续层**随后把锚定后这个月的头几个小时和头几天向最后观测到的几小时校正。输出是 744 小时的轨迹、月电量和月峰值读出；电量、水平和峰值都在接续层之前读出。用六个种子时，一次预测在单个 CPU 线程上约需 0.66 秒（[耗时](#每个窗口的耗时)），不下载任何东西。本仓库包含这个包、81 个训练好的检查点（九个人群：本版本的六个种子和 0.1 版的三个种子）、训练配方、评分代码、与 21 个外部基线在九个人群上的评分比较、图，以及三部分各自的精确性质。
 
-> **状态（0.2.0 版，2026 年 10 月 21 日）。**
+> **状态（0.2.1 版，2026 年 10 月 22 日；全部结果来自 2026 年 10 月 21 日的 0.2.0 版）。**
 >
 > - **与 0.1 相比改了什么。** 载体改用配方 Rw 训练（配方 R 的第二阶段加上逆噪声损失权重），并对六个种子取平均；新增的接续层校正这个月的头几个小时和头几天。电量、水平和峰值在接续层之前读出（读出规则 A），所以交付的逐时曲线的均值不等于电量读数（[读出](#读出)）。
 > - **证据性质：在已被多次读过的测试窗口上再读一次。** 0.2.0 的配置（配方、种子、接续层及其四个常数、读出规则）在读这些测试窗口之前就只根据开发窗口冻结，然后按读数前写好的规则把测试窗口为它读了一次。这些窗口此前已被读过多次（发布版评分、载体的早期版本、0.1 的配方研究），所以这次读数只定每项改动的方向，不是确认；本页九个人群的每个数字描述的都是发布的预测器在这些窗口上的表现（[先读这一节](#先读这一节)）。本页引用的开发集数字是在选出设计的开发窗口上的复用评估。
@@ -56,7 +58,7 @@ ankyra-lite 与 21 个外部基线（ANKYRA 2.2.1 发布版的 20 个基线加�
 
 ![ankyra-lite 的结构](figures/fig1_architecture.png)
 
-*图 1. 结构，按时间展开。a，载体网络在起报点 o 和至多六个伪起报点 o − 744k（Δ = 744 小时）上各发布一次预测，每次只用该发布时刻之前的数据；每个伪起报点预测覆盖的那个月在 o 时已经观测到，并在这个月上打分（e_k）。b，载体网络：日 token、月 token 和预测日 token，因果空洞卷积编码器，注意力读出（31 个日查询和一个学到的全局查询），覆盖单位最近 56 个完整日的复制指针，以及能量预算解码器 F(d, h) = 744 · ℓ · p_d · q_d(h)。c，锚定层（ANKYRA 2.2.1 的副本，其中没有任何东西被训练）按打分 e_k 设定权重，在载体和单位自己的历史之间为月水平、日均值和日内形状定权；电量和峰值从它的轨迹读出，接续层随后把头几个小时和头几天向最后观测到的几小时校正。载体为六个种子、配方 Rw。图中的序列以及所有曲线、柱和权重都是合成的示意，不是结果。每次预测的耗时取自 `results/cost_per_window.csv`。*
+*图 1. 结构，按时间展开。a，载体网络在起报点 o 和至多六个伪起报点 o − 744k（Δ = 744 小时）上各发布一次预测，每次只用该发布时刻之前的数据；每个伪起报点预测覆盖的那个月在 o 时已经观测到，并在这个月上打分（e_k）。b，载体网络：日 token、月 token 和预测日 token，因果空洞卷积编码器，注意力读出（31 个日查询和一个学到的全局查询），覆盖单位最近 56 日位置内完整日的复制指针，以及能量预算解码器 F(d, h) = 744 · ℓ · p_d · q_d(h)。c，锚定层（ANKYRA 2.2.1 的副本，其中没有任何东西被训练）按打分 e_k 设定权重，在载体和单位自己的历史之间为月水平、日均值和日内形状定权；电量和峰值从它的轨迹读出，接续层随后把头几个小时和头几天向最后观测到的几小时校正。载体为六个种子、配方 Rw。图中的序列以及所有曲线、柱和权重都是合成的示意，不是结果。每次预测的耗时取自 `results/cost_per_window.csv`。*
 
 **简要原理。** 术语的定义见[本页用到的术语](#本页用到的术语)。
 
@@ -113,11 +115,11 @@ checkpoints/                 81 carriers: <population>/rw/seed0-5.pt (0.2.0, rec
 examples/quickstart.py       end to end on an artificial building with the shipped checkpoints
 examples/own_unit.py         your own unit's record, on an artificial meter: a record that starts in the middle of a year,
                              holidays, gaps, the history-only call, the interval and the anchoring record
-tests/                       267 tests: the anchoring layer's own tests, equivalence with the original package and the
+tests/                       275 tests: the anchoring layer's own tests, equivalence with the original package and the
                              research code, the carrier, the training recipes, the continuation layer, the forecast API
                              against 0.1.1, the evaluation module, the comparison script and the external-test table
 theory/                      the exact properties: P1-P20 (anchoring layer), C1-C14 (carrier and recipe Rw) and O1-O9
-                             (continuation layer), proofs, operators, 109 checks
+                             (continuation layer), proofs, operators, 111 checks
 evaluation/                  the scoring module, a runnable example, and the scripts that wrote results/ (need the study's data)
 results/                     every scored statistic (CSV / JSON), SUMMARY.md, the reproduction record; README.md lists the columns
 figures/                     make_figures.py, architecture.py (the drawing of Figure 1) and the figures (PDF and PNG), drawn
@@ -226,7 +228,7 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 
 | 字段 | 要提供什么 | 载体怎样读它 | 锚定层怎样读它 |
 |---|---|---|---|
-| `load_kw` | 逐时平均负荷，单位 kW；下标 0 是第一年的 1 月 1 日 00:00；最后一个值是起报点前一小时；缺测处为 NaN | 只读每个发布时刻之前的小时；负值或非有限值算作缺测；没有任何观测小时的日子被屏蔽 | 最后 1,344 小时必须完整观测（从不填补；有缺口就报错）；更早的、在同一个 744 小时块内不超过 6 小时的缺口，在其估计器读取的副本中做插值 |
+| `load_kw` | 逐时平均负荷，单位 kW；下标 0 是第一年的 1 月 1 日 00:00；最后一个值是起报点前一小时；缺测处为 NaN | 只读每个发布时刻之前的小时；负值或非有限值算作缺测；没有任何观测小时的日子被屏蔽 | 常规载体推理要求最后 1,344 小时完整观测（从不填补）；预计算映射的停机分支例外见下文；更早的、在同一个 744 小时块内不超过 6 小时的缺口，在其估计器读取的副本中做插值 |
 | `temperature_c` | 同样各小时的室外逐时气温，单位 °C | 只读每个发布时刻之前的小时，经日均值及其覆盖率读入；允许缺测 | 起报点之前处处有限；不需要未来气温 |
 | `day_types` | 历史加上 744 个预测小时，每小时一个整数：周一 = 0 … 周日 = 6，法定假日 = 7 | 读到每个发布时刻的预测月为止（日历按起报时已知处理） | 同左 |
 | `start_timestamp` | 第一年的 1 月 1 日 00:00，带 `+00:00` 偏移，例如 `"2019-01-01T00:00:00+00:00"`（固定偏移的网格） | 每个 token 的年相位和记录的绝对时间 | 年温度谐波的相位，以及相似日的夏令时状态 |
@@ -286,7 +288,7 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 
 在状态窗口上，这些字段描述的是锚定层的返回值（载体的预测，权重、固定分工和相似日字段取默认值），而不是默认状态规则交付的季节性朴素预测。`np.repeat(r.daily_means_kw, 24) + r.within_day_kw` 是投影之前的预测（`ankyra_lite.readouts.raw_trajectory`），`ankyra_lite.readouts.blocks` 把任何轨迹拆成三块。全部字段见 [docs/METHOD.md](docs/METHOD.md#output-fields)。
 
-**状态窗口。** 当最后 168 小时都不超过 10⁻⁶ kW（停机），或整个 1,344 小时上下文都在 0 附近 10⁻³ kW 以内（微负荷）时，锚定层原样交回载体的预测。在默认的 `state_rule="seasonal_naive"` 下，ankyra-lite 改为交付最后一个观测周的重复（缺测小时记为 0）；这是评估过的配置。`state_rule=None` 保留锚定层的返回值（[docs/METHOD.md](docs/METHOD.md#state-windows-and-the-seasonal-naive-rule)）。
+**状态窗口。** 预计算预测映射路径可能在完整上下文检查前进入继承的停机分支，以末周已观测值的最大值判定，再由季节性朴素规则把缺测小时填零；这一继承规则不能证明缺测小时意味着停机。常规载体推理仍拒绝不完整上下文。当最后 168 小时都不超过 10⁻⁶ kW（停机），或整个 1,344 小时上下文都在 0 附近 10⁻³ kW 以内（微负荷）时，锚定层原样交回载体的预测。在默认的 `state_rule="seasonal_naive"` 下，ankyra-lite 改为交付最后一个观测周的重复（缺测小时记为 0）；这是评估过的配置。`state_rule=None` 保留锚定层的返回值（[docs/METHOD.md](docs/METHOD.md#state-windows-and-the-seasonal-naive-rule)）。
 
 ### 读出
 
@@ -300,7 +302,7 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 
 ### 需要多少历史
 
-- **锚定层**需要起报点之前的 1,344 小时完整观测。随着已完成的伪起报点增多（每个是一步 744 小时），它的权重逐渐离开先验：有 2,088 个完整小时时交接权重离开 ½（一个已完成的伪起报点），有 2,832 个时水平权重离开等权（两个），用到一年前窗口的候选需要 10,248 小时（[完整列表](docs/DATA.md#how-much-history)）。评估的每个测试窗口都至少有 9 个完整的 744 小时伪起报点窗口（`results/history_length.csv`：`K_eff` 为 9–11 的有 451 个窗口，为 12 的有 5,265 个）。
+- **锚定层**通常需要起报点之前的 1,344 小时完整观测，预计算映射的停机分支例外见上文。随着已完成的伪起报点增多（每个是一步 744 小时），它的权重逐渐离开先验：有 2,088 个完整小时时交接权重离开 ½（一个已完成的伪起报点），有 2,832 个时水平权重离开等权（两个），用到一年前窗口的候选需要 10,248 小时（[完整列表](docs/DATA.md#how-much-history)）。评估的每个测试窗口都至少有 9 个完整的 744 小时伪起报点窗口（`results/history_length.csv`：`K_eff` 为 9–11 的有 451 个窗口，为 12 的有 5,265 个）。
 - **缺口。** 更早记录中、同一个 744 小时块内不超过 6 小时的缺口，在锚定层估计器读取的副本中做插值（短缺口规则）；对自己的记录，`ankyra_lite.fill_short_gaps(load_kw)` 返回这个副本。起报点处的 1,344 小时上下文从不填补。
 - **载体**最多读最近 366 天（日 token）和其前的 24 个 744 小时块；缺测的日和块被屏蔽，所以它在更短的记录上也能运行。
 - **使用检查点时**，起报点至少要在其训练截点之后 186 天：这样锚定层打分的每个伪起报点预测都是在载体训练期之后发布的（[原因](#锚定层怎样使用载体)）。
@@ -337,13 +339,13 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 | 编码器 | 宽度 **48**；token 嵌入、时龄嵌入和分辨率嵌入；**两个共享的门控因果块**（层归一化、核长 3 的逐深度因果卷积、门 tanh · σ、残差），在 366 个日 token 上按**空洞 1, 2, …, 128**、在 24 个月 token 上按 **1, 2, 4, 8** 重复使用 |
 | 读出 | 一次多头注意力（**4 个头**），由一个全局查询和 31 个以日历为条件的日查询对 390 个记忆位置做注意力，然后接 48 → 96 → 48 的 MLP |
 | 解码器 | 正的能量预算 F(d, h) = 744 · L · p_d · q_d(h)：月水平 L = s · softplus(·)，日份额 p（31 天上的 softmax），小时份额 q_d（24 小时上的 softmax）；小时 logits 来自 23 个零均值小时方向上的**秩 8 字典**（一个学到的基础加上一个有界的、随起报点变化的修正，0.1 · tanh），31 天共享，每天各有系数 |
-| 复制指针 | 每个预测日对单位自己的**最近 56 个完整日**做注意力（16 维的查询和键，日类型相同时另有一个学到的加分），把注意到的日内份额曲线加到它的小时 logits 上，把注意到的相对日均值加到它的日 logits 上，都经过初始化为零的门 |
+| 复制指针 | 每个预测日对单位自己**最近 56 日位置内的完整日**做注意力（16 维的查询和键，日类型相同时另有一个学到的加分），把注意到的日内份额曲线加到它的小时 logits 上，把注意到的相对日均值加到它的日 logits 上，都经过初始化为零的门 |
 | 输出 | 载体：744 小时，非负，均值等于 L（在实数运算下），水平、日路径和日内形状是轨迹的精确分块。ankyra-lite：接续层之后的 744 个非负小时；电量、水平和峰值在接续层之前读出，所以交付曲线的均值不是电量读数（[读出](#读出)） |
 | 接续层 | F′(h) = F(h) e^(Δ(h))，Δ(h) = 0.479 x_f e^(−h/12) + 0.330 x_d e^(−h/168)；x_f、x_d 是最后 3 个和 24 个观测小时对预测参照日的截断对数比；四个常数在开发窗口上一次拟合，从不重新拟合；状态窗口旁路（[小节](#接续层)） |
 | 训练 | 每个人群从零训练，然后归还验证段并用逆噪声损失权重再训练 8 轮（[配方 Rw](#训练配方-rw)）；种子 0–5；预测是六个种子的简单平均 |
 | 训练数据 | 该人群自己在训练截点之前的窗口（第 2 阶段加入验证段），加上从其他研究人群借来的窗口，每个都在该人群的验证段之前结束（[docs/DATA.md](docs/DATA.md#windows-borrowed-from-other-populations)） |
 | 检查点 | 81 个文件：本版本 54 个（`checkpoints/<population>/rw/seed0–5.pt`，配方 Rw）和 0.1 版 27 个（`checkpoints/<population>/seed0–2.pt`，配方 R），`{"model": state_dict, "epoch": 8}`，每个 265,653 字节 |
-| 推理耗时 | 每次预测 42 次网络计算（7 个发布时刻 × 6 个种子）：0.135 秒；加上锚定层、接续层和峰值读出，每个窗口 0.655 秒，单个 CPU 线程（`results/cost_per_window.csv`） |
+| 推理耗时 | 每窗最多 42 个成员预测（7 个发布时刻 × 6 个种子，可批处理；伪起报不可用时减少）；六个 Oslo 窗的测量为：0.135 秒；加上锚定层、接续层和峰值读出，每个窗口 0.655 秒，单个 CPU 线程（`results/cost_per_window.csv`） |
 | 预期用途 | 为载体所针对的人群里的单位做月前逐时预测，起报点至少在其训练截点之后 186 天 |
 | 未评估 | 不重新训练就用于其他人群；小时以下分辨率的数据；744 小时以外的预测长度；为这个载体设计的预测区间 |
 | 证据 | 在已被多次读过的测试窗口上再读一次，只定方向（[先读这一节](#先读这一节)） |
@@ -376,7 +378,7 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 
 - **两个异常。** x_f 比较最后 3 个观测小时的均值与预测在参照日 d*（第 0–6 个预测日中，第一个与最后观测日同属一个工作日类别的那天）相同钟点的值；x_d 比较最后 24 个观测小时与预测的参照日。两者都是带一个小偏移（单位最近四周平均负荷的 1%）的对数比，截断到 ±1；其中有一个小时未观测时置为 0。
 - **一个校正。** F′(h) = F(h) e^(Δ(h))，Δ(h) = 0.479 x_f e^(−h/12) + 0.330 x_d e^(−h/168)：快项在一天内消退，慢项大约在一周内消退。
-- **有界。** 每个小时被乘以介于 e^(−E(h)) 和 e^(E(h)) 之间的因子，E(h) = 0.479 e^(−h/12) + 0.330 e^(−h/168)：第一小时在 ×0.445 到 ×2.246 之间，从第 8 天起在 ×0.885 到 ×1.130 之间，最后一小时在 ±0.4% 以内（O2）。非负的预测保持非负，恰好为零的小时保持为零（O1）。
+- **有界。** 每个小时被乘以介于 e^(−E(h)) 和 e^(E(h)) 之间的因子，E(h) = 0.479 e^(−h/12) + 0.330 e^(−h/168)：第一小时在 ×0.445 到 ×2.246 之间，从第 8 天起在 ×0.885 到 ×1.130 之间，最后一小时在 ±0.4% 以内（O2）。非负的预测保持非负，恰好为零的小时保持为零（O1）。接续的浮点承诺限于接受的有限输出：保留非负性并恢复输入的正零和负零；非零值可能下溢为零，自定义常数导致非状态修正或最终输出非有限时抛出 `ValueError`。实数正因子界不保证任意常数下浮点结果严格为正。
 - **因果、可开关。** 它只读预测本身、起报点之前 672 小时的负荷，以及最后观测日和第一个预测周的日类型（O3）；状态窗口绕过它（O4）；`continuation=False` 关闭它。
 - **常数。** 在六个人群较早的开发窗口上合并一次拟合，所有人群共用（包括没有开发窗口的三个人群），外部检验也用同一组；从不在测试窗口上重新拟合。用 `continuation.DIGEST` 标识。
 - **读出。** 电量、水平和峰值在它之前读出（读出规则 A）；对固定的载体，接续层一项都不改变，交付曲线的均值则不等于电量读数（[读出](#读出)）。
@@ -386,7 +388,7 @@ assert off.energy_kwh == r.energy_kwh and np.array_equal(off.trajectory_kw, r.tr
 
 ## 训练配方 Rw
 
-发布的配方 Rw 分两个阶段，对每个人群完全相同（训练、选出停止的轮数，然后用上截点之前的全部数据并对窗口加权）。第 1 阶段就是配方 R（0.1 版）的第 1 阶段；第 2 阶段与 R 的唯一区别是损失权重。每个常数都是 `ankyra_lite.carrier.train.TrainConfig` 的字段；`recipe(name, init_checkpoint)` 构造各个命名的配置（[docs/METHOD.md](docs/METHOD.md#training)）。
+发布的配方 Rw 分两个阶段，对每个人群完全相同（训练、选出停止的轮数，然后按原抽样密度加入验证时段的一部分窗口并对窗口加权）。第 1 阶段就是配方 R（0.1 版）的第 1 阶段；第 2 阶段与 R 的唯一区别是损失权重。每个常数都是 `ankyra_lite.carrier.train.TrainConfig` 的字段；`recipe(name, init_checkpoint)` 构造各个命名的配置（[docs/METHOD.md](docs/METHOD.md#training)）。
 
 **第 1 阶段：从零训练，带早停**（`TrainConfig()` = `recipe("from_scratch")`）。
 
@@ -1136,8 +1138,8 @@ r01 = forecast(history, old, group="Public", temp_sigma_std=sigma, dst_region="E
 不需要 `pytest`；测试用的是 `unittest`。在仓库根目录下：
 
 ```bash
-python -m unittest discover -s tests -t .      # 267 tests
-python -m unittest discover -s theory -t .     # 109 checks of the exact properties
+python -m unittest discover -s tests -t .      # 275 tests
+python -m unittest discover -s theory -t .     # 111 checks of the exact properties
 ```
 
 各模块的测试数与检查内容见英文 README 的 [Tests](README.md#tests) 一节（同样的表格）：
@@ -1159,7 +1161,7 @@ python -m unittest discover -s theory -t .     # 109 checks of the exact propert
 | `tests/test_external_tables.py` | 12 | the external-test table: columns, forecaster names, no absolute path, the sealed Helsinki set never read, equality with the score records field by field, no contrast of the scorer's other output files, the primary table of docs/EXTERNAL_TESTS.md (part needs the study's score records) |
 | `theory/test_operators.py`, `theory/test_carrier_properties.py`, `theory/test_weighting_properties.py`, `theory/test_continuation_properties.py` | 31, 27, 15, 36 | P1–P20, C1–C10, C11–C14 and O1–O9, counterexamples included |
 
-2026 年 10 月 21 日（CPU，单线程），本版本完整运行通过：267 项测试（其中 15 项跳过）和 109 项理论检验。跳过的是：2 项结果文件检查（本次运行没有对应记录：早先的仅逐时比较和研究评分器的记录）、4 项与 0.1 版的比较（需要 0.1.1 副本及其训练模块；另行对照 0.1.1 提交运行，4 项全部通过）、9 项数据存储数组检查（空闲内存不足；另行运行 7 项通过，EWELD 和住户分别需要 6.5 GB 和 11 GB，未运行）。需要 ANKYRA 仓库副本、0.1.1 副本或研究数据的测试，在缺少这些时（如 CI 上）会说明原因并跳过。环境变量：`ANKYRA_ORIGINAL_ROOT`（ANKYRA 仓库副本）、`ANKYRA_LITE_RESEARCH_ROOT`（研究文件夹）、`ANKYRA_LITE_REFERENCE_REPO`（本仓库的 0.1.1 副本）、`ANKYRA_LITE_REFERENCE_TRAIN`（0.1 版的 `ankyra_lite/carrier/train.py`）、`ANKYRA_LITE_RESULTS`（另一个要检查的结果目录）和 `ANKYRA_LITE_TEST_MIN_FREE_GB`（读数据的测试要等到的空闲内存）。
+2026 年 10 月 22 日（0.2.1 版；CPU，单线程）完整运行通过：收集到的 275 项测试中运行了 269 项（整类跳过的只计一次），没有失败，14 项跳过；111 项理论检验全部通过。与 0.1 版的对照测试在由提交 c27affc 导出的 0.1.1 副本上运行（`ANKYRA_LITE_REFERENCE_REPO`、`ANKYRA_LITE_REFERENCE_TRAIN`），全部通过。跳过的是：9 项数据存储数组检查（空闲内存不足，需要 5、6.5 或 11 GB；10 月 21 日的运行中另行运行 7 项通过，EWELD 和住户没有运行），以及 5 项本次运行缺少研究记录或文件的测试。需要 ANKYRA 仓库副本、0.1.1 副本或研究数据的测试，在缺少这些时（如 CI 上）会说明原因并跳过。环境变量：`ANKYRA_ORIGINAL_ROOT`（ANKYRA 仓库副本）、`ANKYRA_LITE_RESEARCH_ROOT`（研究文件夹）、`ANKYRA_LITE_REFERENCE_REPO`（本仓库的 0.1.1 副本）、`ANKYRA_LITE_REFERENCE_TRAIN`（0.1 版的 `ankyra_lite/carrier/train.py`）、`ANKYRA_LITE_RESULTS`（另一个要检查的结果目录）和 `ANKYRA_LITE_TEST_MIN_FREE_GB`（读数据的测试要等到的空闲内存）。
 
 ## 理论：精确性质
 
@@ -1173,7 +1175,7 @@ python -m unittest discover -s theory -t .     # 109 checks of the exact propert
 - **C1–C14，载体网络与配方 Rw**：非负、均值等于水平的轨迹（C1、C2）；份额和指针注意力都是分布（C3）；发布时刻及之后没有输入（C4）；因果、尊重掩码的编码器（C5、C6）；尺度等变（C7）；没有单位编号（C8）；复制指针从零开始、从不移动水平（C9）；186 天的间隔使每个打分的伪起报点预测都是样本外的（C10）；以及 0.2.0 新增的：损失权重相等时退化为配方 R（C11），保持每个人群的抽取份额（C12），有限、为正且有下限（C13），只读每个窗口自己起报点之前的上下文（C14）。
 - **O1–O9，接续层**（0.2.0 新增）：保持符号和零（O1）；校正被 E(h) = 0.479 e^(−h/12) + 0.330 e^(−h/168) 界住（O2）；不读起报点及之后的负荷，只读第一个预测周的日历（O3）；状态窗口不动（O4）；关闭时原样交付接续层之前的轨迹（O5）；电量、水平和峰值在它之前读出，交付曲线之和与电量读数相差已知的项（O6）；一致性和单调性（O7）；尺度等变（O8）；同一工作日类别的参照日，以及常数的唯一摘要（O9）。
 
-[theory/PROOFS.md](theory/PROOFS.md) 给出陈述、证明和反例；`theory/operators.py` 把 P1–P20 写成函数；四个检验文件共有 109 项数值检验。这些性质都不是精度保证；精度是测出来的。
+[theory/PROOFS.md](theory/PROOFS.md) 给出陈述、证明和反例；`theory/operators.py` 把 P1–P20 写成函数；四个检验文件共有 111 项数值检验。这些性质都不是精度保证；精度是测出来的。
 
 ## 可复现性
 
@@ -1193,6 +1195,7 @@ python -m unittest discover -s theory -t .     # 109 checks of the exact propert
 
 ## 版本历史
 
+- **0.2.1（2026 年 10 月 22 日）**：代码审核后的维护版本；默认输出、检查点、结果和图都不变（[更正说明](docs/CODE_AUDIT_CORRECTIONS_20261022.md)）。`evaluation/cost_timing.py` 和 `evaluation/robustness.py` 中关闭接续层的开关现在真正生效（发布的运行都开启接续层）；较早 744 小时特征块中缺失的日类型改用星期回退；Wilcoxon 的方向改由每一对自己的符号秩判断（186 个 Holm 显著的比较方向全部不变）；自定义接续常数极端时抛出 `ValueError`，不再给出非有限的小时；重锚定缓存绑定内容身份并加独占认领；外部检验的子群按其构造改称“没有第一阶段自身训练窗口的单位”；更正方法、读出和理论文档；回归测试见 `tests/test_audit_fixes.py`。
 - **0.2.0（2026 年 10 月 21 日）**：载体改用配方 Rw 训练（第二阶段加逆噪声损失权重）并对六个种子取平均；在锚定层和状态规则之后加入起报接续层（`ankyra_lite.continuation`，四个冻结常数），电量、水平和峰值在它之前读出（读出规则 A），结果新增两个字段（`trajectory_before_continuation_kw`、`continuation`）；发布开关在 `ankyra_lite/_release.py` 中，另有 `ankyra_lite.checkpoint_paths`；54 个新检查点（`checkpoints/<population>/rw/`；0.1 版的 27 个不变）；比较全量重新生成（新文件 `continuation_layer.csv`、`continuation_record.csv`）；外部检验重跑一次；精确性质 C11–C14 和 O1–O9；与图 9 并列的图 9c。接续层的两条发布规则不改变任何研究数字：参照日回退 d* = 6，以及对负负荷改为标记而不报错。在测试窗口上对 0.1 版（此前读过；只定方向）：整月逐时 +1.15%，第 1 天 +13.97%，电量和峰值不明确。
 - **0.1.1（2026 年 10 月 19 日）**：读出接口（`ankyra_lite.readouts`）、纯历史配置（`forecast(history, None)`）、自己单位的示例（`examples/own_unit.py`）、补充分析（交接、按预测周、日内信任、训练预算、通用组合、一年上下文）、图 0（优势汇总）和重新绘制的图 1。0.1.0 的预测、检查点和结果不变。
 - **0.1.0（2026 年 10 月 19 日）**：第一个版本。复制指针载体网络（61,613 个参数），配上逐字节相同的 ANKYRA 2.2.1 锚定层和季节性朴素状态规则；发布的训练配方 R（第 1 阶段从零训练，在 93 天验证段上早停；第 2 阶段归还验证段训练 8 轮；三个种子）；27 个检查点及其清单；CINELDI 用修正后的数据仓库，德拉门载体也用它重新训练；与 21 个基线（发布版的 20 个和 LSTM-T-KAN-M）在九个人群上的比较，用发布配方全量重新生成；载体的精确性质 C1–C10。

@@ -1,5 +1,7 @@
 # External tests (19 October 2026; 0.2.0 re-run 20 October 2026)
 
+**Subgroup labels.** The subgroup recorded as `units without own training windows` (the key kept in `results/external_tests.csv` and the score records) was built from the first-stage training rows only; stage 2 returns validation-span windows to training, so a unit in it may have contributed returned training rows. Below it is labelled *units without first-stage own training windows*; memberships and numbers are unchanged ([correction note](CODE_AUDIT_CORRECTIONS_20261022.md#subgroup-labels-of-the-external-tests)).
+
 This page has two parts. **Version 0.2.0** (recipe Rw, six seeds, the continuation layer) was re-run once on the four
 scored test sets of the frozen external test of 19 October 2026, with the same windows, comparators and estimators;
 that is the current reading, and every number of its section is a row of
@@ -220,7 +222,7 @@ days, and the validation set is the 93 days before C′. Every pseudo-origin lie
 forecast that the anchoring layer scores is out of sample for the carrier. The temperature-anomaly scale σ(C′) uses
 the complete days with measured temperature before C′.
 
-| Test set | C (test start) | C′ (training cut) | Validation set from | σ(C′) | Test windows / units / months | State windows | Units without own training windows |
+| Test set | C (test start) | C′ (training cut) | Validation set from | σ(C′) | Test windows / units / months | State windows | Units without first-stage own training windows |
 |---|---|---|---|---|---|---|---|
 | LCL households (London) | 2013-09-01 | 2013-02-27 | 2012-11-26 | 0.26882 | 710 / 710 / 5 | 2 | 83 (83 windows) |
 | UNICON (La Trobe University campuses) | 2019-11-01 | 2019-04-29 | 2019-01-26 | 0.29694 | 450 / 59 / 23 | 0 | 10 (64 windows) |
@@ -228,7 +230,8 @@ the complete days with measured temperature before C′.
 | GoiEner households, out of time (supplementary) | 2021-12-01 | 2021-05-29 | 2021-02-25 | 0.28164 | 1,422 / 284 / 6 | 44 | 142 (603 windows) |
 
 From the score records: `score: split`, `score: sigma_Cprime`, `score: windows` (scored windows, units, months and
-state windows) and the subgroup `units without own training windows`.
+state windows) and the subgroup `units without own training windows` (shown here as units without first-stage own training
+windows).
 
 **Comparators.** Zero-shot TimesFM 2.5 and the other baselines are the saved forecasts of the first release's
 evaluation on the same windows (LCL, UNICON, HKUST); for GoiEner, whose households had never been extracted, TimesFM 2.5
@@ -325,8 +328,8 @@ Subgroups (first read of this candidate on a previously read population; LCL is 
 
 | Subgroup (hourly, 6 seeds) | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
 |---|---|---|---|---|
-| units without own training windows | 83 / 83 / 2 | +5.22% [+1.69, +8.63] * | +30.91% [+23.18, +37.86] * | +2.58% [+1.50, +3.65] * |
-| units with own training windows | 627 / 627 / 5 | +2.34% [−1.85, +6.35] | +23.41% [+17.10, +29.23] * | +3.14% [+2.00, +4.27] * |
+| units without first-stage own training windows | 83 / 83 / 2 | +5.22% [+1.69, +8.63] * | +30.91% [+23.18, +37.86] * | +2.58% [+1.50, +3.65] * |
+| units with first-stage own training windows | 627 / 627 / 5 | +2.34% [−1.85, +6.35] | +23.41% [+17.10, +29.23] * | +3.14% [+2.00, +4.27] * |
 
 **Reading.**
 
@@ -430,8 +433,8 @@ Subgroups (first read of this candidate on a previously read population; 2020 is
 
 | Subgroup (hourly, 6 seeds) | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
 |---|---|---|---|---|
-| units without own training windows | 64 / 10 / 17 | −8.06% [−36.62, +14.52] | +6.11% [−15.18, +23.46] | +10.61% [+0.28, +19.88] * |
-| units with own training windows | 386 / 49 / 21 | −5.03% [−19.78, +7.91] | +9.75% [−4.05, +21.72] | +7.45% [+3.27, +11.46] * |
+| units without first-stage own training windows | 64 / 10 / 17 | −8.06% [−36.62, +14.52] | +6.11% [−15.18, +23.46] | +10.61% [+0.28, +19.88] * |
+| units with first-stage own training windows | 386 / 49 / 21 | −5.03% [−19.78, +7.91] | +9.75% [−4.05, +21.72] | +7.45% [+3.27, +11.46] * |
 | by origin year (2020 = COVID year): 2019 | 60 / 36 / 2 | +5.39% [−9.72, +18.43] | +16.32% [+9.57, +22.56] * | +10.68% [+5.86, +15.24] * |
 | by origin year (2020 = COVID year): 2020 | 205 / 57 / 9 | −18.40% [−46.87, +4.55] | −2.99% [−31.79, +19.52] | +9.01% [+1.34, +16.09] * |
 | by origin year (2020 = COVID year): 2021 | 161 / 47 / 11 | −7.75% [−18.87, +2.34] | +10.15% [+0.09, +19.21] * | +5.16% [−0.94, +10.89] |
@@ -540,8 +543,8 @@ units or months; the coarse group's interval is undefined in the record):
 
 | Subgroup (hourly, 6 seeds) | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
 |---|---|---|---|---|
-| units without own training windows | 2 / 1 / 2 | not computed | not computed | not computed |
-| units with own training windows | 87 / 28 / 8 | +11.92% [−6.76, +27.34] | +27.96% [+10.95, +41.72] * | +3.91% [−2.52, +9.93] |
+| units without first-stage own training windows | 2 / 1 / 2 | not computed | not computed | not computed |
+| units with first-stage own training windows | 87 / 28 / 8 | +11.92% [−6.76, +27.34] | +27.96% [+10.95, +41.72] * | +3.91% [−2.52, +9.93] |
 | by reading quantisation step (from each unit's load before C'): coarse (step >= 25% of mean) | 6 / 3 / 4 | −17.43% [interval undefined] | −2.39% [interval undefined] | +1.91% [interval undefined] |
 | by reading quantisation step (from each unit's load before C'): fine (step < 25% of mean) | 83 / 26 / 8 | +12.98% [−7.87, +29.80] | +28.34% [+9.56, +43.22] * | +4.18% [−2.91, +10.78] |
 | by reading quantisation step (from each unit's load before C'): undetermined | 0 / 0 / 0 | not computed | not computed | not computed |
@@ -629,8 +632,8 @@ verified):
 
 | Subgroup (hourly, 6 seeds) | Windows / units / months | vs TimesFM 2.5 | vs seasonal naive (week) | vs carrier-free control with the state rule |
 |---|---|---|---|---|
-| units without own training windows | 598 / 140 / 6 | +3.46% [−1.16, +7.88] | +25.46% [+21.91, +28.85] * | +6.68% [+3.23, +10.01] * |
-| units with own training windows | 819 / 142 / 6 | +4.89% [+2.90, +6.85] * | +26.51% [+24.48, +28.49] * | +4.29% [+2.40, +6.14] * |
+| units without first-stage own training windows | 598 / 140 / 6 | +3.46% [−1.16, +7.88] | +25.46% [+21.91, +28.85] * | +6.68% [+3.23, +10.01] * |
+| units with first-stage own training windows | 819 / 142 / 6 | +4.89% [+2.90, +6.85] * | +26.51% [+24.48, +28.49] * | +4.29% [+2.40, +6.14] * |
 
 **Reading.**
 

@@ -40,8 +40,8 @@ Exact properties (``tests/test_continuation.py`` checks each)
             first forecast week is an input known in advance)
   bypass    state windows: F' = F bit for bit.  An unobserved hour among the last 3 sets x_f = x_d = 0 (F' = F bit for
             bit); one among the last 24 only sets x_d = 0.  A nonpositive span mean (below) sets that span's x to 0
-  zero      the constants :data:`ZERO` (kappa1 = kappa2 = 0) give F' = F bit for bit on every window with a finite
-            trajectory (``forecast(..., continuation=False)`` switches the layer off without computing anything)
+  zero      the constants :data:`ZERO` (kappa1 = kappa2 = 0) give F' = F bit for bit on every finite trajectory;
+            ``forecast(..., continuation=False)`` switches the layer off without computing anything
   scale     F'(c y, c F) = c F'(y, F) for c > 0 while s stays above its 1e-3 kW floor (bit for bit when c is a power
             of two)
 
@@ -281,7 +281,8 @@ def apply_batch(F, pre, last_type, day_types, state, constants: Union[Constants,
     "clipped_d", "nonpositive_f", "nonpositive_d", "matched", "d_star" and "bypass_state" (state windows: x = 0,
     raw = NaN, s = eps = 0, d_star = 0, matched False, nonpositive False), the float "max_abs_delta" over the other
     windows, and with ``return_delta`` the (n, 744) "delta".  A non-finite trajectory on a window that is not a state
-    window raises ValueError."""
+    window raises ValueError. For non-state windows, non-finite deltas or corrected outputs from custom constants
+    raise ValueError; finite constants do not guarantee finite floating-point results for every input magnitude."""
     c = _constants(constants)
     F = np.asarray(F)
     n = len(F)
@@ -305,8 +306,17 @@ def apply_batch(F, pre, last_type, day_types, state, constants: Union[Constants,
         a = anomalies(pre[i], F64[i], last_type[i], day_types[i])
         for k in _INFO_KEYS:
             info[k][i] = a[k]
-    D = delta(info["xf"], info["xd"], c)
-    Fp = F64 * np.exp(D)
+    with np.errstate(over="ignore", invalid="ignore"):
+        D = delta(info["xf"], info["xd"], c)
+    with np.errstate(over="ignore", invalid="ignore"):
+        Fp = F64 * np.exp(D)
+    active = ~st
+    if not np.isfinite(D[active]).all():
+        raise ValueError("non-finite continuation delta for a non-state window")
+    zero = (F64 == 0.0) & active[:, None]
+    Fp[zero] = F64[zero]                              # preserve both +0 and -0, including when exp(D) overflows
+    if not np.isfinite(Fp[active]).all():
+        raise ValueError("non-finite continuation output for a non-state window")
     if st.any():
         Fp[st] = F64[st]                                    # an exact copy (x = 0 there anyway)
     info["max_abs_delta"] = float(np.abs(D[~st]).max()) if (~st).any() else 0.0

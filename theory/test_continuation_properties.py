@@ -215,6 +215,9 @@ class BoundTests(unittest.TestCase):
             self.assertTrue(lo <= math.exp(-E[h]) < lo + step and hi - step < math.exp(E[h]) <= hi, h)
             self.assertTrue(np.exp(-E[h:]).min() >= lo and np.exp(E[h:]).max() <= hi, h)      # and for every later hour
 
+    def test_zero_constants_have_zero_envelope(self):
+        self.assertTrue(np.array_equal(CT.envelope(CT.ZERO), np.zeros(H)))
+
     def test_every_correction_lies_within_the_envelope(self):
         E = envelope()
         clipped = 0
@@ -503,12 +506,16 @@ class ConsistencyTests(unittest.TestCase):
                 seen["down"] += 1
         self.assertTrue(seen["up"] > 0 and seen["down"] > 0, seen)
 
-    def test_opposite_anomalies_give_a_correction_that_changes_sign(self):
-        # where the claim stops: last hours above, last day below the forecast -> up first, down later
+    def test_fixed_opposite_anomaly_example_changes_sign_once(self):
+        # This selected example crosses once; opposite anomaly signs alone do not guarantee a crossing.
         D = CT.delta(1.0, -1.0, CT.CONSTANTS)
         self.assertGreater(D[0], 0.0)
         self.assertLess(D[-1], 0.0)
         self.assertEqual(int((np.diff(np.sign(D)) != 0).sum()), 1)
+
+    def test_opposite_anomaly_example_can_remain_negative(self):
+        D = CT.delta(0.1, -1.0, CT.CONSTANTS)
+        self.assertTrue((D < 0.0).all())
 
 
 # ============================================================================= O8 scale equivariance
