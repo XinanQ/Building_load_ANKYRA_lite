@@ -1,0 +1,41 @@
+unit_set,subset,model,log_ratio,um_low,um_high,improvement_pct,ankyra_mean_unit_rank
+all units,late,Chronos-2,-0.052089,-0.130392,0.271332,5.076,4.5634
+all units,late,Chronos-2-X,0.038767,-0.076846,0.310712,-3.953,4.5634
+all units,late,DLinear,-0.089013,-0.155269,-0.050901,8.517,4.5634
+all units,late,GBT,-0.501531,-0.646073,-0.273048,39.44,4.5634
+all units,late,GBT-T,-0.073611,-0.182453,0.007283,7.097,4.5634
+all units,late,Holt-Winters,-0.210923,-0.287031,-0.121013,19.016,4.5634
+all units,late,LSTM,-0.175585,-0.267375,-0.133481,16.103,4.5634
+all units,late,LYR-profile,-0.217097,-0.342625,-0.102915,19.515,4.5634
+all units,late,MSTL,-0.188411,-0.277304,0.28372,17.173,4.5634
+all units,late,PatchTST,-0.11075,-0.167181,-0.019024,10.484,4.5634
+all units,late,RIDGE-L,-0.051223,-0.08383,0.001107,4.993,4.5634
+all units,late,SN-day,-0.414199,-0.576295,-0.310813,33.913,4.5634
+all units,late,SN-week,-0.213109,-0.268974,-0.12085,19.193,4.5634
+all units,late,SP-profile,-0.24506,-0.361916,0.204673,21.734,4.5634
+all units,late,TiDE,-0.090837,-0.158121,-0.054093,8.683,4.5634
+all units,late,TimesFM,-0.007059,-0.090944,0.314172,0.703,4.5634
+all units,late,TimesFM-X,-0.051606,-0.115545,0.060252,5.03,4.5634
+all units,late,WeekProf4,-0.177691,-0.213683,-0.125023,16.28,4.5634
+all units,late,iTransformer,-0.1028,-0.161602,-0.005748,9.769,4.5634
+all units,late,iTransformer-X,-0.107707,-0.160823,-0.02893,10.211,4.5634
+without the three near-zero meters,late,Chronos-2,-0.052089,-0.131833,0.242473,5.076,4.5683
+without the three near-zero meters,late,Chronos-2-X,0.038767,-0.072837,0.29224,-3.953,4.5683
+without the three near-zero meters,late,DLinear,-0.089013,-0.157721,-0.05243,8.517,4.5683
+without the three near-zero meters,late,GBT,-0.501531,-0.643821,-0.254672,39.44,4.5683
+without the three near-zero meters,late,GBT-T,-0.073611,-0.184618,0.011287,7.097,4.5683
+without the three near-zero meters,late,Holt-Winters,-0.210923,-0.284481,-0.123592,19.016,4.5683
+without the three near-zero meters,late,LSTM,-0.175585,-0.268893,-0.134881,16.103,4.5683
+without the three near-zero meters,late,LYR-profile,-0.217097,-0.340425,-0.101573,19.515,4.5683
+without the three near-zero meters,late,MSTL,-0.188411,-0.283695,0.282355,17.173,4.5683
+without the three near-zero meters,late,PatchTST,-0.11075,-0.167672,-0.011761,10.484,4.5683
+without the three near-zero meters,late,RIDGE-L,-0.051223,-0.085934,0.002515,4.993,4.5683
+without the three near-zero meters,late,SN-day,-0.414199,-0.567906,-0.311256,33.913,4.5683
+without the three near-zero meters,late,SN-week,-0.213109,-0.265617,-0.119478,19.193,4.5683
+without the three near-zero meters,late,SP-profile,-0.24506,-0.35545,0.155804,21.734,4.5683
+without the three near-zero meters,late,TiDE,-0.090837,-0.160114,-0.055319,8.683,4.5683
+without the three near-zero meters,late,TimesFM,-0.007059,-0.093138,0.299268,0.703,4.5683
+without the three near-zero meters,late,TimesFM-X,-0.051606,-0.119025,0.066562,5.03,4.5683
+without the three near-zero meters,late,WeekProf4,-0.177691,-0.212752,-0.124888,16.28,4.5683
+without the three near-zero meters,late,iTransformer,-0.1028,-0.162205,0.004568,9.769,4.5683
+without the three near-zero meters,late,iTransformer-X,-0.107707,-0.162915,-0.017086,10.211,4.5683

@@ -1,0 +1,141 @@
+{
+  "version": "eo-layers-reference-1.0.0",
+  "horizon_hours": 744,
+  "context_hours": 1344,
+  "annual_lag_hours": 8760,
+  "pseudo_step_hours": 744,
+  "min_pseudo_errors": 2,
+  "level": {
+    "K": 12,
+    "K0": 8,
+    "scale": "rms",
+    "annual_in_w": true,
+    "prior": "equal"
+  },
+  "day": {
+    "K": 12,
+    "K0": 2,
+    "scale": "mad",
+    "include_annual": true,
+    "prior": "equal"
+  },
+  "signature_lambda": 3.0,
+  "source_curves": {
+    "Industrial": [
+      -0.08167451021678977,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.022412067588716944,
+      0.16195069401065948,
+      0.17716077200229244,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Office": [
+      -0.01842444829112644,
+      0.0,
+      0.0,
+      0.008501180828968762,
+      0.0,
+      0.2780256657355715,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Public": [
+      -0.026240086296567055,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.12196097159861088,
+      0.14105058610285715,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "Residential": [
+      -0.16594440371700164,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.24668429932405908,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ],
+    "group_4": [
+      -0.6051818566767659,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.4768167754199756,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0
+    ]
+  },
+  "temperature_center_c": 15.0,
+  "temperature_scale_c": 10.0,
+  "signature_knots_std": [
+    -2.5,
+    -2.0,
+    -1.5,
+    -1.0,
+    -0.5,
+    0.0,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    2.5
+  ],
+  "climatology": {
+    "period_days": 365.25,
+    "minimum_day": 19.5,
+    "amplitude_prior_c": 10.0,
+    "amplitude_prior_strength": 60.0,
+    "amplitude_bounds_c": [
+      0.0,
+      25.0
+    ]
+  },
+  "default_boundary_policy": "strict",
+  "required_caller_parameter": "temp_sigma_std, frozen before the requested origin; no inference from future weather",
+  "day_scale_definition": "median(abs(past normalised between-day RMS errors)); mad is the historical code label, not a centred MAD",
+  "sources": {
+    "level": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/v24_develop_v1/frozen_choices.json",
+      "sha256": "2da63f8488d22e28834b2ef4391a8a5f6d5bd719c810ae02432f857a5a001077"
+    },
+    "day": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/v25_develop_v1/frozen_choices_G.json",
+      "sha256": "f09c81f90ba290b143601c1b78986c0a78dc9744939bab6f106238ad182a1fc3"
+    },
+    "signature": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/signature_fit_v21/report.json",
+      "sha256": "7d332861f4eadfc8cff03adafd50ae92544fcdc6cf10eb90155ededda62e3599"
+    },
+    "blend": {
+      "path": "analysis_outputs/enhancement_v3/eo_lstm_kan_v1/z1_v21b/report.json",
+      "sha256": "3359deae46ab64b5298de5e5346b4ea909932740b6b344fc3fa379cd6b4249bd"
+    }
+  }
+}
