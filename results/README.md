@@ -14,8 +14,9 @@ release) and compare ankyra-lite with 20 baselines. Every file is written by
 anchored forecasts listed in [`evaluation/products.json`](../evaluation/products.json); [`SUMMARY.md`](SUMMARY.md) is the
 readable summary of the same run. How the numbers were obtained is in [EVALUATION.md](../docs/EVALUATION.md). The
 exceptions are `external_tests.csv`, the external tests, written by `evaluation/external_tables.py` from the external
-run's score records ([below](#external-tests)), and `openmeter_test.csv`, the pre-specified openMeter test, copied
-from its score record by a script of the study (described below).
+run's score records ([below](#external-tests)), `openmeter_test.csv`, the pre-specified openMeter test, copied
+from its score record by a script of the study (described below), and `fairness_test.csv`, the pre-specified
+comparison with fine-tuned Chronos-2 on the nine populations, copied from its single result file the same way.
 
 Read first:
 
@@ -31,6 +32,7 @@ Read first:
   columns of `robustness.csv`) refer to ankyra-lite.
 - **No number of ANKYRA itself or of its versions is in any file** (`compare_baselines.json` records under
   `forecasters_left_out` that they were left out). The 20 baselines are the external baselines of the first release.
+- **Version 0.2.3 (6 November 2026):** adds `fairness_test.csv`; no other result file changed.
 - **Version 0.2.2 (23 October 2026), the public release:** the comparison is restricted to the 20 external baselines of
   the ANKYRA 2.2.1 release; the ten tables of the main comparison were re-run with them (ranks among 21 forecasters),
   and the BDG2 near-zero and training-budget ranks were recomputed the same way; every other row equals the earlier
@@ -759,6 +761,17 @@ script of the study: `reading`; `pct_lower_error` (positive: ankyra-lite has the
 seed layer A (`seed_a_lo`, `seed_a_hi`), seed layer B (`seed_b_lo`, `seed_b_hi`) and the units × months bootstrap
 (`units_months_lo`, `units_months_hi`), empty where not registered; `windows`, `units`, `months`; and `verdict`,
 filled for the registered verdicts only.
+
+**`fairness_test.csv`** — every scored row of the pre-specified comparison with Chronos-2 fine-tuned on the same
+training pool ([LATER_TESTS.md](../docs/LATER_TESTS.md#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool)), read once on 6 November 2026, at full precision, copied from its
+single result file by a script of the study, except the row of the anchoring layer applied to fine-tuned
+Chronos-2 (a foundation-model configuration of the layer, reported in the paper): `scope` (a pool, a population,
+or a pool without BDG2), `readout` (`energy` or `hourly`), `contrast`, `ladder_row` (the paper's row label),
+`first`, `first_name`, `second`, `second_name`; `pct_lower_error` (positive: the first-named has the lower error),
+`interval_lo`, `interval_hi` and `interval_method` (the row's 95% interval and how it was formed), `verdict`,
+`ensemble_pct` (the ensemble point where the record point is a group mean), `units_months_lo` and
+`units_months_hi` (the unit × month bootstrap interval of the record point), `seed_layer_excluded_units` (units
+left out of the seed layer because their loss is zero in every vector of the row) and `secondary`.
 
 **`external_tests.csv`** — the 0.2.0 re-run of the external tests ([EXTERNAL_TESTS.md](../docs/EXTERNAL_TESTS.md),
 Figure 17; 405 rows), written by [`evaluation/external_tables.py`](../evaluation/external_tables.py) (`--version 0.2`),

@@ -1,4 +1,4 @@
-# Later tests and stronger comparators (22 October – 3 November 2026)
+# Later tests and stronger comparators (22 October – 6 November 2026)
 
 This page collects the evidence on ankyra-lite obtained after the comparison of [EVALUATION.md](EVALUATION.md) and the
 external re-run of [EXTERNAL_TESTS.md](EXTERNAL_TESTS.md), for the paper in preparation.
@@ -8,6 +8,7 @@ external re-run of [EXTERNAL_TESTS.md](EXTERNAL_TESTS.md), for the paper in prep
 | [openMeter](#openmeter-germany-a-pre-specified-test-on-a-new-source) | German households, public buildings and businesses; test months 2024-02 to 2025-07 | a new source in an earlier period; the test was fixed in writing before any of its load values were read and scored once (3 November 2026); the only confirmatory test |
 | [HEAPO and Cambridge 2023](#heapo-and-cambridge-2023) | heat-pump households in the canton of Zurich; the 2023 months of the Cambridge estate | new data; a new period of a study population; each scored once (22 October 2026); stronger comparators added later on the same windows (descriptive) |
 | [Nine populations](#nine-populations-a-fixed-trained-learner-and-the-network-trained-to-the-test-start) | the nine populations of the comparison | test windows read during development; descriptive |
+| [Fine-tuned Chronos-2](#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool) | the nine populations of the comparison | a comparison fixed in writing before it was read, read once (6 November 2026) on test windows read during development; not a confirmation |
 
 - **Versions.** HEAPO and Cambridge 2023 ran with ankyra-lite 0.2.0 and openMeter with 0.2.1 (exported read-only from
   its commit); the package of 0.2.2 differs from 0.2.1 only in its version string, and 0.2.1 differs from 0.2.0 in
@@ -20,7 +21,7 @@ external re-run of [EXTERNAL_TESTS.md](EXTERNAL_TESTS.md), for the paper in prep
   layer); in Table N2 only, L is ankyra-lite before the continuation layer and Lc after it. N: the network alone (six
   seeds, no anchoring layer). G: a fixed gradient-boosted learner fitted per population on the network's training pool
   ([below](#a-fixed-gradient-boosted-learner-g)). $N_C$: the network retrained with labels up to the test start $C$ and
-  used alone. Readings that involve the paper's TimesFM configuration of the same anchoring layer are reported in the paper,
+  used alone. FTC, C2T, C2Y and B8: [below](#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool). Readings that involve the paper's TimesFM configuration of the same anchoring layer are reported in the paper,
   not here, as in the rest of this repository. One-year TimesFM 2.5: up to 8,736 h of context. Positive
   percentages: the first-named forecaster has the lower error.
 
@@ -326,6 +327,92 @@ The share is a ratio of mean log RMSE ratios (Section 3.4), computed within each
 
 $N_C$ alone, energy: vs eight-week TimesFM 2.5 +21.0\* [+13.8, +27.5]; vs one-year TimesFM 2.5 +14.9\* [+7.6, +21.6].
 
+## Nine populations: Chronos-2 fine-tuned on the same training pool
+
+**Identity.** A comparison fixed in writing before it was read (comparators, recipes, estimators, intervals, random
+streams and the reading rule), read once on 6 November 2026 on the test windows of the nine populations (5,716
+windows). These windows were read during development, so this is a pre-specified comparison on re-used windows, not a
+confirmation. The tables are formatted from the read's result file, not copied from the paper. Positive percentages: the
+first-named forecaster has the lower error.
+
+**Forecasters.** N: the network alone (the six seeds of the 0.2.0 carrier, without the anchoring layer; energy is read
+before the continuation layer). B8: the same network trained on eight weeks of history. FTC: Chronos-2 fine-tuned per
+population on the network's training pool, three seeds, learning rate 1e-5, with a context of 1,344 hours plus the same
+period one year earlier and no category inputs; its forecast is the probability-weighted mean of its quantiles. C2T:
+zero-shot Chronos-2 given FTC's inputs. C2Y: zero-shot Chronos-2 given one year of context. The comparison was run on the
+network alone, not on ankyra-lite as delivered; on these populations the anchoring layer did not resolvably change the
+carrier's monthly energy on any population (contrast (i), 0 / 9 / 0, [README](../README.md#at-a-glance)). The anchoring
+layer applied to FTC is a foundation-model configuration of the layer and, like the TimesFM one, is reported in the
+paper, not here.
+
+**Estimator.** As in the paper (Section 3.4): unit-equal log RMSE ratios, pooled with equal population weights; 95%
+intervals from 2,000 paired resamples of units and target months. For the network against FTC the point is the mean of
+the two three-seed network groups' ratios, and the interval adds both sides' seed variance (Welch: SE² = SE² of units and
+months + s² of the network's six seeds / 6 + s² of FTC's three seeds / 3); FTC against C2T adds FTC's seed variance, and
+the network against C2Y the network's. Units whose loss is zero in every vector of a row (3 BDG2 units whose
+windows are all state windows) are left out of that row's seed layer, as the ratio already leaves them out.
+
+**Table F1. Nine populations, % [95% interval].** \* resolved in favour of the first-named, (−) against.
+
+| Contrast | Energy | Hourly |
+|---|---|---|
+| N vs FTC | −12.2 (−) [−21.3, −3.8] | −4.3 [−9.4, +0.4] |
+| B8 vs FTC | −13.7 (−) [−22.4, −5.7] | −4.5 [−9.3, +0.2] |
+| FTC vs C2T | +24.4\* [+18.2, +30.1] | +11.4\* [+7.1, +15.4] |
+| N vs C2Y | +5.4 [−2.4, +12.6] | +1.8 [−0.8, +4.3] |
+| B8 vs N | −2.1 [−8.7, +4.2] | −0.3 [−2.1, +1.5] |
+| N vs TimesFM 2.5, eight weeks | +20.4\* [+13.4, +26.8] | +8.1\* [+4.9, +11.1] |
+| N vs one-year TimesFM 2.5 | +14.2\* [+7.3, +20.6] | +4.7\* [+2.3, +7.1] |
+| N vs Chronos-2-X | +14.0\* [+6.2, +21.1] | +3.3\* [+0.2, +6.3] |
+| N vs G | +8.9\* [+2.8, +14.5] | +7.8\* [+6.2, +9.3] |
+
+**Table F2. N against FTC by pool and population, % [95% interval].**
+
+| Pool or population | Energy | Hourly |
+|---|---|---|
+| Nine populations | −12.2 (−) [−21.3, −3.8] | −4.3 [−9.4, +0.4] |
+| Benchmark subset (first six) | −11.6 (−) [−23.3, −1.1] | −3.1 [−10.4, +3.8] |
+| Three non-development | −20.8 (−) [−37.3, −6.3] | −11.4 (−) [−18.1, −5.1] |
+| Six development | −8.2 [−19.6, +2.2] | −1.0 [−7.9, +5.5] |
+| BDG2 | −16.7 [−45.9, +6.6] | −16.0 [−36.9, +1.7] |
+| Cambridge | −15.4 [−36.1, +2.1] | −8.3 (−) [−13.5, −3.4] |
+| HEEW | +9.3 [−29.2, +36.4] | +19.1 [−12.5, +41.8] |
+| EWELD | −4.9 [−34.8, +18.3] | +1.2 [−13.3, +13.8] |
+| GoiEner non-household | −44.0 (−) [−90.6, −8.8] | −17.3 (−) [−25.3, −9.8] |
+| GoiEner households | −4.9 [−23.8, +11.1] | −1.7 [−5.8, +2.2] |
+| Oslo | −5.7 [−25.7, +11.2] | −7.8 (−) [−14.4, −1.5] |
+| Drammen | −6.4 [−36.9, +17.4] | −3.0 [−12.3, +5.5] |
+| CINELDI | −29.8 (−) [−55.1, −8.5] | −10.2 (−) [−15.9, −4.8] |
+
+**Reading.** By the decision rule fixed before the read, a trained comparator resolved better in energy gives the branch
+"a comparator is resolved better": Chronos-2 fine-tuned on the same training pool had 10.9% lower monthly energy error
+than the network (3.7% to 17.6%; the network's row is −12.2 (−) [−21.3, −3.8]). The hourly difference was not resolved
+(4.2% lower for FTC). The network's energy error stayed below that of eight-week and one-year TimesFM 2.5,
+Chronos-2-X and G (8.9% to 20.4%, resolved) and below one-year Chronos-2's by 5.4% (not
+resolved). Fine-tuning lowered Chronos-2's energy error by 24.4% against its zero-shot twin. FTC's lead was largest
+on the three populations without development windows (17.2%, 6.0% to 27.1%) and not resolved on the six
+development populations (7.5%); of the single populations it was resolved on GoiEner non-household and CINELDI only. In
+hourly error FTC was resolved better on the three non-development populations pooled (10.3% lower) and on
+Cambridge, GoiEner non-household, Oslo and CINELDI; these pool and single-population readings are secondary and not
+adjusted for multiplicity.
+
+**How it was read.** The forecasts and comparator runs were accepted first (training records, forecasts, a CPU
+regeneration of the network's members and the anchoring products), and the comparison was then read once through a
+guarded process bound to the author's approval of the exact input package. Before any new row, three published rows of
+the paper were reproduced exactly from their stored losses, and the rebuilt network losses matched the stored ones on all
+nine populations; every row was recomputed independently from the saved resamples afterwards. Two earlier attempts
+stopped at pre-specified checks before any result was computed (a summation-order difference in a consistency check of
+the rebuilt losses; zero-loss units in the seed layer); each was corrected with the author's approval, and their records
+are kept with the study's research records.
+
+**What this does not show.** One fine-tuned foundation model was compared, and inputs and training were not matched
+(FTC's 1,344-hour context plus the previous year and no category inputs; six network seeds against three FTC seeds).
+N-HiTS was pre-specified as a second trained comparator but did not pass its sanity check under the shared recipe (on
+HEEW validation windows it was worse than a weekly seasonal-naive forecast and a per-unit ridge regression) and was not
+run on the nine populations; TFT and DeepAR were not run. Compute was not compared on matched terms: FTC was fine-tuned
+and run on a GPU, ankyra-lite runs on one CPU thread (0.66 s per forecast on six Oslo windows), and no matched
+end-to-end timing was made. The differences are not attributed to architecture, pretraining, adaptation or inputs.
+
 ## What is known about the source of the energy lead
 
 Matched eight-week training left the long record's gain unresolved (hourly 0.3%, −1.6% to +2.1%; energy 2.0%, −4.4% to +8.0%), so the frozen network's loss when truncated at inference shows sensitivity to truncation, not the value of the long record. No energy benefit of the decoder's explicit monthly normalisation was established (+0.4%, −2.4% to +3.1%, against a geometric daily-level parameterisation that keeps the level–shape decomposition), which does not test the decoder as a whole. An earlier, level-only version of the fixed learner, fitted on the development populations, also stayed behind the network (by 11.8%, +4.3% to +18.8%; Supplement S15). The energy lead is stable, but its source is not located. The common-bias and seasonal analyses above are consistent with a contribution of seasonal information and, on households, of the median point forecast, but they do not isolate either.
@@ -356,8 +443,9 @@ keep the earlier computation.
   (households and businesses 2024-02 to 2024-08, public buildings 2024-02 to 2024-05 and 2025-01 to 2025-07).
 - **Short-term accuracy.** On none of the three sets is a lead over TimesFM 2.5 in the first hours or on day 1 claimed.
 - **The source of the energy lead** is not located ([above](#what-is-known-about-the-source-of-the-energy-lead)).
-- **Fair comparison with fine-tuned and other trained forecasters** on the nine populations is not covered here; those
-  comparisons had not been run when this page was written.
+- **Trained comparators.** Chronos-2 fine-tuned on the same training pool is the only fine-tuned foundation model
+  compared, on the nine populations only ([above](#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool)); N-HiTS did not pass its pre-specified sanity check,
+  and TFT and DeepAR were not run.
 
 ## Data and licences
 
@@ -372,6 +460,8 @@ keep the earlier computation.
 
 - [`results/openmeter_test.csv`](../results/openmeter_test.csv): the openMeter readings of Table O2, at full precision
   (columns in [results/README.md](../results/README.md)).
+- [`results/fairness_test.csv`](../results/fairness_test.csv): every scored row of the fine-tuned comparison above, at
+  full precision, except the anchoring layer applied to FTC (columns in [results/README.md](../results/README.md)).
 - The protocol, its two amendments, the freeze record and the score record of the openMeter test are kept with the
   study's research records; the code that built its store, ran its comparators and scored it is not part of this
   repository.

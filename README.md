@@ -1,6 +1,8 @@
 # Building_load_ANKYRA_lite
 
-**Version 0.2.2 (3 November 2026) is the public release.** It adds the [later tests](docs/LATER_TESTS.md): HEAPO and Cambridge 2023, each scored once, and a pre-specified test on a new source, German openMeter meters, scored once, on which ankyra-lite's monthly energy error was 31.0% below one-year TimesFM 2.5's (confirmed under the registered rule; hourly gain 3.1%). The comparison is restricted to the 20 external baselines of the ANKYRA 2.2.1 release: the ten main tables were re-run with them (ranks among 21 forecasters), and every other row equals the earlier tables without that comparison (the energy contrasts' random stream is kept at its earlier positions). The forecasts, the checkpoints and ankyra-lite's own errors are those of version 0.2.0, and the interface and guard fixes of the maintenance release 0.2.1 are included ([correction note](docs/CODE_AUDIT_CORRECTIONS_20261022.md)). Nothing was retrained.
+**Version 0.2.3 (6 November 2026) adds a pre-specified comparison with a fine-tuned foundation model.** On the nine populations, Chronos-2 fine-tuned on the network's training pool had 10.9% lower monthly energy error than the network alone (95% interval 3.7% to 17.6%; the hourly difference was not resolved), while the network's energy error stayed below that of the zero-shot TimesFM 2.5 and Chronos-2-X settings (not resolved against one-year Chronos-2) ([later tests](docs/LATER_TESTS.md#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool)). No forecast, checkpoint or code changed except the version string.
+
+**Version 0.2.2 (3 November 2026) was the first public release.** It adds the [later tests](docs/LATER_TESTS.md): HEAPO and Cambridge 2023, each scored once, and a pre-specified test on a new source, German openMeter meters, scored once, on which ankyra-lite's monthly energy error was 31.0% below one-year TimesFM 2.5's (confirmed under the registered rule; hourly gain 3.1%). The comparison is restricted to the 20 external baselines of the ANKYRA 2.2.1 release: the ten main tables were re-run with them (ranks among 21 forecasters), and every other row equals the earlier tables without that comparison (the energy contrasts' random stream is kept at its earlier positions). The forecasts, the checkpoints and ankyra-lite's own errors are those of version 0.2.0, and the interface and guard fixes of the maintenance release 0.2.1 are included ([correction note](docs/CODE_AUDIT_CORRECTIONS_20261022.md)). Nothing was retrained.
 
 **Month-ahead hourly load forecasting without a foundation model: a 61,613-parameter carrier network, trained per population, anchored to each unit's own history**
 
@@ -28,9 +30,9 @@ populations: the six seeds of this version and the three of version 0.1), the tr
 scored comparison with 20 external baselines on nine populations, the figures, and the exact properties of all three
 parts.
 
-> **Status (version 0.2.2, 3 November 2026; every nine-population result of ankyra-lite from version 0.2.0, 21 October
+> **Status (version 0.2.3, 6 November 2026; every nine-population result of ankyra-lite from version 0.2.0, 21 October
 > 2026; the ten main tables re-run with the 20 release baselines on 23 October 2026; the later tests from 22 October to
-> 3 November 2026).**
+> 6 November 2026).**
 >
 > - **What changed from 0.1.** The carrier is trained with recipe Rw (recipe R with inverse-noise loss weights in its
 >   second stage) and six seeds are averaged, and the new continuation layer corrects the first hours and days of the
@@ -50,6 +52,12 @@ parts.
 >   population) were scored once, and a test on a new source, German openMeter meters, was fixed in writing before any
 >   of its load values were read and scored once: monthly energy error 31.0% below one-year TimesFM 2.5's, confirmed
 >   under the registered rule; hourly error 3.1% lower ([Later tests](#later-tests-new-data-a-new-period-and-a-new-source)).
+> - **A fine-tuned foundation model (6 November 2026).** In a comparison fixed in writing before it was read
+>   and read once on the nine populations' test windows (read during development), Chronos-2 fine-tuned on the
+>   network's training pool had 10.9% lower monthly energy error than the network alone (3.7% to 17.6%); the
+>   hourly difference (4.2%) was not resolved. The network's energy error stayed 14.0–20.4% below that of eight-week
+>   and one-year TimesFM 2.5 and Chronos-2-X (resolved) and 5.4% below one-year Chronos-2's (not resolved)
+>   ([Later tests](#later-tests-new-data-a-new-period-and-a-new-source)).
 > - **Weights included.** The 54 checkpoints of this version and the 27 of version 0.1 are in
 >   [`checkpoints/`](checkpoints/MANIFEST.json) ([Checkpoints](#checkpoints)). Reproducing a 0.1 forecast needs the 0.1
 >   checkpoints, three seeds and the layer off; switching the layer off on the six-seed Rw carrier gives the 0.2.0 carrier's
@@ -63,7 +71,7 @@ the contrast excludes zero.
 
 | | Result | Scope | File |
 |---|---|---|---|
-| Position among 21 forecasters | lowest mean per-unit rank on **all nine** populations | test windows | `benchmark_mean_unit_rank.csv` |
+| Position among 21 forecasters | lowest mean per-unit rank on **all nine** populations (none of the 21 is a fine-tuned foundation model; that comparison is below) | test windows | `benchmark_mean_unit_rank.csv` |
 | Hourly error | resolved better than 12–20 of the 20 baselines per population (144 of 180 contrasts); resolved worse in 1 contrast: GoiEner households against TimesFM (−4.6%) | nine populations | `benchmark_pairwise.csv` |
 | Monthly energy | resolved better than 5–19 of the 20 per population (107 of 180); resolved worse in none | nine populations | `energy_error.csv` |
 | Rank tests | mean rank 5.048 against 7.160 for the next forecaster (per-unit ridge); Nemenyi critical difference 0.746 | six test populations pooled, 1,762 units | `rank_tests.csv` |
@@ -84,6 +92,7 @@ the contrast excludes zero.
 | openMeter, Germany (7,894 windows, 1,045 units, 14 origin months) | a new source in an earlier period; pre-specified | monthly energy error **31.0% below one-year TimesFM 2.5's**, all three 95% intervals above zero (lowest bound +24.8%): confirmed under the registered rule; hourly error 3.1% lower, its units × months interval including zero |
 | HEAPO (4,326 windows, 1,301 units, 4 origin months) | new data | hourly error +7.35% against TimesFM 2.5 [+2.30, +12.15], resolved |
 | Cambridge 2023 (753 windows, 78 units, 12 origin months) | a new period of a study population | hourly error +13.86% against TimesFM 2.5 [+5.69, +21.33], resolved |
+| Nine populations (5,716 windows) | a comparison fixed in writing before it was read, read once on test windows read during development | Chronos-2 fine-tuned on the same training pool: monthly energy error **10.9% below the network's** [3.7, 17.6], resolved; hourly 4.2% lower, not resolved |
 
 Contrasts (i) and (ii) compare the anchored forecast before the continuation layer, as in version 0.1; the rows with
 the layer are in the same file.
@@ -1725,6 +1734,10 @@ Against the external baselines, on these test windows:
 - **On the new source (openMeter), energy only.** The confirmed result is monthly energy: hourly error was 3.1% lower
   than one-year TimesFM 2.5's with a units × months interval that includes zero, day 1 and the peak readout against
   last month's peak were not resolved, and public buildings were not confirmed ([Later tests](docs/LATER_TESTS.md)).
+- **Against a fine-tuned foundation model.** Chronos-2 fine-tuned on the network's training pool had 10.9% lower monthly
+  energy error than the network alone on the nine populations (resolved; hourly 4.2%, not resolved), most on the three
+  populations without development windows (17.2%); in hourly error it was resolved better on those three pooled and on
+  4 single populations ([details](docs/LATER_TESTS.md#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool)).
 
 Weaknesses of its own design are reported where they arise: recipe R's losses on Drammen and on forecast days 2–7
 ([Recipe history](#recipe-history-how-r-was-chosen-and-its-negatives)), the continuation layer's resolved loss on Oslo
@@ -1818,8 +1831,15 @@ and scored once on each. Full report, tables and identities: [docs/LATER_TESTS.m
 - **HEAPO and Cambridge 2023.** Against TimesFM 2.5 the first hours and day 1 were not resolved (negative or near-zero
   point estimates), and HEAPO's energy is read on observed hours only. Stronger comparators added later on the same
   windows, and a fixed gradient-boosted learner, are in the report.
-- **Versions.** HEAPO and Cambridge 2023 ran with 0.2.0 and openMeter with 0.2.1; the package of 0.2.2 differs from
-  0.2.1 only in its version string.
+- **Nine populations: Chronos-2 fine-tuned on the same training pool (read once on 6 November 2026).** In a comparison
+  fixed in writing before it was read, on the nine populations' test windows (read during development), Chronos-2
+  fine-tuned on the network's training pool had 10.9% lower monthly energy error than the network alone (3.7% to
+  17.6%); the hourly difference (4.2%) was not resolved. The network's energy error stayed 14.0–20.4% below that of
+  eight-week and one-year TimesFM 2.5 and Chronos-2-X (resolved) and 5.4% below one-year Chronos-2's (not resolved)
+  ([details](docs/LATER_TESTS.md#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool)).
+- **Versions.** HEAPO and Cambridge 2023 ran with 0.2.0 and openMeter with 0.2.1; the packages of 0.2.2 and 0.2.3
+  differ from 0.2.1 only in their version strings, and the fine-tuned comparison used the stored forecasts of the 0.2.0
+  carrier.
 
 ## External tests
 
@@ -1970,7 +1990,7 @@ python -m unittest discover -s theory -t .     # 111 checks of the exact propert
 | `tests/test_external_tables.py` | 12 | the external-test table: columns, forecaster names, no absolute path, the sealed Helsinki set never read, equality with the score records field by field, no contrast of the scorer's other output files, the primary table of docs/EXTERNAL_TESTS.md (part needs the study's score records) |
 | `theory/test_operators.py`, `theory/test_carrier_properties.py`, `theory/test_weighting_properties.py`, `theory/test_continuation_properties.py` | 31, 27, 15, 36 | P1–P20, C1–C10, C11–C14 and O1–O9, counterexamples included |
 
-On 3 November 2026 (version 0.2.2 with the later tests' documentation; no code changed) every test module that does not
+On 6 November 2026 (version 0.2.3; documentation and the version string only) every test module that does not load the study's data stores ran again: 239 tests, none failed, 6 skipped (four comparisons with version 0.1 and two checks against the study's score records, whose reference checkouts and records were not provided in this run), and the 111 theory checks passed. On 3 November 2026 (version 0.2.2 with the later tests' documentation; no code changed) every test module that does not
 load the study's data stores ran again: 239 tests, none failed, 2 skipped, and the 111 theory checks passed; the three
 data-loading modules (`test_carrier_equivalence`, `test_store_arrays`, `test_train`; 35 tests) were not re-run, because
 the machine had less free memory than they wait for. On 23 October 2026 (version 0.2.2) the full run passed again: all
@@ -2063,7 +2083,10 @@ accuracy is measured.
 
 ## Version history
 
-- **0.2.2 (3 November 2026)** — the public release. It documents the later tests ([docs/LATER_TESTS.md](docs/LATER_TESTS.md),
+- **0.2.3 (6 November 2026)** — documents the pre-specified comparison with Chronos-2 fine-tuned on the same training
+  pool ([docs/LATER_TESTS.md](docs/LATER_TESTS.md#nine-populations-chronos-2-fine-tuned-on-the-same-training-pool), [`results/fairness_test.csv`](results/fairness_test.csv)); no forecast, checkpoint or code
+  changed except the version string.
+- **0.2.2 (3 November 2026)** — the first public release. It documents the later tests ([docs/LATER_TESTS.md](docs/LATER_TESTS.md),
   [`results/openmeter_test.csv`](results/openmeter_test.csv)): HEAPO and Cambridge 2023 scored once, with stronger
   comparators added later on their windows; a fixed gradient-boosted learner and the network trained to the test
   start on the nine populations; and the pre-specified openMeter test. No code, checkpoint or comparison table
